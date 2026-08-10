@@ -22,7 +22,15 @@ A numbered matter scheduled for discussion or decision at exactly one council me
 
 ## Dossier
 
-A continuing real-world matter that may appear as different agenda items across multiple meetings and communes. Agenda items may be linked through an authoritative dossier identifier, editorial verification, or automated matching. Automated links retain their matching provenance and can be reported publicly as incorrect.
+A continuing real-world matter that may appear as different agenda items across multiple meetings and communes. A dossier has a public timeline page. Dossiers can be merged or split without erasing history; retired dossier URLs redirect to the surviving dossier.
+
+## Dossier link
+
+A many-to-many connection between an agenda item and a dossier. An authoritative identifier or high-confidence automated match may create the link directly. A medium-confidence match creates a separate dossier and an internal merge suggestion. Every automated link retains its matching provenance.
+
+## Link correction report
+
+A public report that a dossier link is incorrect. A report creates an editorial review item rather than removing the link automatically. Rico can confirm or remove the link, and the decision prevents the matcher from repeating a rejected association.
 
 ## Proposal
 
