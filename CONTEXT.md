@@ -48,6 +48,14 @@ The publication unit for one council meeting. It contains individually addressab
 
 A public explanation of one agenda item within a meeting page. It states whether the underlying material is a proposal or final decision and may link to a continuing dossier.
 
+## Locale variant
+
+The French, Dutch, or English representation of the same meeting page, coverage item, or dossier. French is the canonical editorial text for the MVP, while source evidence may be French, Dutch, or bilingual. All three locale variants publish together. Factual corrections update all three in one revision; typography-only corrections may affect one locale.
+
+## Content provenance
+
+Public metadata describing how text was produced or reviewed, such as machine-translated or human-reviewed. Content provenance does not change the underlying source evidence or publication status.
+
 ## Mention
 
 A reference to a person or organization within a source record. A mention does not by itself establish identity, involvement, ownership, or a relationship.
