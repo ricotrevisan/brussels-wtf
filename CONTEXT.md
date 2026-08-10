@@ -54,7 +54,11 @@ The French, Dutch, or English representation of the same meeting page, coverage 
 
 ## Content provenance
 
-Public metadata describing how text was produced or reviewed, such as machine-translated or human-reviewed. Content provenance does not change the underlying source evidence or publication status.
+Public metadata describing how text was produced or reviewed. The MVP uses `AI-generated`, `machine-translated`, and `human-reviewed` when each is true. Official sourcing is mandatory baseline behavior exposed through citations, not a provenance badge. Content provenance does not change the underlying source evidence or publication status.
+
+## Localized URL
+
+A permanent locale-specific URL using a BCP 47 language path and stable identity, such as `/fr-be/meetings/{id}`, `/nl-be/meetings/{id}`, or `/en/meetings/{id}`. A language-neutral URL such as `/meetings/{id}` redirects to the reader's preferred locale.
 
 ## Mention
 
@@ -86,8 +90,8 @@ The evidentiary state of a claim: unreviewed, verified, rejected, or superseded.
 
 ## Publication status
 
-Whether a meeting page is `draft` or `published`. Editing or correcting a published page does not add another publication status; revisions preserve its history. Moving a published page back to `draft` hides its content but leaves a public withdrawal notice at the existing URLs.
+Whether a meeting page is `draft` or `published`. A draft publishes automatically when all three locale variants exist and its evidence requirements pass. Editing or correcting a published page does not add another publication status; revisions preserve its history. Moving a published page back to `draft` hides its content but leaves a public withdrawal notice at the existing URLs.
 
-## Editorial approval
+## Publication gate
 
-Rico Trevisan's decision to move a coverage item from `draft` to `published`. Company ownership, management, and council-member connections always require editorial approval.
+The automated checks required to move content from `draft` to `published`. The gate requires complete FR/NL/EN locale variants, claim-specific official evidence, and applicable provenance labels. Rico Trevisan may review or edit content but his approval is not required for publication. Public coverage carries his byline.

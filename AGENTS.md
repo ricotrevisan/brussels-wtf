@@ -4,7 +4,7 @@
 
 Read `CONTEXT.md` before changing domain behaviour or terminology.
 
-Published claims must remain traceable to source evidence. Treat proposed decisions separately from final decisions. Company ownership, management, and council-member connections require explicit evidence and editorial approval; never convert name similarity or model inference into a published relationship.
+Published claims must remain traceable to source evidence. Treat proposed decisions separately from final decisions. Company ownership, management, and council-member connections require explicit evidence; never convert name similarity or model inference into a published relationship.
 
 Public content supports French, Dutch, and English. The initial municipal scope is Ixelles, Uccle, Forest, and the City of Brussels (1000 Brussels).
 
