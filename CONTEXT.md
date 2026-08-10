@@ -10,11 +10,19 @@ A scheduled session of a commune's municipal council. A meeting may have multipl
 
 ## Source record
 
-An item obtained from an authoritative publisher, such as an agenda, addendum, supporting dossier, minutes, voting record, decision, livestream, or recording. A source record retains its origin and publication time.
+An item obtained from an authoritative publisher, such as an agenda, addendum, supporting dossier, minutes, voting record, decision, livestream, or recording. A source record retains its origin and publication time. Archived file copies are private evidence; public coverage links to the authoritative origin and may expose its checksum and retrieval time.
+
+## Agenda
+
+A versioned list of agenda items for exactly one council meeting. Base agendas, supplements, addenda, and corrected files are separate source records describing versions of that meeting's agenda.
 
 ## Agenda item
 
-A numbered matter scheduled for discussion or decision at a council meeting. Its wording and status may change through addenda or later records.
+A numbered matter scheduled for discussion or decision at exactly one council meeting. It is a meeting-specific occurrence: its wording, position, evidence, and outcome belong to that meeting.
+
+## Dossier
+
+A continuing real-world matter that may appear as different agenda items across multiple meetings. Agenda items may be linked to one dossier through an authoritative dossier identifier or editorial verification; model similarity alone creates only an internal candidate link.
 
 ## Proposal
 
@@ -24,9 +32,13 @@ The action described before the council has made its final decision. A proposal 
 
 The council's documented final disposition of an agenda item, including approval, rejection, amendment, postponement, withdrawal, or another explicitly sourced outcome.
 
+## Meeting page
+
+The publication unit for one council meeting. It contains individually addressable coverage items and moves as a whole between `draft` and `published`.
+
 ## Coverage item
 
-A publishable explanation of one or more agenda items. Coverage may describe an upcoming proposal or report a final decision, but must make that status explicit.
+A public explanation of one agenda item within a meeting page. It states whether the underlying material is a proposal or final decision and may link to a continuing dossier.
 
 ## Mention
 
@@ -58,7 +70,7 @@ The evidentiary state of a claim: unreviewed, verified, rejected, or superseded.
 
 ## Publication status
 
-Whether a coverage item is `draft` or `published`. Editing or correcting a published item does not add another publication status; revisions preserve its history.
+Whether a meeting page is `draft` or `published`. Editing or correcting a published page does not add another publication status; revisions preserve its history. Moving a published page back to `draft` hides its content but leaves a public withdrawal notice at the existing URLs.
 
 ## Editorial approval
 
