@@ -62,7 +62,7 @@ A permanent resource URL using a stable identity and optional BCP 47 language qu
 
 ## Mention
 
-A reference to a person or organization within a source record. A mention does not by itself establish identity, involvement, ownership, or a relationship.
+A reference to a person or organization within a source record. A mention does not by itself establish identity, involvement, ownership, or a relationship. Unresolved company enrichment does not block meeting-page publication; verified facts update the page when later discovered.
 
 ## Legal entity
 
@@ -70,7 +70,7 @@ A formally registered organization identified by its CBE enterprise number. Esta
 
 ## Person
 
-A natural person whose identity is supported by an explicit identifier or an exact name plus at least one corroborating fact such as municipality, dated mandate, organization, or role. Ambiguous matches remain separate. Every person with a publishable sourced role may have a public page, including company managers, but only sourced role facts are exposed.
+A natural person whose identity is supported by an explicit identifier or an exact name plus at least one corroborating fact such as municipality, dated mandate, organization, or role. Ambiguous matches remain separate. Every person with a publishable sourced role may have a public page, including company managers. Public profiles expose legal name, sourced roles, public mandates, relevant council mentions, and a dated timeline; they never expose private addresses, signatures, contact details, identity numbers, or family information.
 
 ## Role
 
@@ -82,7 +82,11 @@ A typed, time-bounded assertion such as a management role, ownership, council ma
 
 ## Ownership suggestion
 
-A public submission proposing missing ownership information. It remains private until Rico approves its identity, relationship, and evidence; approval creates the publishable relationship. Rejection is retained to prevent the same unsupported suggestion from recurring.
+A public open-ended text submission proposing missing ownership information. It requires no account, accepts optional private contact information, and is protected by basic rate limiting and a honeypot. It remains private until Rico approves it; approval creates the publishable relationship and rejection is retained to prevent repetition.
+
+## Correction suggestion
+
+A public open-ended text submission from a company or person page. It follows the same private review workflow as an ownership suggestion. Approved identity merges, profile corrections, and relationship changes retain audit history and redirect retired duplicate profiles.
 
 ## Evidence
 
