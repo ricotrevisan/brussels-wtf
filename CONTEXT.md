@@ -54,8 +54,12 @@ A source-backed record supporting or contradicting a factual claim. Evidence ide
 
 ## Verification status
 
-The editorial state of a claim: unreviewed, verified, rejected, or superseded. Model inference and name similarity remain unreviewed signals and are not publishable facts.
+The evidentiary state of a claim: unreviewed, verified, rejected, or superseded. This is separate from publication status. Model inference and name similarity remain unreviewed signals and are not publishable facts.
+
+## Publication status
+
+Whether a coverage item is `draft` or `published`. Editing or correcting a published item does not add another publication status; revisions preserve its history.
 
 ## Editorial approval
 
-A human decision allowing a coverage item or sensitive relationship claim to become public. Company ownership, management, and council-member connections always require editorial approval.
+Rico Trevisan's decision to move a coverage item from `draft` to `published`. Company ownership, management, and council-member connections always require editorial approval.
