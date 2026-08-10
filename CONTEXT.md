@@ -12,6 +12,30 @@ A scheduled session of a commune's municipal council. A meeting may have multipl
 
 An item obtained from an authoritative publisher, such as an agenda, addendum, supporting dossier, minutes, voting record, decision, livestream, or recording. A source record retains its origin and publication time. Archived file copies are private evidence; public coverage links to the authoritative origin and may expose its checksum and retrieval time.
 
+## Source locator
+
+An exact URL discovered by a commune adapter together with its parent index and meeting context. A locator can change what bytes it serves and is never itself a version identity.
+
+## Retrieval observation
+
+A record of one attempted or successful check of a source locator, including unchanged responses, redirects, response metadata, and disappearance from an index.
+
+## Source version
+
+An immutable byte snapshot of a source record identified by its SHA-256 hash and private rustFS object key. New bytes at an existing locator create a new source version and never overwrite history.
+
+## Processing run
+
+One execution of a named, versioned processor and configuration against a source version. It records inputs, outputs, quality measurements, timing, and failure details.
+
+## Derived artifact
+
+An immutable processor output such as extracted text, OCR text, normalized structure, or a transcript. It retains its input hash, processor provenance, output hash, and private object key.
+
+## Review case
+
+An actionable acquisition, extraction, normalization, or evidence ambiguity that requires Rico's attention. It is domain work, not merely a failed background job, and resolving it never mutates raw source versions.
+
 ## Agenda
 
 A versioned list of agenda items for exactly one council meeting. Base agendas, supplements, addenda, and corrected files are separate source records describing versions of that meeting's agenda.
