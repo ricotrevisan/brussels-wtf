@@ -18,11 +18,11 @@ A versioned list of agenda items for exactly one council meeting. Base agendas, 
 
 ## Agenda item
 
-A numbered matter scheduled for discussion or decision at exactly one council meeting. It is a meeting-specific occurrence: its wording, position, evidence, and outcome belong to that meeting.
+A numbered matter scheduled for discussion or decision at exactly one council meeting. It is a meeting-specific occurrence: its wording, position, evidence, and outcome belong to that meeting. A supplement that changes an authoritatively identified item creates another version of the same agenda item; a newly added matter creates a separate agenda item.
 
 ## Dossier
 
-A continuing real-world matter that may appear as different agenda items across multiple meetings. Agenda items may be linked to one dossier through an authoritative dossier identifier or editorial verification; model similarity alone creates only an internal candidate link.
+A continuing real-world matter that may appear as different agenda items across multiple meetings and communes. Agenda items may be linked through an authoritative dossier identifier, editorial verification, or automated matching. Automated links retain their matching provenance and can be reported publicly as incorrect.
 
 ## Proposal
 
@@ -30,11 +30,11 @@ The action described before the council has made its final decision. A proposal 
 
 ## Decision
 
-The council's documented final disposition of an agenda item, including approval, rejection, amendment, postponement, withdrawal, or another explicitly sourced outcome.
+The council's documented final disposition of an agenda item, including approval, rejection, amendment, postponement, withdrawal, or another explicitly sourced outcome. A later meeting that changes an earlier decision produces a new decision linked through the dossier; it never rewrites the historical decision. Until an authoritative final record appears, the agenda item's outcome remains unknown.
 
 ## Meeting page
 
-The publication unit for one council meeting. It contains individually addressable coverage items and moves as a whole between `draft` and `published`.
+The publication unit for one council meeting. It contains individually addressable coverage items and moves as a whole between `draft` and `published`. Upcoming coverage and later final outcomes update the same page while preserving dated revisions.
 
 ## Coverage item
 
