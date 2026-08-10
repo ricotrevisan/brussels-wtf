@@ -58,7 +58,7 @@ Public metadata describing how text was produced or reviewed. The MVP uses `AI-g
 
 ## Localized URL
 
-A permanent locale-specific URL using a BCP 47 language path and stable identity, such as `/fr-be/meetings/{id}`, `/nl-be/meetings/{id}`, or `/en/meetings/{id}`. A language-neutral URL such as `/meetings/{id}` redirects to the reader's preferred locale.
+A permanent resource URL using a stable identity and optional BCP 47 language query, such as `/meetings/{id}?lang=nl-be`. Language resolution precedence is an explicit valid `lang`, the reader's persisted selection, the browser's `Accept-Language` preference on first visit, then English. The path remains identical across languages.
 
 ## Mention
 
@@ -66,11 +66,11 @@ A reference to a person or organization within a source record. A mention does n
 
 ## Legal entity
 
-A formally registered organization identified through authoritative registry evidence. A trading name or textual mention may remain unresolved until it can be linked reliably to a legal entity.
+A formally registered organization identified by its CBE enterprise number. Establishment units and trading names belong to the legal entity; name matching alone never creates one.
 
 ## Person
 
-A natural person whose identity is supported by sufficient evidence. Sharing a name with another record is not sufficient identity evidence.
+A natural person whose identity is supported by an explicit identifier or an exact name plus at least one corroborating fact such as municipality, dated mandate, organization, or role. Ambiguous matches remain separate. Every person with a publishable sourced role may have a public page, including company managers, but only sourced role facts are exposed.
 
 ## Role
 
@@ -78,7 +78,11 @@ A sourced position held by a person or legal entity, such as council member, dir
 
 ## Relationship claim
 
-An assertion connecting people, legal entities, communes, agenda items, contracts, or roles. Every publishable relationship claim carries evidence, effective dates when known, and a verification status.
+A typed, time-bounded assertion such as a management role, ownership, council mandate, contract, donation, or declared interest. Broad company/councillor connections are derived from verified underlying facts rather than stored as vague edges. Every publishable relationship carries evidence, effective dates when known, and a verification status. New evidence closes or supersedes current status without erasing historical roles. Management never implies ownership.
+
+## Ownership suggestion
+
+A public submission proposing missing ownership information. It remains private until Rico approves its identity, relationship, and evidence; approval creates the publishable relationship. Rejection is retained to prevent the same unsupported suggestion from recurring.
 
 ## Evidence
 
