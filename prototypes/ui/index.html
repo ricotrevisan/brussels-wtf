@@ -148,7 +148,8 @@
     .action-log { margin-top: .8rem; min-height: 1.4rem; color: var(--good); font: .76rem/1.4 var(--mono); }
     .assumption { padding: .7rem; background: var(--accent-soft); border-left: 3px solid var(--accent); }
 
-    .switcher { position: fixed; z-index: 20; left: 50%; bottom: 1rem; transform: translateX(-50%); display: flex; gap: .25rem; padding: .35rem; background: rgba(27,25,22,.96); border: 1px solid var(--line); box-shadow: 0 12px 45px #000; border-radius: 5px; }
+    .switcher { position: fixed; z-index: 20; right: 1rem; bottom: 1rem; display: flex; gap: .25rem; padding: .35rem; background: rgba(27,25,22,.96); border: 1px solid var(--line); box-shadow: 0 12px 45px #000; border-radius: 5px; opacity: .72; transition: opacity .15s ease; }
+    .switcher:hover, .switcher:focus-within { opacity: 1; }
     .switcher button { font: .72rem/1 var(--mono); text-transform: uppercase; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
     [hidden] { display: none !important; }
