@@ -21,3 +21,7 @@ Use the canonical triage label vocabulary. See `docs/agents/triage-labels.md`.
 ### Domain docs
 
 This repository uses a single-context domain glossary in `CONTEXT.md` and architectural decisions under `docs/adr/`. See `docs/agents/domain.md`.
+
+### MVP implementation
+
+Before planning or implementing an MVP slice, read `docs/specs/mvp-implementation.md` and the ADRs it cites.
