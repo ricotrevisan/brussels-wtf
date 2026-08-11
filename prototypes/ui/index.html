@@ -167,7 +167,7 @@
     }
   </style>
 </head>
-<body data-variant="ledger">
+<body data-variant="timeline">
   <div class="prototype-ribbon">Throwaway prototype · fictionalized Brussels council data · not a public record</div>
   <header class="site-header">
     <a class="brand" href="./" data-home-link>brussels<span>.wtf</span></a>
@@ -244,7 +244,7 @@
     const validVariants = ['ledger','briefing','timeline'];
     const validLangs = ['fr-be','nl-be','en'];
     let state = {
-      variant: validVariants.includes(params.get('variant')) ? params.get('variant') : 'ledger',
+      variant: validVariants.includes(params.get('variant')) ? params.get('variant') : 'timeline',
       mode: params.get('mode') === 'review' ? 'review' : 'public',
       lang: validLangs.includes(params.get('lang')) ? params.get('lang') : 'en',
       communes: loadCommunes(),
@@ -274,7 +274,7 @@
 
     function readURL() {
       const q = new URLSearchParams(location.search);
-      state.variant = validVariants.includes(q.get('variant')) ? q.get('variant') : 'ledger';
+      state.variant = validVariants.includes(q.get('variant')) ? q.get('variant') : 'timeline';
       state.mode = q.get('mode') === 'review' ? 'review' : 'public';
       state.lang = validLangs.includes(q.get('lang')) ? q.get('lang') : 'en';
       document.documentElement.lang = state.lang;

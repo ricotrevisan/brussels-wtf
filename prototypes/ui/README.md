@@ -8,7 +8,7 @@ Run from the repository root:
 python3 -m http.server 4173 --directory prototypes/ui
 ```
 
-Then open <http://localhost:4173/?variant=ledger&lang=en>.
+Then open <http://localhost:4173/?variant=timeline&lang=en>. Timeline is the selected default; the other variants remain available for comparison.
 
 ## What to compare
 
