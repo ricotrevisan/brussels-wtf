@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>brussels.wtf — throwaway public + review prototype</title>
+  <style>
+    :root {
+      --ink: #f2eee6;
+      --muted: #aaa49a;
+      --dim: #777169;
+      --paper: #141311;
+      --panel: #1b1916;
+      --panel-2: #22201c;
+      --line: #39352f;
+      --accent: #e9784a;
+      --accent-soft: #40261e;
+      --good: #9cae89;
+      --warn: #d9b36c;
+      --danger: #dd837d;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --serif: Georgia, "Times New Roman", serif;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.48 var(--sans); }
+    a { color: inherit; text-decoration-color: var(--accent); text-underline-offset: .2em; }
+    button, select, textarea, input { font: inherit; }
+    button, select { color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 3px; }
+    button { cursor: pointer; padding: .5rem .72rem; }
+    button:hover, button:focus-visible, select:focus-visible, a:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    button[aria-pressed="true"], .active { border-color: var(--accent); background: var(--accent-soft); }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { font-size: clamp(2rem, 6vw, 4.8rem); line-height: .92; letter-spacing: -.055em; margin-bottom: .5rem; }
+    h2 { font-size: 1.2rem; letter-spacing: .02em; }
+    h3 { font-size: 1rem; }
+    small, .small { font-size: .78rem; }
+    .muted { color: var(--muted); }
+    .eyebrow { color: var(--accent); font: 700 .72rem/1.2 var(--mono); letter-spacing: .11em; text-transform: uppercase; }
+    .prototype-ribbon { background: var(--accent); color: #1b100b; text-align: center; padding: .33rem 1rem; font: 800 .7rem/1.2 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+    .site-header { max-width: 1440px; margin: 0 auto; padding: 1rem 2rem; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); gap: 1rem; }
+    .brand { font: 800 1.15rem/1 var(--mono); text-decoration: none; }
+    .brand span { color: var(--accent); }
+    .header-tools { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; justify-content: flex-end; }
+    .mode-toggle { display: inline-flex; }
+    .mode-toggle button { border-radius: 0; margin-left: -1px; }
+    .mode-toggle button:first-child { border-radius: 3px 0 0 3px; }
+    .mode-toggle button:last-child { border-radius: 0 3px 3px 0; }
+    main { max-width: 1440px; margin: 0 auto; padding: 2rem 2rem 8rem; }
+    .state-strip { margin: 0 0 1.5rem; padding: .55rem .75rem; border: 1px dashed var(--line); color: var(--muted); font: .72rem/1.5 var(--mono); display: flex; gap: 1.1rem; flex-wrap: wrap; }
+    .state-strip strong { color: var(--ink); font-weight: 600; }
+    .intro { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 420px); gap: 4rem; align-items: end; margin: 1rem 0 2.2rem; }
+    .intro-copy { color: var(--muted); max-width: 39rem; }
+    .commune-filter { border: 0; margin: 0; padding: 0; }
+    .commune-filter legend { margin-bottom: .6rem; }
+    .chips { display: flex; flex-wrap: wrap; gap: .4rem; }
+    .chip { display: inline-flex; align-items: center; gap: .4rem; padding: .46rem .6rem; border: 1px solid var(--line); background: var(--panel); cursor: pointer; }
+    .chip:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+    .chip input { accent-color: var(--accent); }
+    .feed-section { margin-top: 2.5rem; }
+    .section-heading { border-top: 3px solid var(--ink); padding-top: .65rem; display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; }
+    .section-heading h2 { margin: 0; }
+    .section-heading span { color: var(--muted); font-size: .8rem; }
+    .story { position: relative; }
+    .story-link { text-decoration: none; display: block; }
+    .story-link:hover h3 { color: var(--accent); }
+    .story h3 { font-size: clamp(1rem, 2vw, 1.4rem); line-height: 1.18; margin: .35rem 0; }
+    .story-meta { color: var(--muted); font: .7rem/1.4 var(--mono); text-transform: uppercase; letter-spacing: .04em; }
+    .status-proposal { color: var(--warn); }
+    .status-decision { color: var(--good); }
+    .provenance { display: flex; gap: .35rem; flex-wrap: wrap; margin-top: .7rem; }
+    .badge { display: inline-block; padding: .18rem .35rem; border: 1px solid var(--line); color: var(--muted); font: .64rem/1.3 var(--mono); text-transform: uppercase; letter-spacing: .04em; }
+    .citation { color: var(--muted); font-size: .77rem; margin-top: .65rem; }
+    .citation a { color: var(--ink); }
+    .entity-links { display: flex; gap: .8rem; flex-wrap: wrap; margin-top: .6rem; font-size: .78rem; }
+    .empty { border: 1px dashed var(--line); padding: 2rem; color: var(--muted); }
+
+    /* Ledger: compact municipal register */
+    body[data-variant="ledger"] .intro h1 { font-family: var(--serif); font-weight: 500; max-width: 850px; }
+    body[data-variant="ledger"] .ledger-grid { display: grid; grid-template-columns: 1fr; border-bottom: 1px solid var(--line); }
+    body[data-variant="ledger"] .story { display: grid; grid-template-columns: 8rem 1fr 18rem; gap: 1.25rem; border-top: 1px solid var(--line); padding: 1rem 0; align-items: start; }
+    body[data-variant="ledger"] .story h3 { font-family: var(--serif); font-weight: 500; }
+    body[data-variant="ledger"] .story .story-link { display: contents; }
+    body[data-variant="ledger"] .story-number { font: 2rem/1 var(--serif); color: var(--dim); }
+
+    /* Briefing: numbered editorial briefing with a rail */
+    body[data-variant="briefing"] { background: #111716; }
+    body[data-variant="briefing"] .intro { padding: 2rem; background: var(--panel); border-left: 6px solid var(--accent); }
+    body[data-variant="briefing"] .intro h1 { font-size: clamp(2.4rem, 7vw, 6rem); }
+    body[data-variant="briefing"] .briefing-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(250px, .7fr); gap: 2rem; }
+    body[data-variant="briefing"] .feed-section { margin-top: 0; }
+    body[data-variant="briefing"] .story { display: grid; grid-template-columns: 3.4rem minmax(0, 1fr) 12rem; gap: .8rem; padding: 1.2rem 0; border-bottom: 1px solid var(--line); }
+    body[data-variant="briefing"] .story-number { width: 2.65rem; height: 2.65rem; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: #19100c; font: 800 .8rem/1 var(--mono); }
+    body[data-variant="briefing"] .rail { border-left: 1px solid var(--line); padding-left: 1.2rem; position: sticky; top: 1rem; align-self: start; }
+    body[data-variant="briefing"] .rail section { margin-bottom: 2rem; }
+
+    /* Timeline: dated civic chronology */
+    body[data-variant="timeline"] .intro { grid-template-columns: 1fr; text-align: center; max-width: 950px; margin-left: auto; margin-right: auto; }
+    body[data-variant="timeline"] .intro-copy { margin: auto; }
+    body[data-variant="timeline"] .commune-filter { margin: 0 auto; }
+    body[data-variant="timeline"] .section-heading { border-top-width: 1px; max-width: 850px; margin: 0 auto; }
+    body[data-variant="timeline"] .timeline-track { max-width: 850px; margin: 0 auto; position: relative; padding-left: 4rem; }
+    body[data-variant="timeline"] .timeline-track::before { content: ""; position: absolute; left: 1.2rem; top: 0; bottom: 0; width: 1px; background: var(--line); }
+    body[data-variant="timeline"] .story { padding: 1.2rem 1.4rem; margin: .8rem 0; background: var(--panel); border: 1px solid var(--line); }
+    body[data-variant="timeline"] .story::before { content: ""; position: absolute; left: -3.18rem; top: 1.45rem; width: .7rem; height: .7rem; border: 3px solid var(--paper); border-radius: 50%; background: var(--accent); }
+    body[data-variant="timeline"] .story-number { position: absolute; left: -6.2rem; width: 2.3rem; color: var(--muted); font: .7rem/1.2 var(--mono); text-align: right; }
+
+    .meeting-view, .review-view { max-width: 1180px; margin: 0 auto; }
+    .back-link { display: inline-block; margin-bottom: 1.5rem; }
+    .meeting-head { border-bottom: 1px solid var(--line); padding-bottom: 1rem; margin-bottom: 2rem; }
+    .meeting-head h1 { max-width: 950px; }
+    .meeting-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(250px, .7fr); gap: 3rem; }
+    .agenda-item { padding: 1.5rem; border: 1px solid var(--line); margin-bottom: 1rem; background: var(--panel); scroll-margin-top: 1rem; }
+    .agenda-item:target { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+    .agenda-item h2 { font-family: var(--serif); font-size: 1.6rem; }
+    .official-evidence { margin: 1.2rem 0 0; padding-top: 1rem; border-top: 1px solid var(--line); }
+    .official-evidence li { margin: .45rem 0; }
+    .sidebar-card { padding: 1rem; border-top: 3px solid var(--accent); background: var(--panel); margin-bottom: 1rem; }
+    details { border-top: 1px solid var(--line); padding: .75rem 0; }
+    summary { cursor: pointer; font-weight: 700; }
+    .suggestion-form { display: grid; gap: .6rem; margin-top: .7rem; }
+    textarea, input[type="text"], input[type="email"] { width: 100%; color: var(--ink); background: #11100e; border: 1px solid var(--line); padding: .6rem; border-radius: 2px; }
+    .form-note { min-height: 1.2rem; color: var(--good); }
+
+    .review-head { display: flex; justify-content: space-between; align-items: end; gap: 1rem; border-bottom: 3px solid var(--ink); margin-bottom: 1.5rem; }
+    .review-head h1 { font-size: clamp(2.2rem, 5vw, 4rem); }
+    .review-summary { display: flex; gap: .5rem; flex-wrap: wrap; margin: 1rem 0 2rem; }
+    .count-card { background: var(--panel); border: 1px solid var(--line); padding: .7rem 1rem; min-width: 9rem; }
+    .count-card strong { display: block; font: 2rem/1 var(--mono); }
+    .inbox-table { width: 100%; border-collapse: collapse; }
+    .inbox-table th { text-align: left; color: var(--muted); font: .68rem/1.3 var(--mono); text-transform: uppercase; letter-spacing: .05em; }
+    .inbox-table th, .inbox-table td { padding: .8rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+    .inbox-row { cursor: pointer; }
+    .inbox-row:hover { background: var(--panel); }
+    .priority { color: var(--warn); }
+    .review-detail-head { display: flex; justify-content: space-between; gap: 1rem; align-items: start; margin-bottom: 1rem; }
+    .split-review { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); border: 1px solid var(--line); min-height: 480px; }
+    .source-pane, .extract-pane { background: var(--panel); padding: 1.2rem; overflow: auto; }
+    .source-document { font-family: var(--serif); background: #e8e1d2; color: #24201b; padding: 2rem; min-height: 390px; }
+    .source-document h3 { font-size: 1.4rem; }
+    .source-document mark { background: #ffc582; }
+    .extract-block { border-left: 3px solid var(--accent); padding-left: .9rem; margin: 1rem 0; }
+    .confidence { font: .7rem/1.3 var(--mono); color: var(--muted); }
+    .review-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: 1rem; }
+    .review-actions .danger { color: var(--danger); }
+    .action-log { margin-top: .8rem; min-height: 1.4rem; color: var(--good); font: .76rem/1.4 var(--mono); }
+    .assumption { padding: .7rem; background: var(--accent-soft); border-left: 3px solid var(--accent); }
+
+    .switcher { position: fixed; z-index: 20; left: 50%; bottom: 1rem; transform: translateX(-50%); display: flex; gap: .25rem; padding: .35rem; background: rgba(27,25,22,.96); border: 1px solid var(--line); box-shadow: 0 12px 45px #000; border-radius: 5px; }
+    .switcher button { font: .72rem/1 var(--mono); text-transform: uppercase; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    [hidden] { display: none !important; }
+
+    @media (max-width: 820px) {
+      .site-header, main { padding-left: 1rem; padding-right: 1rem; }
+      .intro, .meeting-grid, body[data-variant="briefing"] .briefing-layout, .split-review { grid-template-columns: 1fr; gap: 1.4rem; }
+      body[data-variant="ledger"] .story { grid-template-columns: 3rem 1fr; }
+      body[data-variant="ledger"] .story-side { grid-column: 2; }
+      body[data-variant="briefing"] .rail { position: static; border-left: 0; border-top: 1px solid var(--line); padding: 1rem 0; }
+      body[data-variant="briefing"] .story { grid-template-columns: 3.4rem minmax(0, 1fr); }
+      body[data-variant="briefing"] .story-side { grid-column: 2; }
+      .inbox-table th:nth-child(3), .inbox-table td:nth-child(3) { display: none; }
+      .review-detail-head { display: block; }
+    }
+  </style>
+</head>
+<body data-variant="ledger">
+  <div class="prototype-ribbon">Throwaway prototype · fictionalized Brussels council data · not a public record</div>
+  <header class="site-header">
+    <a class="brand" href="./" data-home-link>brussels<span>.wtf</span></a>
+    <div class="header-tools">
+      <label for="language" class="sr-only">Language</label>
+      <select id="language" aria-label="Choose language">
+        <option value="fr-be">FR</option>
+        <option value="nl-be">NL</option>
+        <option value="en">EN</option>
+      </select>
+      <div class="mode-toggle" aria-label="Interface mode">
+        <button type="button" data-mode="public">Public</button>
+        <button type="button" data-mode="review">Review</button>
+      </div>
+    </div>
+  </header>
+  <main id="app" tabindex="-1"></main>
+  <nav class="switcher" aria-label="Prototype variation">
+    <button type="button" data-variant="ledger">Ledger</button>
+    <button type="button" data-variant="briefing">Briefing</button>
+    <button type="button" data-variant="timeline">Timeline</button>
+  </nav>
+
+  <script>
+    const COMMUNES = [
+      { id: 'ixelles', name: 'Ixelles' },
+      { id: 'uccle', name: 'Uccle' },
+      { id: 'forest', name: 'Forest' },
+      { id: 'brussels', name: 'City of Brussels' }
+    ];
+
+    const COPY = {
+      en: {
+        strap: 'Council business, in plain sight.', intro: 'Track what is proposed and what was actually decided across four Brussels communes. Every claim stays connected to its evidence.',
+        filters: 'Your communes', all: 'All four selected on first visit', upcoming: 'Coming up', decided: 'What they decided',
+        upcomingHint: 'Proposals awaiting a council decision', decidedHint: 'Final outcomes found in published records', back: 'Back to all stories',
+        source: 'Official evidence', dossier: 'Dossier', people: 'People & companies', incorrect: 'This link is incorrect', ownership: 'Suggest ownership information', correction: 'Suggest a correction',
+        reviewAssumption: 'Prototype assumption: review inbox → source and extracted text side by side. This workflow is not a closed product decision.'
+      },
+      'fr-be': {
+        strap: 'Les décisions communales, au grand jour.', intro: 'Suivez ce qui est proposé et ce qui a réellement été décidé dans quatre communes bruxelloises. Chaque affirmation reste liée à sa preuve.',
+        filters: 'Vos communes', all: 'Les quatre sont sélectionnées à la première visite', upcoming: 'À venir', decided: 'Ce qu’ils ont décidé',
+        upcomingHint: 'Propositions en attente d’une décision', decidedHint: 'Décisions finales publiées', back: 'Retour à toutes les actualités',
+        source: 'Preuves officielles', dossier: 'Dossier', people: 'Personnes et entreprises', incorrect: 'Ce lien est incorrect', ownership: 'Suggérer une information de propriété', correction: 'Suggérer une correction',
+        reviewAssumption: 'Hypothèse du prototype : boîte de révision → source et texte extrait côte à côte. Ce workflow n’est pas une décision produit définitive.'
+      },
+      'nl-be': {
+        strap: 'Gemeentebesluiten, in alle openheid.', intro: 'Volg wat wordt voorgesteld en wat werkelijk werd beslist in vier Brusselse gemeenten. Elke bewering blijft verbonden met bewijs.',
+        filters: 'Uw gemeenten', all: 'Bij het eerste bezoek zijn alle vier geselecteerd', upcoming: 'Binnenkort', decided: 'Wat ze beslisten',
+        upcomingHint: 'Voorstellen die nog op een beslissing wachten', decidedHint: 'Definitieve uitkomsten in gepubliceerde bronnen', back: 'Terug naar alle verhalen',
+        source: 'Officieel bewijs', dossier: 'Dossier', people: 'Personen en bedrijven', incorrect: 'Deze link is onjuist', ownership: 'Eigendomsinformatie voorstellen', correction: 'Een correctie voorstellen',
+        reviewAssumption: 'Prototype-aanname: review-inbox → bron en geëxtraheerde tekst naast elkaar. Deze workflow is geen definitieve productbeslissing.'
+      }
+    };
+
+    const STORIES = [
+      { id:'ix-2026-09-17-42', meeting:'Ixelles council · 17 September 2026', commune:'ixelles', type:'upcoming', date:'17 Sep', item:'42', title:'A protected bike corridor is proposed for chaussée de Wavre', summary:'The mobility plan would remove 34 parking spaces and add two loading zones between place Fernand Cocq and rue du Trône.', status:'Proposal — outcome unknown', dossier:'Safer Wavre corridor', entity:'Urban Routes SRL', person:'Nadia El Mansouri', provenance:['AI-generated','machine-translated'], citation:'Agenda v2, item 42 · published 4 Sep 2026', reviewed:false },
+      { id:'bru-2026-09-21-18', meeting:'City of Brussels council · 21 September 2026', commune:'brussels', type:'upcoming', date:'21 Sep', item:'18', title:'The city may extend night buses through the canal district', summary:'Councillors will consider a twelve-month pilot linking Bockstael, Yser and the Midi station on Thursday through Saturday nights.', status:'Proposal — outcome unknown', dossier:'Canal night mobility', entity:'Transit Lab Belgium SA', person:'Sophie Van Acker', provenance:['human-reviewed'], citation:'Convocation and agenda, item 18 · published 8 Sep 2026', reviewed:true },
+      { id:'for-2026-09-22-07', meeting:'Forest council · 22 September 2026', commune:'forest', type:'upcoming', date:'22 Sep', item:'7', title:'Forest will debate a five-year lease for a youth workshop', summary:'The proposed lease covers the vacant ground floor at 81 rue de Mérode, with a reduced rent tied to free weekly workshops.', status:'Proposal — outcome unknown', dossier:'Mérode youth workshop', entity:'Atelier 81 ASBL', person:'Malik Janssens', provenance:['AI-generated','human-reviewed'], citation:'Ordre du jour, point 7 + draft lease · published 10 Sep 2026', reviewed:true },
+      { id:'ucc-2026-06-25-31', meeting:'Uccle council · 25 June 2026', commune:'uccle', type:'decided', date:'25 Jun', item:'31', title:'Uccle approved shade structures for six school playgrounds', summary:'The council approved the €740,000 procurement as proposed. Work is scheduled before summer 2027.', status:'Approved — 25 June 2026', dossier:'Cool schoolyards', entity:'Canopy Works SRL', person:'Élise De Smet', provenance:['machine-translated','human-reviewed'], citation:'Signed minutes, item 31, p. 44 · published 9 Jul 2026', reviewed:true },
+      { id:'bru-2026-06-29-11', meeting:'City of Brussels council · 29 June 2026', commune:'brussels', type:'decided', date:'29 Jun', item:'11', title:'The city postponed the Marolles waste-collection contract', summary:'Members sent the contract back to committee after an amendment requesting a labour-standards review.', status:'Postponed — 29 June 2026', dossier:'Marolles collection contract', entity:'Circular City Services SA', person:'Thomas Vercauteren', provenance:['AI-generated'], citation:'Voting record + signed minutes, item 11 · published 15 Jul 2026', reviewed:false },
+      { id:'ix-2026-07-16-56', meeting:'Ixelles council · 16 July 2026', commune:'ixelles', type:'decided', date:'16 Jul', item:'56', title:'A revised Flagey terrace plan passed with quieter closing hours', summary:'The amended rules set 23:00 weekday closing, retain midnight on Friday and Saturday, and require an evaluation after six months.', status:'Approved as amended — 16 July 2026', dossier:'Flagey evening economy', entity:'Horeca Flagey Association', person:'Camille Peeters', provenance:['human-reviewed'], citation:'Minutes, amendment A3 and vote, item 56 · published 30 Jul 2026', reviewed:true },
+      { id:'for-2026-07-21-14', meeting:'Forest council · 21 July 2026', commune:'forest', type:'decided', date:'21 Jul', item:'14', title:'Forest rejected demolition of the old Saint-Antoine depot', summary:'The sale and demolition proposal failed 14–18. The existing building remains while reuse options are studied.', status:'Rejected — 21 July 2026', dossier:'Saint-Antoine depot reuse', entity:'Brique Sud SRL', person:'Anna Claes', provenance:['AI-generated','machine-translated','human-reviewed'], citation:'Named vote and signed minutes, item 14 · published 3 Aug 2026', reviewed:true }
+    ];
+
+    const REVIEWS = [
+      { id:'rv-1042', priority:'High', commune:'Ixelles', kind:'Extraction ambiguity', title:'Agenda item 42 split across two pages', source:'Agenda v2 · 4 Sep 2026', age:'18 min' },
+      { id:'rv-1041', priority:'High', commune:'City of Brussels', kind:'Evidence link', title:'Vote record may belong to item 12, not item 11', source:'Signed minutes · 15 Jul 2026', age:'42 min' },
+      { id:'rv-1039', priority:'Normal', commune:'Forest', kind:'Dossier match', title:'Possible duplicate: Saint-Antoine depot reuse', source:'Minutes · 3 Aug 2026', age:'2 h' },
+      { id:'rv-1037', priority:'Normal', commune:'Uccle', kind:'Unsupported claim', title:'Completion date absent from source excerpt', source:'Minutes · 9 Jul 2026', age:'5 h' }
+    ];
+
+    const params = new URLSearchParams(location.search);
+    const validVariants = ['ledger','briefing','timeline'];
+    const validLangs = ['fr-be','nl-be','en'];
+    let state = {
+      variant: validVariants.includes(params.get('variant')) ? params.get('variant') : 'ledger',
+      mode: params.get('mode') === 'review' ? 'review' : 'public',
+      lang: validLangs.includes(params.get('lang')) ? params.get('lang') : 'en',
+      communes: loadCommunes(),
+      reviewId: null
+    };
+
+    function loadCommunes() {
+      try {
+        const saved = JSON.parse(localStorage.getItem('brussels-wtf-prototype-communes'));
+        if (Array.isArray(saved)) return saved.filter(id => COMMUNES.some(c => c.id === id));
+      } catch (_) {}
+      return COMMUNES.map(c => c.id);
+    }
+
+    function communeName(id) { return COMMUNES.find(c => c.id === id)?.name || id; }
+    function t() { return COPY[state.lang]; }
+    function escapeHTML(value) { return String(value).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
+
+    function setQuery(updates, options = {}) {
+      const next = new URL(location.href);
+      Object.entries(updates).forEach(([key,value]) => value ? next.searchParams.set(key,value) : next.searchParams.delete(key));
+      if (options.clearHash) next.hash = '';
+      history.pushState({}, '', next);
+      readURL();
+      render();
+    }
+
+    function readURL() {
+      const q = new URLSearchParams(location.search);
+      state.variant = validVariants.includes(q.get('variant')) ? q.get('variant') : 'ledger';
+      state.mode = q.get('mode') === 'review' ? 'review' : 'public';
+      state.lang = validLangs.includes(q.get('lang')) ? q.get('lang') : 'en';
+      document.documentElement.lang = state.lang;
+      document.body.dataset.variant = state.variant;
+    }
+
+    function stateStrip(view) {
+      return `<aside class="state-strip" aria-label="Active prototype state">
+        <span>variant <strong>${state.variant}</strong></span><span>mode <strong>${state.mode}</strong></span><span>language <strong>${state.lang}</strong></span>
+        <span>view <strong>${view}</strong></span><span>communes <strong>${state.communes.length ? state.communes.map(communeName).join(' · ') : 'none'}</strong></span>
+      </aside>`;
+    }
+
+    function filterHTML() {
+      return `<fieldset class="commune-filter"><legend class="eyebrow">${t().filters}</legend><div class="chips">
+        ${COMMUNES.map(c => `<label class="chip"><input type="checkbox" value="${c.id}" ${state.communes.includes(c.id) ? 'checked' : ''}> ${c.name}</label>`).join('')}
+      </div><div class="small muted" style="margin-top:.55rem">${t().all} · saved only in this browser</div></fieldset>`;
+    }
+
+    function provenanceHTML(story) {
+      if (!story.provenance.length) return '';
+      return `<div class="provenance" aria-label="Content provenance">${story.provenance.map(label => `<span class="badge">${label}</span>`).join('')}</div>`;
+    }
+
+    function storyHTML(story, index) {
+      const statusClass = story.type === 'upcoming' ? 'status-proposal' : 'status-decision';
+      return `<article class="story" data-commune="${story.commune}">
+        <span class="story-number" aria-hidden="true">${state.variant === 'timeline' ? story.date : String(index + 1).padStart(2,'0')}</span>
+        <a class="story-link" href="#item-${story.id}" data-story="${story.id}">
+          <div><div class="story-meta">${communeName(story.commune)} · ${story.meeting.split('·')[1]} · item ${story.item}</div>
+          <h3>${story.title}</h3><p class="muted">${story.summary}</p></div>
+        </a>
+        <div class="story-side"><div class="story-meta ${statusClass}">${story.status}</div>${provenanceHTML(story)}
+          <div class="citation">Citation: <a href="#item-${story.id}" data-story="${story.id}">${story.citation}</a></div>
+          <div class="entity-links"><a href="#dossier-${story.id}" data-story="${story.id}">${t().dossier}: ${story.dossier}</a><a href="#company-${story.id}" data-story="${story.id}">${story.entity}</a><a href="#person-${story.id}" data-story="${story.id}">${story.person}</a></div>
+        </div>
+      </article>`;
+    }
+
+    function sectionHTML(type, heading, hint) {
+      const items = STORIES.filter(s => s.type === type && state.communes.includes(s.commune));
+      return `<section class="feed-section" aria-labelledby="${type}-heading"><div class="section-heading"><h2 id="${type}-heading">${heading}</h2><span>${hint}</span></div>
+        <div class="${state.variant === 'timeline' ? 'timeline-track' : 'ledger-grid'}">${items.length ? items.map(storyHTML).join('') : `<div class="empty">No stories match your commune selection.</div>`}</div></section>`;
+    }
+
+    function railHTML() {
+      return `<aside class="rail"><section><div class="eyebrow">Reading note</div><h2>Proposal ≠ decision</h2><p class="muted">Upcoming agenda items describe what may happen. Only signed minutes or another authoritative final record establish what happened.</p></section>
+        <section><div class="eyebrow">Coverage</div><p><strong>4</strong> communes<br><strong>${STORIES.length}</strong> prototype stories<br><strong>3</strong> languages</p></section>
+        <section><div class="eyebrow">About this data</div><p class="muted">Names, companies, agenda items and dates on this screen are fictionalized for interface testing.</p></section></aside>`;
+    }
+
+    function publicHome() {
+      const sections = `${sectionHTML('upcoming', t().upcoming, t().upcomingHint)}${sectionHTML('decided', t().decided, t().decidedHint)}`;
+      return `${stateStrip('homepage')}<section class="intro"><div><div class="eyebrow">Four communes · one civic record</div><h1>${t().strap}</h1><p class="intro-copy">${t().intro}</p></div>${filterHTML()}</section>
+        ${state.variant === 'briefing' ? `<div class="briefing-layout"><div>${sections}</div>${railHTML()}</div>` : sections}`;
+    }
+
+    function meetingView(story) {
+      const companion = STORIES.find(s => s.commune === story.commune && s.id !== story.id) || STORIES[0];
+      return `<div class="meeting-view">${stateStrip(`meeting / item ${story.item}`)}<a class="back-link" href="${location.pathname}${location.search}" data-back-home>← ${t().back}</a>
+        <header class="meeting-head"><div class="eyebrow">Meeting detail · prototype data</div><h1>${story.meeting}</h1><p class="muted">Agenda items are individually addressable inside one meeting page. Highlighted item: #${story.item}.</p></header>
+        <div class="meeting-grid"><div>
+          <article class="agenda-item" id="item-${story.id}"><div class="story-meta">Item ${story.item} · ${communeName(story.commune)}</div><h2>${story.title}</h2><p>${story.summary}</p>
+            <p><strong class="${story.type === 'upcoming' ? 'status-proposal' : 'status-decision'}">${story.status}</strong></p>${provenanceHTML(story)}
+            <div class="entity-links"><a href="#dossier-${story.id}">${t().dossier}: ${story.dossier}</a><a href="#company-${story.id}">Company: ${story.entity}</a><a href="#person-${story.id}">Person: ${story.person}</a></div>
+            <section class="official-evidence"><h3>${t().source}</h3><ul><li><a href="https://example.invalid/official-source" aria-describedby="fictional-source-note">${story.citation}</a> — relevant passage: item ${story.item}, paragraphs 2–4</li><li>Retrieved 11 August 2026 · SHA-256 <code>90f3…7a1c</code></li></ul><p id="fictional-source-note" class="small muted">Prototype citation; the external URL is intentionally non-working. Official sourcing is shown as linked evidence, never as a badge.</p></section>
+          </article>
+          <article class="agenda-item" id="item-${companion.id}"><div class="story-meta">Another agenda item · item ${companion.item}</div><h2>${companion.title}</h2><p>${companion.summary}</p><a href="#item-${companion.id}" data-story="${companion.id}">Open this anchored item</a></article>
+        </div><aside>
+          <section class="sidebar-card" id="dossier-${story.id}"><div class="eyebrow">${t().dossier}</div><h2>${story.dossier}</h2><p class="muted">A continuing matter across meetings. Last updated from this meeting’s evidence.</p><a href="#dossier-timeline">View dossier timeline →</a><details><summary>${t().incorrect}</summary>${suggestionForm('link correction')}</details></section>
+          <section class="sidebar-card" id="company-${story.id}"><div class="eyebrow">Legal entity</div><h2>${story.entity}</h2><p>CBE 0XXX.XXX.XXX <span class="muted">· fictional</span></p><p class="muted">Mentioned in this item. A mention does not establish ownership or involvement.</p><a href="#company-profile">View sourced company profile →</a><details><summary>${t().ownership}</summary>${suggestionForm('ownership suggestion')}</details></section>
+          <section class="sidebar-card" id="person-${story.id}"><div class="eyebrow">Person</div><h2>${story.person}</h2><p class="muted">One sourced council mention. No inferred relationship is published.</p><a href="#person-profile">View sourced person profile →</a><details><summary>${t().correction}</summary>${suggestionForm('correction suggestion')}</details></section>
+        </aside></div></div>`;
+    }
+
+    function suggestionForm(kind) {
+      return `<form class="suggestion-form" data-suggestion="${kind}"><label>What should we check?<textarea rows="3" required placeholder="Describe the issue and include a source URL if possible"></textarea></label><label>Contact (optional, kept private)<input type="email" placeholder="you@example.org"></label><button type="submit">Send private ${kind}</button><output class="form-note" aria-live="polite"></output></form>`;
+    }
+
+    function reviewInbox() {
+      return `<div class="review-view">${stateStrip('review inbox')}<header class="review-head"><div><div class="eyebrow">Internal prototype</div><h1>Review inbox</h1></div><p class="muted">Actionable source and evidence ambiguities</p></header>
+        <p class="assumption">${t().reviewAssumption}</p><div class="review-summary"><div class="count-card"><strong>4</strong>open</div><div class="count-card"><strong>2</strong>high priority</div><div class="count-card"><strong>18m</strong>oldest high</div></div>
+        <table class="inbox-table"><thead><tr><th>Priority</th><th>Case</th><th>Source</th><th>Age</th></tr></thead><tbody>${REVIEWS.map(r => `<tr class="inbox-row" tabindex="0" role="link" data-review="${r.id}"><td class="${r.priority === 'High' ? 'priority' : ''}">${r.priority}</td><td><strong>${r.title}</strong><br><span class="small muted">${r.commune} · ${r.kind}</span></td><td>${r.source}</td><td>${r.age}</td></tr>`).join('')}</tbody></table></div>`;
+    }
+
+    function reviewDetail(review) {
+      return `<div class="review-view">${stateStrip(`review case ${review.id}`)}<a href="#" class="back-link" data-review-back>← Review inbox</a>
+        <div class="review-detail-head"><div><div class="eyebrow">${review.priority} priority · ${review.id}</div><h1>${review.title}</h1><p class="muted">${review.commune} · ${review.kind} · opened ${review.age} ago</p></div><div class="badge">Unresolved</div></div>
+        <div class="split-review"><section class="source-pane" aria-labelledby="source-pane-title"><div class="eyebrow">Source version · immutable</div><h2 id="source-pane-title">Official source</h2><div class="source-document"><p>COMMUNE D’IXELLES</p><h3>Conseil communal — Ordre du jour</h3><p><strong>42. Réaménagement de la chaussée de Wavre</strong></p><p>Le Conseil est invité à approuver le projet de piste cyclable protégée entre la place Fernand Cocq et la rue du Trône.</p><p><mark>Le projet implique la suppression de 34 emplacements de stationnement. Deux zones de livraison seront établies.</mark></p><p>Budget estimé : 1.280.000 EUR.</p><hr><p class="small">Page 11 / 12 · prototype document</p></div></section>
+          <section class="extract-pane" aria-labelledby="extract-pane-title"><div class="eyebrow">Processing run · extractor 0.7.2</div><h2 id="extract-pane-title">Extracted and normalized text</h2>
+            <div class="extract-block"><div class="confidence">BLOCK 42 · 96% confidence</div><h3>Protected cycle path on chaussée de Wavre</h3><p>Proposal to approve a protected cycle path from place Fernand Cocq to rue du Trône.</p></div>
+            <div class="extract-block"><div class="confidence">FIELD parking_spaces_removed · 71% confidence</div><p><strong>34 parking spaces removed</strong></p></div>
+            <div class="extract-block"><div class="confidence">FIELD loading_zones · 62% confidence</div><p><strong>2 loading zones</strong> — possible page-break merge with item 43.</p></div>
+            <label for="review-note">Reviewer note</label><textarea id="review-note" rows="4" placeholder="Record why you chose an action…"></textarea>
+          </section></div>
+        <div class="review-actions" role="group" aria-label="Review actions"><button data-action="Retry extraction">Retry extraction</button><button data-action="Reclassify as agenda item">Reclassify</button><button data-action="Relink source version">Relink source</button><button class="danger" data-action="Mark claim unsupported">Mark unsupported</button></div><div class="action-log" aria-live="polite">No action taken. Prototype actions do not persist.</div></div>`;
+    }
+
+    function syncControls() {
+      document.querySelector('#language').value = state.lang;
+      document.querySelectorAll('[data-mode]').forEach(b => b.setAttribute('aria-pressed', b.dataset.mode === state.mode));
+      document.querySelectorAll('[data-variant]').forEach(b => b.setAttribute('aria-pressed', b.dataset.variant === state.variant));
+      const home = document.querySelector('[data-home-link]');
+      home.href = `${location.pathname}?variant=${state.variant}&lang=${state.lang}&mode=${state.mode}`;
+    }
+
+    function render() {
+      readURL();
+      let html;
+      if (state.mode === 'review') html = state.reviewId ? reviewDetail(REVIEWS.find(r => r.id === state.reviewId) || REVIEWS[0]) : reviewInbox();
+      else {
+        const match = location.hash.match(/^#(?:item|dossier|company|person)-(.+)$/);
+        const story = match && STORIES.find(s => s.id === match[1]);
+        html = story ? meetingView(story) : publicHome();
+      }
+      document.querySelector('#app').innerHTML = html;
+      syncControls();
+      bindDynamic();
+      if (location.hash.startsWith('#item-')) requestAnimationFrame(() => document.getElementById(location.hash.slice(1))?.scrollIntoView({block:'start'}));
+    }
+
+    function bindDynamic() {
+      document.querySelectorAll('.commune-filter input').forEach(input => input.addEventListener('change', () => {
+        state.communes = [...document.querySelectorAll('.commune-filter input:checked')].map(i => i.value);
+        localStorage.setItem('brussels-wtf-prototype-communes', JSON.stringify(state.communes)); render();
+      }));
+      document.querySelectorAll('[data-story]').forEach(link => link.addEventListener('click', event => {
+        event.preventDefault(); location.hash = `item-${link.dataset.story}`; render();
+      }));
+      document.querySelector('[data-back-home]')?.addEventListener('click', event => { event.preventDefault(); history.pushState({},'',`${location.pathname}${location.search}`); render(); });
+      document.querySelectorAll('[data-suggestion]').forEach(form => form.addEventListener('submit', event => {
+        event.preventDefault(); form.querySelector('output').textContent = 'Prototype received it privately. Nothing was sent or stored.'; form.reset();
+      }));
+      document.querySelectorAll('[data-review]').forEach(row => {
+        const open = () => { state.reviewId = row.dataset.review; render(); document.querySelector('#app').focus(); };
+        row.addEventListener('click', open); row.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+      });
+      document.querySelector('[data-review-back]')?.addEventListener('click', event => { event.preventDefault(); state.reviewId = null; render(); });
+      document.querySelectorAll('[data-action]').forEach(button => button.addEventListener('click', () => {
+        const note = document.querySelector('#review-note')?.value.trim();
+        document.querySelector('.action-log').textContent = `${button.dataset.action} simulated at ${new Date().toLocaleTimeString()}${note ? ` · note: ${note}` : ''}. No data persisted.`;
+      }));
+    }
+
+    document.querySelector('#language').addEventListener('change', event => setQuery({lang:event.target.value}, {clearHash:false}));
+    document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => { state.reviewId = null; setQuery({mode:button.dataset.mode}, {clearHash:true}); }));
+    document.querySelectorAll('[data-variant]').forEach(button => button.addEventListener('click', () => setQuery({variant:button.dataset.variant}, {clearHash:false})));
+    window.addEventListener('popstate', () => { state.reviewId = null; render(); });
+    window.addEventListener('hashchange', render);
+    render();
+  </script>
+</body>
+</html>
