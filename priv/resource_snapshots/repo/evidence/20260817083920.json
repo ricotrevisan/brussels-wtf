@@ -61,7 +61,7 @@
       "type": "utc_datetime_usec"
     },
     {
-      "allow_nil?": false,
+      "allow_nil?": true,
       "default": "nil",
       "generated?": false,
       "precision": null,
@@ -71,6 +71,18 @@
       "size": null,
       "source": "checksum",
       "type": "text"
+    },
+    {
+      "allow_nil?": false,
+      "default": "false",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "synthetic",
+      "type": "boolean"
     },
     {
       "allow_nil?": false,
@@ -136,12 +148,12 @@
   "custom_indexes": [],
   "custom_statements": [],
   "has_create_action": true,
-  "hash": "DC72BF99102B9A921D391EB921917A9CDD317B08B448A006184BB4B6674D87EE",
+  "hash": "C086894EE0FB3116D28F0FC44DA991D27BD0AB58114317E16447E8EB3AB4B8D8",
   "identities": [
     {
       "all_tenants?": false,
       "base_filter": null,
-      "index_name": "evidence_source_version_for_item_index",
+      "index_name": "evidence_source_for_item_index",
       "keys": [
         {
           "type": "atom",
@@ -150,13 +162,9 @@
         {
           "type": "atom",
           "value": "citation_url"
-        },
-        {
-          "type": "atom",
-          "value": "checksum"
         }
       ],
-      "name": "source_version_for_item",
+      "name": "source_for_item",
       "nils_distinct?": true,
       "where": null
     }

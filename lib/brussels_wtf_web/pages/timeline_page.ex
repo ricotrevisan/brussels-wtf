@@ -132,11 +132,22 @@ defmodule BrusselsWtfWeb.TimelinePage do
       <div class="mt-3 flex flex-wrap gap-2" aria-label={text(@locale, :provenance)}>
         <span :for={label <- provenance_labels(@entry.provenance)} class="badge badge-outline">{label}</span>
       </div>
+      <p :if={@entry.dossiers != []} class="mt-3 text-sm">
+        {text(@locale, :dossiers)}:
+        <a
+          :for={dossier <- @entry.dossiers}
+          href={"/dossiers/#{dossier.slug}?lang=#{@locale}"}
+          class="mr-3 underline underline-offset-2"
+        >{dossier.title}</a>
+      </p>
       <p :for={evidence <- @entry.evidences} class="mt-3 text-sm">
         {text(@locale, :source)}:
         <a href={evidence.citation_url} rel="external" class="underline underline-offset-2">
           {evidence.source_title}
         </a>
+        <span :if={evidence.synthetic} class="block font-medium text-warning">
+          {text(@locale, :synthetic_reference)}
+        </span>
       </p>
     </article>
     """
@@ -166,11 +177,10 @@ defmodule BrusselsWtfWeb.TimelinePage do
   defp entry(page, item, locale) do
     variant =
       Enum.find(item.coverage_variants, &(&1.locale == locale)) ||
-        Enum.find(page.locale_variants, &(&1.locale == locale)) ||
-        List.first(item.coverage_variants) ||
-        List.first(page.locale_variants)
+        page_coverage_variant(page.locale_variants, locale)
 
     decision = loaded_or_nil(item.decision)
+    state = display_state(item, decision)
 
     %{
       commune:
@@ -179,16 +189,49 @@ defmodule BrusselsWtfWeb.TimelinePage do
       date: page.council_meeting.scheduled_on,
       item_number: item.item_number,
       title: variant.title,
-      summary: variant.summary,
+      summary: localized_summary(variant, state, locale),
       provenance: variant.provenance,
-      state: item.procedural_state,
+      state: state,
       disposition: decision && decision.disposition,
       evidences: item.evidences,
+      dossiers: Enum.map(item.dossier_links, & &1.dossier),
       href:
         "/meetings/#{page.council_meeting.commune.slug}/#{page.council_meeting.municipal_identifier}" <>
           "?lang=#{locale}##{item.stable_anchor}"
     }
   end
+
+  defp page_coverage_variant(variants, locale) do
+    case Enum.find(variants, &(&1.locale == locale)) do
+      nil ->
+        %{
+          title: text(locale, :unavailable_title),
+          summary: text(locale, :unavailable_explanation),
+          proposal_summary: nil,
+          decision_summary: nil,
+          provenance: []
+        }
+
+      variant ->
+        %{
+          title: variant.title,
+          summary: variant.summary,
+          proposal_summary: variant.summary,
+          decision_summary: nil,
+          provenance: variant.provenance
+        }
+    end
+  end
+
+  defp display_state(_item, decision) when not is_nil(decision), do: :decision
+  defp display_state(%{procedural_state: :decision}, nil), do: :unknown
+  defp display_state(item, nil), do: item.procedural_state
+
+  defp localized_summary(variant, :decision, locale),
+    do: variant.decision_summary || text(locale, :decision_copy_unavailable)
+
+  defp localized_summary(variant, _state, _locale),
+    do: variant.proposal_summary || variant.summary
 
   defp selected_communes(%{"communes_submitted" => _} = params),
     do: normalize_communes(params["commune"])
@@ -252,6 +295,12 @@ defmodule BrusselsWtfWeb.TimelinePage do
   defp en_text do
     %{
       skip: "Skip to content",
+      unavailable_title: "Coverage unavailable in English",
+      unavailable_explanation:
+        "No complete English coverage is available; no other language is substituted.",
+      decision_copy_unavailable: "Decision copy is unavailable in English.",
+      synthetic_reference: "Demonstration reference — not evidence of council activity",
+      dossiers: "Dossiers",
       title: "Council coverage",
       intro:
         "Upcoming proposals, unresolved outcomes, and documented decisions from four Brussels communes.",
@@ -275,6 +324,13 @@ defmodule BrusselsWtfWeb.TimelinePage do
   defp fr_text do
     %{
       skip: "Aller au contenu",
+      unavailable_title: "Contenu indisponible en français",
+      unavailable_explanation:
+        "Aucune version française complète n’est disponible ; aucune autre langue n’est substituée.",
+      decision_copy_unavailable: "Le texte de la décision n’est pas disponible en français.",
+      synthetic_reference:
+        "Référence de démonstration — ne constitue pas une preuve d’activité communale",
+      dossiers: "Dossiers",
       title: "Actualité des conseils communaux",
       intro:
         "Propositions à venir, résultats non documentés et décisions officielles de quatre communes bruxelloises.",
@@ -298,6 +354,12 @@ defmodule BrusselsWtfWeb.TimelinePage do
   defp nl_text do
     %{
       skip: "Naar inhoud",
+      unavailable_title: "Inhoud niet beschikbaar in het Nederlands",
+      unavailable_explanation:
+        "Er is geen volledige Nederlandse versie beschikbaar; een andere taal wordt niet ingevoegd.",
+      decision_copy_unavailable: "De beslissingstekst is niet beschikbaar in het Nederlands.",
+      synthetic_reference: "Demonstratiereferentie — geen bewijs van gemeentelijke activiteit",
+      dossiers: "Dossiers",
       title: "Nieuws uit de gemeenteraden",
       intro:
         "Komende voorstellen, niet-gedocumenteerde resultaten en officiële besluiten uit vier Brusselse gemeenten.",

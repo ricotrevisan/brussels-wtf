@@ -49,9 +49,106 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
     assert meeting =~ "Proposal"
     assert meeting =~ "Outcome unknown"
     assert meeting =~ "Continuing dossier"
-    assert meeting =~ "Retrieved"
-    assert meeting =~ "SHA-256"
+    assert meeting =~ "Demonstration reference — not evidence of council activity"
+    refute meeting =~ "SHA-256"
     assert meeting =~ "Rico Trevisan"
+  end
+
+  test "a missing requested variant never leaks another language", %{conn: conn} do
+    commune =
+      BrusselsWtf.Ingestion.create_commune!(%{
+        slug: "locale-gap",
+        name: "Locale Gap",
+        index_url: "https://example.invalid/locale-gap"
+      })
+
+    meeting =
+      BrusselsWtf.Council.upsert_meeting!(%{
+        commune_id: commune.id,
+        municipal_identifier: "incomplete",
+        scheduled_on: ~D[2026-09-20]
+      })
+
+    BrusselsWtf.Council.upsert_agenda_item!(%{
+      council_meeting_id: meeting.id,
+      item_number: "1",
+      stable_anchor: "agenda-item-1",
+      source_wording: "ENGLISH-ONLY-SENTINEL",
+      procedural_state: :proposal
+    })
+
+    page =
+      BrusselsWtf.Council.upsert_meeting_page!(%{
+        council_meeting_id: meeting.id,
+        citation_url: "https://example.invalid/locale-gap",
+        procedural_state: :proposal
+      })
+
+    BrusselsWtf.Council.upsert_locale_variant!(%{
+      meeting_page_id: page.id,
+      locale: "en",
+      title: "ENGLISH-ONLY-SENTINEL",
+      summary: "ENGLISH-ONLY-SENTINEL",
+      provenance: []
+    })
+
+    BrusselsWtf.Council.publish_meeting_page!(page)
+
+    response = get(conn, "/meetings/locale-gap/incomplete?lang=fr")
+    html = html_response(response, 200)
+
+    assert get_resp_header(response, "content-language") == ["fr"]
+    assert html =~ "Contenu indisponible en français"
+    refute html =~ "ENGLISH-ONLY-SENTINEL"
+  end
+
+  test "a decision state without a stored disposition renders as unknown, never nil", %{
+    conn: conn
+  } do
+    page =
+      BrusselsWtf.Council.list_published_meeting_pages!()
+      |> Enum.find(&(&1.council_meeting.municipal_identifier == "demo-ixelles"))
+
+    item = List.first(page.council_meeting.agenda_items)
+
+    BrusselsWtf.Council.upsert_agenda_item!(%{
+      council_meeting_id: page.council_meeting.id,
+      item_number: item.item_number,
+      stable_anchor: item.stable_anchor,
+      source_wording: item.source_wording,
+      procedural_state: :decision
+    })
+
+    document = conn |> get("/?lang=en") |> html_response(200) |> LazyHTML.from_document()
+    ixelles = document[~s(article[data-commune="ixelles"])] |> LazyHTML.text()
+
+    assert ixelles =~ "Outcome unknown"
+    refute ixelles =~ "Decision: nil"
+  end
+
+  test "stored proposal and final-decision copy remain distinct", %{conn: conn} do
+    html =
+      conn
+      |> get("/meetings/city-of-brussels/demo-brussels?lang=en")
+      |> html_response(200)
+
+    assert html =~ "The synthetic demonstration item was proposed"
+    assert html =~ "The documented synthetic disposition is approved"
+    assert html =~ "Decision: approved"
+    refute html =~ "Decision: nil"
+  end
+
+  test "dossier references are real links to a stored dossier timeline", %{conn: conn} do
+    timeline = conn |> get("/?lang=en") |> html_response(200)
+    assert timeline =~ ~s(href="/dossiers/demo-public-space?lang=en")
+
+    dossier =
+      conn |> recycle() |> get("/dossiers/demo-public-space?lang=en") |> html_response(200)
+
+    assert dossier =~ "Dossier timeline"
+    assert dossier =~ "Ixelles demonstration meeting"
+    assert dossier =~ "Uccle demonstration meeting"
+    assert dossier =~ "Rico Trevisan"
   end
 
   test "French, Dutch, and English meeting variants keep one resource identity", %{conn: conn} do

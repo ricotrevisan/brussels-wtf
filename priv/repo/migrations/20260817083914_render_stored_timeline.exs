@@ -9,7 +9,27 @@ defmodule BrusselsWtf.Repo.Migrations.RenderStoredTimeline do
 
   def up do
     alter table(:agenda_items) do
-      add :stable_anchor, :text, null: false, default: "agenda-item"
+      add :stable_anchor, :text
+    end
+
+    flush()
+
+    execute("""
+    UPDATE agenda_items
+    SET stable_anchor = concat(
+      'agenda-item-',
+      coalesce(
+        nullif(trim(both '-' from regexp_replace(lower(item_number), '[^a-z0-9]+', '-', 'g')), ''),
+        'item'
+      ),
+      '-',
+      id::text
+    )
+    WHERE stable_anchor IS NULL
+    """)
+
+    alter table(:agenda_items) do
+      modify :stable_anchor, :text, null: false
     end
 
     create unique_index(:agenda_items, [:council_meeting_id, :stable_anchor],
@@ -21,6 +41,8 @@ defmodule BrusselsWtf.Repo.Migrations.RenderStoredTimeline do
       add :locale, :text, null: false
       add :title, :text, null: false
       add :summary, :text, null: false
+      add :proposal_summary, :text
+      add :decision_summary, :text
       add :provenance, {:array, :text}, null: false, default: []
 
       add :inserted_at, :utc_datetime_usec,
@@ -132,7 +154,8 @@ defmodule BrusselsWtf.Repo.Migrations.RenderStoredTimeline do
       add :source_title, :text, null: false
       add :location, :text, null: false
       add :retrieved_at, :utc_datetime_usec, null: false
-      add :checksum, :text, null: false
+      add :checksum, :text
+      add :synthetic, :boolean, null: false, default: false
 
       add :inserted_at, :utc_datetime_usec,
         null: false,
@@ -152,8 +175,8 @@ defmodule BrusselsWtf.Repo.Migrations.RenderStoredTimeline do
           null: false
     end
 
-    create unique_index(:evidence, [:agenda_item_id, :citation_url, :checksum],
-             name: "evidence_source_version_for_item_index"
+    create unique_index(:evidence, [:agenda_item_id, :citation_url],
+             name: "evidence_source_for_item_index"
            )
 
     alter table(:meeting_pages) do
@@ -200,8 +223,8 @@ defmodule BrusselsWtf.Repo.Migrations.RenderStoredTimeline do
 
     drop constraint(:evidence, "evidence_agenda_item_id_fkey")
 
-    drop_if_exists unique_index(:evidence, [:agenda_item_id, :citation_url, :checksum],
-                     name: "evidence_source_version_for_item_index"
+    drop_if_exists unique_index(:evidence, [:agenda_item_id, :citation_url],
+                     name: "evidence_source_for_item_index"
                    )
 
     drop table(:evidence)

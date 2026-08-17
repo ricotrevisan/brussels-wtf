@@ -16,7 +16,17 @@ defmodule BrusselsWtf.Council.CoverageVariant do
 
     create :upsert do
       primary? true
-      accept [:agenda_item_id, :locale, :title, :summary, :provenance]
+
+      accept [
+        :agenda_item_id,
+        :locale,
+        :title,
+        :summary,
+        :proposal_summary,
+        :decision_summary,
+        :provenance
+      ]
+
       upsert? true
       upsert_identity :unique_locale
     end
@@ -27,6 +37,8 @@ defmodule BrusselsWtf.Council.CoverageVariant do
     attribute :locale, :string, allow_nil?: false, public?: true
     attribute :title, :string, allow_nil?: false, public?: true
     attribute :summary, :string, allow_nil?: false, public?: true
+    attribute :proposal_summary, :string, public?: true
+    attribute :decision_summary, :string, public?: true
 
     attribute :provenance, {:array, :atom} do
       allow_nil? false

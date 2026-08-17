@@ -26,7 +26,7 @@
     },
     {
       "allow_nil?": false,
-      "default": "\"agenda-item\"",
+      "default": "nil",
       "generated?": false,
       "precision": null,
       "primary_key?": false,
@@ -124,7 +124,7 @@
   "custom_indexes": [],
   "custom_statements": [],
   "has_create_action": true,
-  "hash": "DD3F0FD202409EC1C791727D4DE6213676F73507E8080DE900CA724374B222F5",
+  "hash": "D30391123170A98F2A74E03FDD1FEBF3A4D3AC7243FDDA94B8621F8748D11C8F",
   "identities": [
     {
       "all_tenants?": false,

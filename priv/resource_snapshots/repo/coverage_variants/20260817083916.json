@@ -49,6 +49,30 @@
       "type": "text"
     },
     {
+      "allow_nil?": true,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "proposal_summary",
+      "type": "text"
+    },
+    {
+      "allow_nil?": true,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "decision_summary",
+      "type": "text"
+    },
+    {
       "allow_nil?": false,
       "default": "[]",
       "generated?": false,
@@ -127,7 +151,7 @@
   "custom_indexes": [],
   "custom_statements": [],
   "has_create_action": true,
-  "hash": "6E72F9DEED7B71A41A76422FC07D8AD73EC25588581B1BA77F8DC748151C6651",
+  "hash": "3257F19319179671BD9A737846C1E7022A6E1D399ADE3430D3EC9C6DC5F8F1C8",
   "identities": [
     {
       "all_tenants?": false,

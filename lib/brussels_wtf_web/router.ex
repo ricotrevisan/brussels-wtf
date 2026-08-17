@@ -23,6 +23,7 @@ defmodule BrusselsWtfWeb.Router do
 
     dstar("/", TimelinePage)
     dstar("/meetings/:commune/:municipal_id", MeetingPage)
+    dstar("/dossiers/:slug", DossierPage)
   end
 
   if Application.compile_env(:brussels_wtf, :dev_routes) do

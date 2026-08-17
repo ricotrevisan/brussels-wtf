@@ -42,6 +42,7 @@ defmodule BrusselsWtf.Council do
 
     resource BrusselsWtf.Council.Dossier do
       define :upsert_dossier, action: :upsert
+      define :get_dossier, action: :by_slug, args: [:slug]
     end
 
     resource BrusselsWtf.Council.DossierLink do

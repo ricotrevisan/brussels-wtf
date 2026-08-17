@@ -9,18 +9,25 @@ defmodule BrusselsWtfWeb.MeetingPage do
 
     case Council.get_published_meeting_page(commune, municipal_id) do
       {:ok, page} ->
-        variant = locale_variant(page.locale_variants, locale)
+        variant = Enum.find(page.locale_variants, &(&1.locale == locale))
+        locale_available = not is_nil(variant)
         resource_path = "/meetings/#{commune}/#{municipal_id}"
 
         assign(conn,
-          page_title: variant.title,
+          page_title:
+            if(locale_available, do: variant.title, else: text(locale, :unavailable_title)),
           html_lang: locale,
           resource_path: resource_path,
           meeting_page: page,
           variant: variant,
+          locale_available: locale_available,
           locale: locale,
           commune_name: commune_name(locale, commune, page.council_meeting.commune.name),
-          items: Enum.sort_by(page.council_meeting.agenda_items, &item_sort_key/1)
+          items:
+            if(locale_available,
+              do: Enum.sort_by(page.council_meeting.agenda_items, &item_sort_key/1),
+              else: []
+            )
         )
 
       {:error, _} ->
@@ -63,7 +70,12 @@ defmodule BrusselsWtfWeb.MeetingPage do
           {format_date(@meeting_page.council_meeting.scheduled_on)}
         </time>
       </p>
-      <h1 class="mt-2 text-3xl font-semibold tracking-tight">{@variant.title}</h1>
+      <h1 class="mt-2 text-3xl font-semibold tracking-tight">
+        {if @locale_available, do: @variant.title, else: text(@locale, :unavailable_title)}
+      </h1>
+      <p :if={not @locale_available} class="mt-5 border-l-4 border-warning pl-3 leading-7">
+        {text(@locale, :unavailable_explanation)}
+      </p>
       <p :if={@meeting_page.revision_published_at} class="mt-3 text-sm text-base-content/70">
         {text(@locale, :revision)}
         <time datetime={DateTime.to_iso8601(@meeting_page.revision_published_at)}>
@@ -89,9 +101,12 @@ defmodule BrusselsWtfWeb.MeetingPage do
   defp coverage_item(assigns) do
     variant =
       Enum.find(assigns.item.coverage_variants, &(&1.locale == assigns.locale)) ||
-        locale_variant(assigns.page.locale_variants, assigns.locale)
+        page_coverage_variant(assigns.page.locale_variants, assigns.locale)
 
-    assigns = assign(assigns, :coverage_variant, variant)
+    assigns =
+      assigns
+      |> assign(:coverage_variant, variant)
+      |> assign(:display_state, display_state(assigns.item))
 
     ~H"""
     <article id={@item.stable_anchor} class="scroll-mt-4 py-7" tabindex="-1">
@@ -103,7 +118,9 @@ defmodule BrusselsWtfWeb.MeetingPage do
       <div class="mt-4 space-y-3">
         <div :if={loaded?(@item.proposal)}>
           <h3 class="font-semibold">{text(@locale, :proposal)}</h3>
-          <p class="mt-1 leading-7">{@coverage_variant.summary}</p>
+          <p class="mt-1 leading-7">
+            {proposal_copy(@coverage_variant, @display_state, @locale)}
+          </p>
         </div>
 
         <div
@@ -121,7 +138,9 @@ defmodule BrusselsWtfWeb.MeetingPage do
               loaded_value(@item.decision, :disposition)
             )}
           </h3>
-          <p class="mt-1 leading-7">{@coverage_variant.summary}</p>
+          <p class="mt-1 leading-7">
+            {@coverage_variant.decision_summary || text(@locale, :decision_copy_unavailable)}
+          </p>
         </div>
       </div>
 
@@ -137,7 +156,12 @@ defmodule BrusselsWtfWeb.MeetingPage do
       <div :if={@item.dossier_links != []} class="mt-5 text-sm">
         <p class="font-medium">{text(@locale, :dossiers)}</p>
         <ul class="mt-1 list-disc pl-5">
-          <li :for={link <- @item.dossier_links}>{link.dossier.title}</li>
+          <li :for={link <- @item.dossier_links}>
+            <a
+              href={"/dossiers/#{link.dossier.slug}?lang=#{@locale}"}
+              class="underline underline-offset-2"
+            >{link.dossier.title}</a>
+          </li>
         </ul>
       </div>
 
@@ -148,13 +172,17 @@ defmodule BrusselsWtfWeb.MeetingPage do
             <a href={evidence.citation_url} rel="external" class="underline underline-offset-2">
               {evidence.source_title}
             </a>
-            <span class="block text-base-content/70">{evidence.location}</span>
-            <span class="block text-base-content/70">
-              {text(@locale, :retrieved)}
+            <span :if={evidence.synthetic} class="block font-medium text-warning">
+              {text(@locale, :synthetic_reference)}
+            </span>
+            <span :if={not evidence.synthetic} class="block text-base-content/70">
+              {evidence.location} · {text(@locale, :retrieved)}
               <time datetime={DateTime.to_iso8601(evidence.retrieved_at)}>
                 {format_datetime(evidence.retrieved_at)}
               </time>
-              · SHA-256 <code class="break-all">{evidence.checksum}</code>
+              <%= if evidence.checksum do %>
+                · SHA-256 <code class="break-all">{evidence.checksum}</code>
+              <% end %>
             </span>
           </li>
         </ul>
@@ -168,8 +196,40 @@ defmodule BrusselsWtfWeb.MeetingPage do
     """
   end
 
-  defp locale_variant(variants, locale) do
-    Enum.find(variants, &(&1.locale == locale)) || List.first(variants)
+  defp page_coverage_variant(variants, locale) do
+    case Enum.find(variants, &(&1.locale == locale)) do
+      nil ->
+        %{
+          title: text(locale, :unavailable_title),
+          summary: text(locale, :unavailable_explanation),
+          proposal_summary: nil,
+          decision_summary: nil,
+          provenance: []
+        }
+
+      variant ->
+        %{
+          title: variant.title,
+          summary: variant.summary,
+          proposal_summary: variant.summary,
+          decision_summary: nil,
+          provenance: variant.provenance
+        }
+    end
+  end
+
+  defp proposal_copy(variant, :decision, locale),
+    do: variant.proposal_summary || text(locale, :proposal_copy_unavailable)
+
+  defp proposal_copy(variant, _state, _locale),
+    do: variant.proposal_summary || variant.summary
+
+  defp display_state(item) do
+    cond do
+      loaded?(item.decision) -> :decision
+      item.procedural_state == :decision -> :unknown
+      true -> item.procedural_state
+    end
   end
 
   defp item_sort_key(item) do
@@ -226,6 +286,12 @@ defmodule BrusselsWtfWeb.MeetingPage do
   defp en_text do
     %{
       skip: "Skip to content",
+      unavailable_title: "Coverage unavailable in English",
+      unavailable_explanation:
+        "This meeting has no complete English coverage. No text from another language is substituted.",
+      decision_copy_unavailable: "Decision copy is unavailable in English.",
+      proposal_copy_unavailable: "Proposal copy is unavailable in English.",
+      synthetic_reference: "Demonstration reference — not evidence of council activity",
       revision: "Page revision:",
       item: "Agenda item",
       proposal: "Proposal",
@@ -244,6 +310,13 @@ defmodule BrusselsWtfWeb.MeetingPage do
   defp fr_text do
     %{
       skip: "Aller au contenu",
+      unavailable_title: "Contenu indisponible en français",
+      unavailable_explanation:
+        "Cette réunion ne dispose pas d’une version française complète. Aucun texte d’une autre langue n’est substitué.",
+      decision_copy_unavailable: "Le texte de la décision n’est pas disponible en français.",
+      proposal_copy_unavailable: "Le texte de la proposition n’est pas disponible en français.",
+      synthetic_reference:
+        "Référence de démonstration — ne constitue pas une preuve d’activité communale",
       revision: "Révision de la page :",
       item: "Point",
       proposal: "Proposition",
@@ -262,6 +335,12 @@ defmodule BrusselsWtfWeb.MeetingPage do
   defp nl_text do
     %{
       skip: "Naar inhoud",
+      unavailable_title: "Inhoud niet beschikbaar in het Nederlands",
+      unavailable_explanation:
+        "Voor deze vergadering is geen volledige Nederlandse versie beschikbaar. Tekst uit een andere taal wordt niet ingevoegd.",
+      decision_copy_unavailable: "De beslissingstekst is niet beschikbaar in het Nederlands.",
+      proposal_copy_unavailable: "De voorsteltekst is niet beschikbaar in het Nederlands.",
+      synthetic_reference: "Demonstratiereferentie — geen bewijs van gemeentelijke activiteit",
       revision: "Paginarevisie:",
       item: "Agendapunt",
       proposal: "Voorstel",

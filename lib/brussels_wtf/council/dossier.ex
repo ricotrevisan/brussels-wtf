@@ -20,6 +20,27 @@ defmodule BrusselsWtf.Council.Dossier do
       upsert? true
       upsert_identity :unique_slug
     end
+
+    read :by_slug do
+      get? true
+      argument :slug, :string, allow_nil?: false
+
+      prepare build(
+                load: [
+                  dossier_links: [
+                    agenda_item: [
+                      :proposal,
+                      :decision,
+                      :evidences,
+                      :coverage_variants,
+                      council_meeting: [:commune, meeting_page: [:locale_variants]]
+                    ]
+                  ]
+                ]
+              )
+
+      filter expr(slug == ^arg(:slug))
+    end
   end
 
   attributes do

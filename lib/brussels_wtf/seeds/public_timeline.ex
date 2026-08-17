@@ -2,9 +2,9 @@ defmodule BrusselsWtf.Seeds.PublicTimeline do
   @moduledoc """
   Idempotent, visibly synthetic public records for development and acceptance tests.
 
-  The copy explicitly avoids making claims about real council activity. Citations
-  use the authoritative municipal council landing pages to exercise the public
-  evidence presentation without pretending the seed is an official record.
+  The copy explicitly avoids making claims about real council activity. Links
+  point to municipal council landing pages only to exercise citation rendering;
+  every such link is marked as a demonstration reference, not claim evidence.
   """
 
   alias BrusselsWtf.Council
@@ -24,17 +24,28 @@ defmodule BrusselsWtf.Seeds.PublicTimeline do
       disposition: nil,
       source_title: "Conseil communal d’Ixelles",
       source_wording: "Synthetic demonstration proposal — not a municipal matter",
+      proposal_statement: "Synthetic demonstration proposal — not a municipal matter",
+      decision_statement: nil,
       dossier: {"demo-public-space", "DEMO-001"},
       locales: %{
-        "en" =>
-          {"Ixelles demonstration meeting",
-           "Demonstration proposal — this is not a real municipal matter."},
-        "fr" =>
-          {"Réunion de démonstration d’Ixelles",
-           "Proposition de démonstration — il ne s’agit pas d’une affaire communale réelle."},
-        "nl" =>
-          {"Demonstratievergadering van Elsene",
-           "Demonstratievoorstel — dit is geen echte gemeentelijke zaak."}
+        "en" => %{
+          title: "Ixelles demonstration meeting",
+          proposal:
+            "This synthetic item is presented only as a proposal; it is not a real municipal matter.",
+          decision: nil
+        },
+        "fr" => %{
+          title: "Réunion de démonstration d’Ixelles",
+          proposal:
+            "Ce point synthétique est présenté uniquement comme une proposition ; il ne s’agit pas d’une affaire communale réelle.",
+          decision: nil
+        },
+        "nl" => %{
+          title: "Demonstratievergadering van Elsene",
+          proposal:
+            "Dit synthetische punt wordt alleen als voorstel getoond; het is geen echte gemeentelijke zaak.",
+          decision: nil
+        }
       }
     },
     %{
@@ -47,17 +58,25 @@ defmodule BrusselsWtf.Seeds.PublicTimeline do
       disposition: nil,
       source_title: "Conseil communal d’Uccle",
       source_wording: "Synthetic demonstration item awaiting a final record",
+      proposal_statement: "Synthetic demonstration proposal awaiting a final record",
+      decision_statement: nil,
       dossier: {"demo-public-space", "DEMO-001"},
       locales: %{
-        "en" =>
-          {"Uccle demonstration meeting",
-           "Demonstration item; no authoritative final outcome is recorded."},
-        "fr" =>
-          {"Réunion de démonstration d’Uccle",
-           "Point de démonstration ; aucun résultat final officiel n’est enregistré."},
-        "nl" =>
-          {"Demonstratievergadering van Ukkel",
-           "Demonstratiepunt; er is geen officieel eindresultaat vastgelegd."}
+        "en" => %{
+          title: "Uccle demonstration meeting",
+          proposal: "This synthetic proposal has no authoritative final outcome attached.",
+          decision: nil
+        },
+        "fr" => %{
+          title: "Réunion de démonstration d’Uccle",
+          proposal: "Aucun résultat final officiel n’est joint à cette proposition synthétique.",
+          decision: nil
+        },
+        "nl" => %{
+          title: "Demonstratievergadering van Ukkel",
+          proposal: "Aan dit synthetische voorstel is geen officieel eindresultaat gekoppeld.",
+          decision: nil
+        }
       }
     },
     %{
@@ -69,18 +88,29 @@ defmodule BrusselsWtf.Seeds.PublicTimeline do
       state: :decision,
       disposition: :postponed,
       source_title: "Conseil communal de Forest",
-      source_wording: "Synthetic demonstration decision — postponed",
+      source_wording: "Synthetic demonstration proposal before a final disposition",
+      proposal_statement: "Synthetic demonstration proposal before a final disposition",
+      decision_statement: "Synthetic demonstration final disposition — postponed",
       dossier: {"demo-facilities", "DEMO-002"},
       locales: %{
-        "en" =>
-          {"Forest demonstration meeting",
-           "Synthetic demonstration decision: postponed; not real council activity."},
-        "fr" =>
-          {"Réunion de démonstration de Forest",
-           "Décision de démonstration : reportée ; ce n’est pas une activité communale réelle."},
-        "nl" =>
-          {"Demonstratievergadering van Vorst",
-           "Demonstratiebesluit: uitgesteld; geen echte gemeentelijke activiteit."}
+        "en" => %{
+          title: "Forest demonstration meeting",
+          proposal: "The synthetic demonstration item was proposed before the final record.",
+          decision:
+            "The documented synthetic disposition is postponed; this is not real council activity."
+        },
+        "fr" => %{
+          title: "Réunion de démonstration de Forest",
+          proposal: "Le point synthétique a été proposé avant le document final.",
+          decision:
+            "Le résultat synthétique documenté est un report ; il ne s’agit pas d’une activité communale réelle."
+        },
+        "nl" => %{
+          title: "Demonstratievergadering van Vorst",
+          proposal: "Het synthetische punt werd vóór het eindverslag voorgesteld.",
+          decision:
+            "De gedocumenteerde synthetische beslissing is uitgesteld; dit is geen echte gemeentelijke activiteit."
+        }
       }
     },
     %{
@@ -92,18 +122,29 @@ defmodule BrusselsWtf.Seeds.PublicTimeline do
       state: :decision,
       disposition: :approved,
       source_title: "Conseil communal / Gemeenteraad",
-      source_wording: "Synthetic demonstration decision — approved",
+      source_wording: "Synthetic demonstration proposal before a final disposition",
+      proposal_statement: "Synthetic demonstration proposal before a final disposition",
+      decision_statement: "Synthetic demonstration final disposition — approved",
       dossier: {"demo-administration", "DEMO-003"},
       locales: %{
-        "en" =>
-          {"City of Brussels demonstration meeting",
-           "Synthetic demonstration decision: approved; not real council activity."},
-        "fr" =>
-          {"Réunion de démonstration de la Ville de Bruxelles",
-           "Décision de démonstration : approuvée ; ce n’est pas une activité communale réelle."},
-        "nl" =>
-          {"Demonstratievergadering van de Stad Brussel",
-           "Demonstratiebesluit: goedgekeurd; geen echte gemeentelijke activiteit."}
+        "en" => %{
+          title: "City of Brussels demonstration meeting",
+          proposal: "The synthetic demonstration item was proposed before the final record.",
+          decision:
+            "The documented synthetic disposition is approved; this is not real council activity."
+        },
+        "fr" => %{
+          title: "Réunion de démonstration de la Ville de Bruxelles",
+          proposal: "Le point synthétique a été proposé avant le document final.",
+          decision:
+            "Le résultat synthétique documenté est une approbation ; il ne s’agit pas d’une activité communale réelle."
+        },
+        "nl" => %{
+          title: "Demonstratievergadering van de Stad Brussel",
+          proposal: "Het synthetische punt werd vóór het eindverslag voorgesteld.",
+          decision:
+            "De gedocumenteerde synthetische beslissing is goedgekeurd; dit is geen echte gemeentelijke activiteit."
+        }
       }
     }
   ]
@@ -116,7 +157,6 @@ defmodule BrusselsWtf.Seeds.PublicTimeline do
 
   defp store_record!(record) do
     {slug, name, citation_url} = record.commune
-
     commune = Ingestion.create_commune!(%{slug: slug, name: name, index_url: citation_url})
 
     meeting =
@@ -135,13 +175,13 @@ defmodule BrusselsWtf.Seeds.PublicTimeline do
         procedural_state: record.state
       })
 
-    Council.upsert_proposal!(%{agenda_item_id: item.id, statement: record.source_wording})
+    Council.upsert_proposal!(%{agenda_item_id: item.id, statement: record.proposal_statement})
 
     if record.disposition do
       Council.upsert_decision!(%{
         agenda_item_id: item.id,
         disposition: record.disposition,
-        statement: record.source_wording
+        statement: record.decision_statement
       })
     end
 
@@ -151,22 +191,27 @@ defmodule BrusselsWtf.Seeds.PublicTimeline do
       source_title: record.source_title,
       location: "Landing page · DEMO",
       retrieved_at: @retrieved_at,
-      checksum: BrusselsWtf.Digest.sha256("synthetic evidence snapshot: #{record.source_wording}")
+      checksum: nil,
+      synthetic: true
     })
 
     {dossier_slug, dossier_title} = record.dossier
     dossier = Council.upsert_dossier!(%{slug: dossier_slug, title: dossier_title})
     Council.upsert_dossier_link!(%{agenda_item_id: item.id, dossier_id: dossier.id})
 
-    Enum.each(record.locales, fn {locale, {title, summary}} ->
+    Enum.each(record.locales, fn {locale, variant} ->
       provenance =
         if locale == "fr", do: [:ai_generated], else: [:ai_generated, :machine_translated]
+
+      summary = variant.decision || variant.proposal
 
       Council.upsert_coverage_variant!(%{
         agenda_item_id: item.id,
         locale: locale,
-        title: title,
+        title: variant.title,
         summary: summary,
+        proposal_summary: variant.proposal,
+        decision_summary: variant.decision,
         provenance: provenance
       })
     end)
@@ -179,15 +224,15 @@ defmodule BrusselsWtf.Seeds.PublicTimeline do
         revision_published_at: @revision_at
       })
 
-    Enum.each(record.locales, fn {locale, {title, summary}} ->
+    Enum.each(record.locales, fn {locale, variant} ->
       provenance =
         if locale == "fr", do: [:ai_generated], else: [:ai_generated, :machine_translated]
 
       Council.upsert_locale_variant!(%{
         meeting_page_id: page.id,
         locale: locale,
-        title: title,
-        summary: summary,
+        title: variant.title,
+        summary: variant.decision || variant.proposal,
         provenance: provenance
       })
     end)
