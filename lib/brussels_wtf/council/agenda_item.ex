@@ -22,6 +22,7 @@ defmodule BrusselsWtf.Council.AgendaItem do
       accept [
         :council_meeting_id,
         :item_number,
+        :stable_anchor,
         :authoritative_identifier,
         :source_wording,
         :current_source_version_id,
@@ -56,9 +57,9 @@ defmodule BrusselsWtf.Council.AgendaItem do
   attributes do
     uuid_v7_primary_key :id
     attribute :item_number, :string, allow_nil?: false, public?: true
+    attribute :stable_anchor, :string, allow_nil?: false, public?: true
     attribute :authoritative_identifier, :string, public?: true
     attribute :source_wording, :string, allow_nil?: false, public?: true
-
     attribute :current_version_order, :string, public?: true
 
     attribute :procedural_state, :atom do
@@ -92,9 +93,13 @@ defmodule BrusselsWtf.Council.AgendaItem do
     belongs_to :current_source_version, BrusselsWtf.Ingestion.SourceVersion, public?: true
     has_many :versions, BrusselsWtf.Council.AgendaItemVersion
     has_many :proposals, BrusselsWtf.Council.Proposal
+    has_one :decision, BrusselsWtf.Council.Decision
+    has_many :coverage_variants, BrusselsWtf.Council.CoverageVariant
+    has_many :dossier_links, BrusselsWtf.Council.DossierLink
   end
 
   identities do
     identity :unique_item, [:council_meeting_id, :item_number]
+    identity :unique_anchor, [:council_meeting_id, :stable_anchor]
   end
 end

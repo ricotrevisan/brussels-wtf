@@ -25,6 +25,7 @@ import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/brussels_wtf"
 import topbar from "../vendor/topbar"
+import {enhanceCommuneSelection} from "./reader_preferences.mjs"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
@@ -46,6 +47,10 @@ liveSocket.connect()
 // >> liveSocket.enableLatencySim(1000)  // enabled for duration of browser session
 // >> liveSocket.disableLatencySim()
 window.liveSocket = liveSocket
+
+
+// Commune filters progressively enhance the server-rendered GET form.
+enhanceCommuneSelection(window, document, localStorage)
 
 // The lines below enable quality of life phoenix_live_reload
 // development features:

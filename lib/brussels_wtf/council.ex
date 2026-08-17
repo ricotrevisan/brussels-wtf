@@ -36,10 +36,27 @@ defmodule BrusselsWtf.Council do
       define :record_evidence, action: :record
     end
 
+    resource BrusselsWtf.Council.Decision do
+      define :upsert_decision, action: :upsert
+    end
+
+    resource BrusselsWtf.Council.Dossier do
+      define :upsert_dossier, action: :upsert
+    end
+
+    resource BrusselsWtf.Council.DossierLink do
+      define :upsert_dossier_link, action: :upsert
+    end
+
+    resource BrusselsWtf.Council.CoverageVariant do
+      define :upsert_coverage_variant, action: :upsert
+    end
+
     resource BrusselsWtf.Council.MeetingPage do
       define :get_meeting_page, action: :read, get_by: [:id]
       define :upsert_meeting_page, action: :upsert
       define :publish_meeting_page, action: :publish
+      define :list_published_meeting_pages, action: :published
 
       define :get_published_meeting_page,
         action: :published_by_identity,

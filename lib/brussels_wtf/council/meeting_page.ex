@@ -18,7 +18,7 @@ defmodule BrusselsWtf.Council.MeetingPage do
 
     create :upsert do
       primary? true
-      accept [:council_meeting_id, :citation_url, :procedural_state]
+      accept [:council_meeting_id, :citation_url, :procedural_state, :revision_published_at]
       upsert? true
       upsert_identity :one_page_per_meeting
     end
@@ -26,6 +26,25 @@ defmodule BrusselsWtf.Council.MeetingPage do
     update :publish do
       accept []
       change set_attribute(:publication_status, :published)
+    end
+
+    read :published do
+      prepare build(
+                load: [
+                  :locale_variants,
+                  council_meeting: [
+                    :commune,
+                    agenda_items: [
+                      :decision,
+                      :coverage_variants,
+                      proposals: [evidence: [:source_version]],
+                      dossier_links: [:dossier]
+                    ]
+                  ]
+                ]
+              )
+
+      filter expr(publication_status == :published)
     end
 
     read :published_by_identity do
@@ -39,7 +58,12 @@ defmodule BrusselsWtf.Council.MeetingPage do
                   :locale_variants,
                   council_meeting: [
                     :commune,
-                    agenda_items: [proposals: [evidence: [:source_version]]]
+                    agenda_items: [
+                      :decision,
+                      :coverage_variants,
+                      proposals: [evidence: [:source_version]],
+                      dossier_links: [:dossier]
+                    ]
                   ]
                 ]
               )
@@ -64,6 +88,11 @@ defmodule BrusselsWtf.Council.MeetingPage do
 
     attribute :citation_url, :string do
       allow_nil? false
+      public? true
+    end
+
+    attribute :revision_published_at, :utc_datetime_usec do
+      allow_nil? true
       public? true
     end
 

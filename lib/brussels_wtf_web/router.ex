@@ -11,6 +11,7 @@ defmodule BrusselsWtfWeb.Router do
     plug Dstar.Plugs.RenameCsrfParam
     plug :protect_from_forgery
     plug :put_secure_browser_headers
+    plug BrusselsWtfWeb.Locale
   end
 
   pipeline :api do

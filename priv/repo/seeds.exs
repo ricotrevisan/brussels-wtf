@@ -20,3 +20,6 @@ Enum.each(
   ],
   &Ingestion.create_commune!/1
 )
+
+# Development-only, visibly synthetic public interface records.
+BrusselsWtf.Seeds.PublicTimeline.run!()
