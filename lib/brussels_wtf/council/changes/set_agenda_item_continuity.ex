@@ -13,6 +13,36 @@ defmodule BrusselsWtf.Council.Changes.SetAgendaItemContinuity do
         _ -> "number:#{item_number}"
       end
 
-    Ash.Changeset.force_change_attribute(changeset, :continuity_key, continuity_key)
+    changeset
+    |> Ash.Changeset.force_change_attribute(:continuity_key, continuity_key)
+    |> set_stable_anchor(continuity_key)
+  end
+
+  defp set_stable_anchor(changeset, continuity_key) do
+    case Ash.Changeset.get_attribute(changeset, :stable_anchor) do
+      value when is_binary(value) and value != "" ->
+        changeset
+
+      _ ->
+        slug =
+          continuity_key
+          |> String.replace_prefix("authoritative:", "")
+          |> String.replace_prefix("number:", "")
+          |> String.downcase()
+          |> String.replace(~r/[^a-z0-9]+/u, "-")
+          |> String.trim("-")
+          |> case do
+            "" -> "item"
+            value -> value
+          end
+
+        suffix = continuity_key |> BrusselsWtf.Digest.sha256() |> String.slice(0, 8)
+
+        Ash.Changeset.force_change_attribute(
+          changeset,
+          :stable_anchor,
+          "agenda-item-#{slug}-#{suffix}"
+        )
+    end
   end
 end

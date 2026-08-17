@@ -221,7 +221,6 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         Council.upsert_agenda_item!(%{
           council_meeting_id: meeting.id,
           item_number: candidate["item_number"],
-          stable_anchor: stable_anchor(candidate),
           authoritative_identifier: candidate["authoritative_identifier"],
           source_wording: candidate["source_wording"],
           current_source_version_id: version.id,
@@ -543,23 +542,6 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
 
   defp safe_error(reason),
     do: reason |> inspect(limit: 20, printable_limit: 500) |> String.slice(0, 1_000)
-
-  defp stable_anchor(candidate) do
-    identity = candidate["authoritative_identifier"] || candidate["item_number"]
-
-    slug =
-      identity
-      |> String.downcase()
-      |> String.replace(~r/[^a-z0-9]+/u, "-")
-      |> String.trim("-")
-      |> case do
-        "" -> "item"
-        value -> value
-      end
-
-    suffix = candidate["item_number"] |> BrusselsWtf.Digest.sha256() |> String.slice(0, 8)
-    "agenda-item-#{slug}-#{suffix}"
-  end
 
   defp current_version_order(version) do
     "#{DateTime.to_iso8601(version.first_retrieved_at)}:#{version.sha256}"

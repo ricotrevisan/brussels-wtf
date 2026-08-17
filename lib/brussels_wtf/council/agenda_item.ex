@@ -62,9 +62,10 @@ defmodule BrusselsWtf.Council.AgendaItem do
       ]
 
       change BrusselsWtf.Council.Changes.SetAgendaItemContinuity
+      change set_attribute(:current_version_order, "synthetic")
 
       upsert? true
-      upsert_identity :unique_anchor
+      upsert_identity :unique_item_continuity
       upsert_fields [:source_wording, :procedural_state, :outcome]
     end
 
