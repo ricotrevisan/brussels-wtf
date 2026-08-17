@@ -151,13 +151,18 @@ defmodule BrusselsWtf.Seeds.PublicTimeline do
 
   @spec run!() :: :ok
   def run! do
+    unless Application.get_env(:brussels_wtf, :allow_synthetic_seeds, false) do
+      raise "synthetic public timeline seeds are disabled in this environment"
+    end
+
     Enum.each(@records, &store_record!/1)
     :ok
   end
 
   defp store_record!(record) do
-    {slug, name, citation_url} = record.commune
-    commune = Ingestion.create_commune!(%{slug: slug, name: name, index_url: citation_url})
+    {slug, _name, citation_url} = record.commune
+    %{name: name, index_url: index_url} = BrusselsWtf.Communes.configuration!(slug)
+    commune = Ingestion.create_commune!(%{slug: slug, name: name, index_url: index_url})
 
     meeting =
       Council.upsert_meeting!(%{

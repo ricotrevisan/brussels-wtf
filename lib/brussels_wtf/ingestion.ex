@@ -49,7 +49,7 @@ defmodule BrusselsWtf.Ingestion do
   def poll_now(commune_slug) when is_binary(commune_slug) do
     commune = get_commune_by_slug!(commune_slug)
 
-    %{commune_id: commune.id}
+    %{commune_id: commune.id, check_key: "poll-now:#{Ecto.UUID.generate()}"}
     |> BrusselsWtf.Workers.PollCommune.new()
     |> Oban.insert()
     |> case do
@@ -60,14 +60,29 @@ defmodule BrusselsWtf.Ingestion do
 
   @doc "Runs one locator check through the public ingestion boundary."
   def check_locator(locator_id, poll_run_id) do
-    BrusselsWtf.Ingestion.Pipeline.retrieve(locator_id, poll_run_id)
+    check_locator(locator_id, poll_run_id, "poll:#{poll_run_id}:locator:#{locator_id}")
+  end
+
+  def check_locator(locator_id, poll_run_id, check_key) when is_binary(check_key) do
+    BrusselsWtf.Ingestion.Pipeline.retrieve(locator_id, poll_run_id, check_key)
   end
 
   @doc "Returns immutable source history through Ash-backed domain reads."
   def source_history!(commune_id, origin_url) when is_binary(origin_url) do
     record = get_source_record_by_origin!(commune_id, origin_url)
-    locator = commune_id |> list_locators!() |> Enum.find(&(&1.url == origin_url))
-    observations = if locator, do: list_observations!(locator.id), else: []
+
+    observations =
+      commune_id
+      |> list_locators!()
+      |> Enum.filter(&(&1.url == origin_url))
+      |> Enum.flat_map(&list_observations!(&1.id))
+      |> Enum.sort_by(fn observation ->
+        {
+          DateTime.to_unix(observation.observed_at, :microsecond),
+          DateTime.to_unix(observation.inserted_at, :microsecond),
+          observation.id
+        }
+      end)
 
     versions =
       record.versions

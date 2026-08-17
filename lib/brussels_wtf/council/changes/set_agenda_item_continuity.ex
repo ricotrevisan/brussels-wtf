@@ -3,14 +3,21 @@ defmodule BrusselsWtf.Council.Changes.SetAgendaItemContinuity do
   use Ash.Resource.Change
 
   @impl true
-  def change(changeset, _opts, _context) do
+  def change(changeset, opts, _context) do
     authoritative_identifier = Ash.Changeset.get_attribute(changeset, :authoritative_identifier)
     item_number = Ash.Changeset.get_attribute(changeset, :item_number)
 
     continuity_key =
-      case authoritative_identifier do
-        value when is_binary(value) and value != "" -> "authoritative:#{value}"
-        _ -> "number:#{item_number}"
+      case {authoritative_identifier, opts[:mode]} do
+        {value, _mode} when is_binary(value) and value != "" ->
+          "authoritative:#{value}"
+
+        {_value, :authoritative} ->
+          source_version_id = Ash.Changeset.get_attribute(changeset, :current_source_version_id)
+          "number:#{item_number}:source:#{source_version_id}"
+
+        {_value, :rendered} ->
+          "number:#{item_number}"
       end
 
     changeset

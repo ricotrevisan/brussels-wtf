@@ -181,6 +181,9 @@ defmodule BrusselsWtf.Repo.Migrations.Ticket15Rendering do
   end
 
   def down do
+    execute("DELETE FROM claim_evidence WHERE synthetic = true OR source_version_id IS NULL")
+    execute("DELETE FROM proposals WHERE synthetic = true OR source_version_id IS NULL")
+
     alter table(:proposals) do
       modify :source_version_id, :uuid, null: false
     end

@@ -14,8 +14,8 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
   @processor_version "fixture-contract-1"
   @config_hash "sha256:fixture-contract-1"
 
-  @spec discover_and_enqueue(Ecto.UUID.t()) :: :ok
-  def discover_and_enqueue(commune_id) do
+  @spec discover_and_enqueue(Ecto.UUID.t(), String.t()) :: :ok
+  def discover_and_enqueue(commune_id, check_key) do
     commune = Ingestion.get_commune!(commune_id)
     now = BrusselsWtf.Clock.utc_now()
 
@@ -38,20 +38,20 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
       {:ok, %{status: 304} = response} ->
         case existing_record(commune.id, commune.index_url) |> latest_version() do
           nil ->
-            record_observation(index_locator, poll_run.id, response,
+            record_observation(index_locator, poll_run.id, response, check_key,
               status: :failure,
               error_kind: "not_modified_without_version",
               error_message: "HTTP 304 was observed before any archived index version"
             )
 
           version ->
-            record_observation(index_locator, poll_run.id, response,
+            record_observation(index_locator, poll_run.id, response, check_key,
               status: :unchanged,
               sha256: version.sha256,
               source_version_id: version.id
             )
 
-            enqueue_document_fetches(commune.id, poll_run.id)
+            enqueue_document_fetches(commune.id, poll_run.id, check_key)
         end
 
         :ok
@@ -63,7 +63,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
 
             case adapter.discover(body, commune.index_url) do
               {:ok, discovered} ->
-                record_observation(index_locator, poll_run.id, response,
+                record_observation(index_locator, poll_run.id, response, check_key,
                   status: observation_status,
                   sha256: version.sha256,
                   source_version_id: version.id
@@ -85,11 +85,11 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
                     })
                   end)
 
-                mark_disappeared(commune.id, poll_run.id, stored, now)
-                enqueue_document_fetches(commune.id, poll_run.id)
+                mark_disappeared(commune.id, poll_run.id, check_key, stored, now)
+                enqueue_document_fetches(commune.id, poll_run.id, check_key, stored)
 
               {:error, reason} ->
-                record_observation(index_locator, poll_run.id, response,
+                record_observation(index_locator, poll_run.id, response, check_key,
                   status: :failure,
                   sha256: version.sha256,
                   source_version_id: version.id,
@@ -99,7 +99,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
             end
 
           {:error, reason} ->
-            record_observation(index_locator, poll_run.id, response,
+            record_observation(index_locator, poll_run.id, response, check_key,
               status: :failure,
               error_kind: "archive_verification_failed",
               error_message: safe_error(reason)
@@ -109,7 +109,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         :ok
 
       {:ok, response} ->
-        record_observation(index_locator, poll_run.id, response,
+        record_observation(index_locator, poll_run.id, response, check_key,
           status: :failure,
           error_kind: "http_status",
           error_message: "authoritative index returned HTTP #{response.status}"
@@ -118,13 +118,13 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         :ok
 
       {:error, failure} ->
-        record_transport_failure(index_locator, poll_run.id, failure, now)
+        record_transport_failure(index_locator, poll_run.id, check_key, failure, now)
         :ok
     end
   end
 
-  @spec retrieve(Ecto.UUID.t(), Ecto.UUID.t()) :: :ok
-  def retrieve(locator_id, poll_run_id) do
+  @spec retrieve(Ecto.UUID.t(), Ecto.UUID.t(), String.t()) :: :ok
+  def retrieve(locator_id, poll_run_id, check_key) do
     locator = Ingestion.get_locator!(locator_id)
     now = BrusselsWtf.Clock.utc_now()
 
@@ -132,14 +132,14 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
       {:ok, %{status: 304} = response} ->
         case existing_record(locator.commune_id, locator.url) |> latest_version() do
           nil ->
-            record_observation(locator, poll_run_id, response,
+            record_observation(locator, poll_run_id, response, check_key,
               status: :failure,
               error_kind: "not_modified_without_version",
               error_message: "HTTP 304 was observed before any archived source version"
             )
 
           version ->
-            record_observation(locator, poll_run_id, response,
+            record_observation(locator, poll_run_id, response, check_key,
               status: :unchanged,
               sha256: version.sha256,
               source_version_id: version.id
@@ -149,10 +149,10 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         :ok
 
       {:ok, %{status: status, body: body} = response} when status in 200..299 ->
-        archive_success(locator, poll_run_id, response, body, now)
+        archive_success(locator, poll_run_id, check_key, response, body, now)
 
       {:ok, response} ->
-        record_observation(locator, poll_run_id, response,
+        record_observation(locator, poll_run_id, response, check_key,
           status: :failure,
           error_kind: "http_status",
           error_message: "source locator returned HTTP #{response.status}"
@@ -161,7 +161,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         :ok
 
       {:error, failure} ->
-        record_transport_failure(locator, poll_run_id, failure, now)
+        record_transport_failure(locator, poll_run_id, check_key, failure, now)
         :ok
     end
   end
@@ -261,23 +261,6 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
       })
     end)
 
-    %{meeting_id: meeting.id, processing_run_id: run.id}
-    |> Workers.PublishMeeting.new()
-    |> Oban.insert!()
-
-    :ok
-  end
-
-  @spec publish(Ecto.UUID.t()) :: :ok
-  def publish(meeting_id) do
-    meeting = Ash.load!(Council.get_meeting!(meeting_id), :meeting_page)
-    page = meeting.meeting_page
-    locales = Council.list_locale_variants!(page.id)
-
-    if MapSet.new(Enum.map(locales, & &1.locale)) == MapSet.new(["fr", "nl", "en"]) do
-      Council.publish_meeting_page!(page)
-    end
-
     :ok
   end
 
@@ -309,18 +292,34 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     end
   end
 
-  defp enqueue_document_fetches(commune_id, poll_run_id) do
-    commune_id
-    |> Ingestion.list_document_locators!()
+  defp enqueue_document_fetches(commune_id, poll_run_id, check_key, locators \\ nil) do
+    locators =
+      locators ||
+        commune_id
+        |> Ingestion.list_document_locators!()
+        |> Enum.reject(&disappeared?/1)
+
+    locators
     |> Enum.filter(&(&1.role in [:agenda, :project]))
     |> Enum.each(fn locator ->
-      %{locator_id: locator.id, poll_run_id: poll_run_id}
+      %{
+        locator_id: locator.id,
+        poll_run_id: poll_run_id,
+        check_key: scheduled_check_key(check_key, locator.id)
+      }
       |> Workers.FetchLocator.new()
       |> Oban.insert!()
     end)
   end
 
-  defp archive_success(locator, poll_run_id, response, body, now) do
+  defp disappeared?(locator) do
+    case List.last(Ingestion.list_observations!(locator.id)) do
+      %{status: :disappeared} -> true
+      _ -> false
+    end
+  end
+
+  defp archive_success(locator, poll_run_id, check_key, response, body, now) do
     existing = existing_record(locator.commune_id, locator.url)
     sha256 = BrusselsWtf.Digest.sha256(body)
     existed? = existing && Enum.any?(existing.versions, &(&1.sha256 == sha256))
@@ -345,7 +344,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
             first_retrieved_at: now
           })
 
-        record_observation(locator, poll_run_id, response,
+        record_observation(locator, poll_run_id, response, check_key,
           status: if(existed?, do: :unchanged, else: :success),
           sha256: sha256,
           source_version_id: version.id
@@ -360,7 +359,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         :ok
 
       {:error, reason} ->
-        record_observation(locator, poll_run_id, response,
+        record_observation(locator, poll_run_id, response, check_key,
           status: :failure,
           error_kind: "archive_verification_failed",
           error_message: safe_error(reason)
@@ -407,7 +406,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     end)
   end
 
-  defp mark_disappeared(commune_id, poll_run_id, discovered, now) do
+  defp mark_disappeared(commune_id, poll_run_id, check_key, discovered, now) do
     discovered_ids = MapSet.new(Enum.map(discovered, & &1.id))
 
     commune_id
@@ -417,6 +416,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
       Ingestion.record_observation!(%{
         source_locator_id: locator.id,
         poll_run_id: poll_run_id,
+        check_key: scheduled_check_key(check_key, locator.id),
         observed_at: now,
         status: :disappeared,
         final_url: locator.url,
@@ -426,10 +426,11 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     end)
   end
 
-  defp record_transport_failure(locator, poll_run_id, failure, now) do
+  defp record_transport_failure(locator, poll_run_id, check_key, failure, now) do
     Ingestion.record_observation!(%{
       source_locator_id: locator.id,
       poll_run_id: poll_run_id,
+      check_key: check_key || scheduled_check_key(poll_run_id, locator.id),
       observed_at: now,
       status: :failure,
       final_url: Map.get(failure, :final_url, locator.url),
@@ -440,11 +441,12 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     })
   end
 
-  defp record_observation(locator, poll_run_id, response, attrs) do
+  defp record_observation(locator, poll_run_id, response, check_key, attrs) do
     Ingestion.record_observation!(%{
       source_locator_id: locator.id,
       source_version_id: attrs[:source_version_id],
       poll_run_id: poll_run_id,
+      check_key: check_key || scheduled_check_key(poll_run_id, locator.id),
       observed_at: BrusselsWtf.Clock.utc_now(),
       status: Keyword.fetch!(attrs, :status),
       http_status: response.status,
@@ -475,6 +477,8 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
   defp processed?(version) do
     version |> Ash.load!(:processing_runs) |> Map.fetch!(:processing_runs) |> Enum.any?()
   end
+
+  defp scheduled_check_key(check_key, locator_id), do: "#{check_key}:locator:#{locator_id}"
 
   defp conditional_options(locator_id) do
     observations = Ingestion.list_observations!(locator_id)

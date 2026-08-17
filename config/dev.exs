@@ -1,4 +1,5 @@
 import Config
+config :brussels_wtf, :allow_synthetic_seeds, true
 config :ash, policies: [show_policy_breakdowns?: true]
 
 # Configure your database

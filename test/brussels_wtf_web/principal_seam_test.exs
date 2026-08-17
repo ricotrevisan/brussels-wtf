@@ -94,13 +94,11 @@ defmodule BrusselsWtfWeb.PrincipalSeamTest do
     assert evidence.citation_url == scenario.expected.citation_url
     assert evidence.location == "Notes explicatives publiques, page 6/483"
 
+    page = meeting |> Ash.load!(:meeting_page) |> Map.fetch!(:meeting_page)
+    assert page.publication_status == :draft
+
     conn = get(conn, scenario.expected.path <> "?lang=en")
-    html = html_response(conn, 200)
-    assert html =~ scenario.expected.title_en
-    assert html =~ scenario.expected.proposal_text
-    assert html =~ "Unknown outcome"
-    assert html =~ scenario.expected.citation_url
-    assert html =~ project_hash
+    assert html_response(conn, 404) =~ "Not Found"
   end
 
   test "unchanged, changed, and failed checks append observations without overwriting bytes" do
@@ -168,10 +166,21 @@ replacement captured at the same locator"
     corrected_wording =
       "Corrected captured wording for the proposed outdoor film screening."
 
+    corrected_proposal = "Corrected current proposal text from the later source version."
+    corrected_location = "Corrected explanatory note, page 7"
+
     changed_outputs =
       scenario.sources.projects.outputs
       |> put_in([:normalize, "items", Access.at(0), "source_wording"], corrected_wording)
       |> put_in([:normalize, "items", Access.at(0), "item_number"], "44")
+      |> put_in(
+        [:normalize, "items", Access.at(0), "proposals", Access.at(0), "text"],
+        corrected_proposal
+      )
+      |> put_in(
+        [:normalize, "items", Access.at(0), "proposals", Access.at(0), "evidence", "location"],
+        corrected_location
+      )
 
     BrusselsWtf.Test.Harness.respond_with_changed_source(
       :projects,
@@ -220,6 +229,30 @@ replacement captured at the same locator"
            |> MapSet.member?(corrected_wording)
 
     assert Enum.any?(item.versions, &(&1.source_wording != corrected_wording))
+
+    Enum.each(["fr", "nl", "en"], fn locale ->
+      BrusselsWtf.Council.upsert_coverage_variant!(%{
+        agenda_item_id: item.id,
+        locale: locale,
+        title: "Current item",
+        summary: corrected_proposal,
+        proposal_summary: corrected_proposal,
+        provenance: [:human_reviewed]
+      })
+    end)
+
+    page = meeting |> Ash.load!(:meeting_page) |> Map.fetch!(:meeting_page)
+    BrusselsWtf.Council.publish_meeting_page!(page)
+
+    html =
+      build_conn()
+      |> get("/meetings/ixelles/268?lang=en")
+      |> html_response(200)
+
+    assert html =~ corrected_proposal
+    assert html =~ corrected_location
+    refute html =~ scenario.expected.proposal_text
+    refute html =~ "Notes explicatives publiques, page 6/483"
 
     BrusselsWtf.Test.Harness.fail_source(:projects, %{
       reason: :timeout,

@@ -2,7 +2,12 @@ defmodule BrusselsWtfWeb.PublicEvidence do
   @moduledoc false
 
   def proposals(%{proposals: %Ash.NotLoaded{}}), do: []
-  def proposals(%{proposals: proposals}), do: proposals
+
+  def proposals(%{proposals: proposals, current_source_version_id: current_source_version_id}) do
+    Enum.filter(proposals, fn proposal ->
+      proposal.synthetic or proposal.source_version_id == current_source_version_id
+    end)
+  end
 
   def source_proposals(item) do
     item

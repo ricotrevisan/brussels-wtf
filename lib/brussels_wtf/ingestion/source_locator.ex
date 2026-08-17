@@ -30,18 +30,11 @@ defmodule BrusselsWtf.Ingestion.SourceLocator do
         :discovered_at
       ]
 
+      change BrusselsWtf.Ingestion.Changes.SetLocatorDiscoveryKey
       upsert? true
-      upsert_identity :unique_commune_url
-
-      upsert_fields [
-        :parent_index_url,
-        :meeting_identifier,
-        :scheduled_on,
-        :role,
-        :language,
-        :observed_label,
-        :item_identifier
-      ]
+      upsert_identity :unique_discovery_context
+      upsert_fields []
+      return_skipped_upsert? true
     end
 
     read :documents_for_commune do
@@ -59,6 +52,7 @@ defmodule BrusselsWtf.Ingestion.SourceLocator do
   attributes do
     uuid_v7_primary_key :id
     attribute :url, :string, allow_nil?: false, public?: true
+    attribute :discovery_key, :string, allow_nil?: false, public?: true
     attribute :parent_index_url, :string, allow_nil?: false, public?: true
     attribute :meeting_identifier, :string, allow_nil?: false, public?: true
     attribute :scheduled_on, :date, public?: true
@@ -102,6 +96,6 @@ defmodule BrusselsWtf.Ingestion.SourceLocator do
   end
 
   identities do
-    identity :unique_commune_url, [:commune_id, :url]
+    identity :unique_discovery_context, [:commune_id, :url, :discovery_key]
   end
 end

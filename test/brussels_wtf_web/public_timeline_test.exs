@@ -6,6 +6,18 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
     :ok
   end
 
+  test "demo seeding preserves authoritative polling configuration" do
+    ixelles = BrusselsWtf.Ingestion.get_commune_by_slug!("ixelles")
+
+    assert ixelles.index_url ==
+             "https://www.ixelles.be/site/11-Ordres-du-jour-et-proces-verbaux?langue=fr"
+
+    BrusselsWtf.HTTP.Stub.put(ixelles.index_url, %{status: 503})
+    assert :ok = BrusselsWtf.Ingestion.poll_now("ixelles")
+    assert %{success: 1, failure: 0} = Oban.drain_queue(queue: :poll, with_safety: false)
+    assert [_request] = BrusselsWtf.HTTP.Stub.requests(ixelles.index_url)
+  end
+
   test "demonstration references remain explicitly synthetic and source-version free" do
     page =
       BrusselsWtf.Council.list_published_meeting_pages!()

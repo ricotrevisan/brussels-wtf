@@ -21,6 +21,7 @@ defmodule BrusselsWtf.Ingestion.RetrievalObservation do
         :source_locator_id,
         :source_version_id,
         :poll_run_id,
+        :check_key,
         :observed_at,
         :status,
         :http_status,
@@ -31,6 +32,11 @@ defmodule BrusselsWtf.Ingestion.RetrievalObservation do
         :error_kind,
         :error_message
       ]
+
+      upsert? true
+      upsert_identity :unique_locator_check
+      upsert_fields []
+      return_skipped_upsert? true
     end
 
     read :for_locator do
@@ -42,6 +48,7 @@ defmodule BrusselsWtf.Ingestion.RetrievalObservation do
 
   attributes do
     uuid_v7_primary_key :id
+    attribute :check_key, :string, allow_nil?: false, public?: true
     attribute :observed_at, :utc_datetime_usec, allow_nil?: false, public?: true
 
     attribute :status, :atom do
@@ -74,5 +81,9 @@ defmodule BrusselsWtf.Ingestion.RetrievalObservation do
       allow_nil? false
       public? true
     end
+  end
+
+  identities do
+    identity :unique_locator_check, [:source_locator_id, :check_key]
   end
 end

@@ -59,7 +59,8 @@ config :brussels_wtf,
   clock: BrusselsWtf.Clock.System,
   http: BrusselsWtf.HTTP.Req,
   archive: BrusselsWtf.Archive.Unconfigured,
-  processors: BrusselsWtf.Processors.Unimplemented
+  processors: BrusselsWtf.Processors.Unimplemented,
+  allow_synthetic_seeds: false
 
 config :brussels_wtf, Oban,
   repo: BrusselsWtf.Repo,
@@ -70,8 +71,7 @@ config :brussels_wtf, Oban,
     fetch: 2,
     extract: 1,
     ocr: 1,
-    normalize: 1,
-    publish: 1
+    normalize: 1
   ]
 
 # Configure the endpoint

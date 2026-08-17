@@ -31,7 +31,8 @@ defmodule BrusselsWtf.Council.AgendaItem do
         :outcome
       ]
 
-      change BrusselsWtf.Council.Changes.SetAgendaItemContinuity
+      change {BrusselsWtf.Council.Changes.SetAgendaItemContinuity, mode: :authoritative}
+      validate present(:current_source_version_id)
 
       upsert? true
       upsert_identity :unique_item_continuity
@@ -61,7 +62,7 @@ defmodule BrusselsWtf.Council.AgendaItem do
         :outcome
       ]
 
-      change BrusselsWtf.Council.Changes.SetAgendaItemContinuity
+      change {BrusselsWtf.Council.Changes.SetAgendaItemContinuity, mode: :rendered}
       change set_attribute(:current_version_order, "synthetic")
 
       upsert? true

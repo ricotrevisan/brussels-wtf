@@ -54,5 +54,21 @@ defmodule BrusselsWtf.Repo.Migrations.Ticket16Continuity do
     alter table(:agenda_items) do
       remove :continuity_key
     end
+
+    execute("""
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1
+        FROM agenda_items
+        GROUP BY council_meeting_id, item_number
+        HAVING count(*) > 1
+      ) THEN
+        CREATE UNIQUE INDEX IF NOT EXISTS agenda_items_unique_item_index
+          ON agenda_items (council_meeting_id, item_number);
+      END IF;
+    END
+    $$;
+    """)
   end
 end
