@@ -19,14 +19,19 @@ defmodule BrusselsWtf.Ingestion do
     resource BrusselsWtf.Ingestion.SourceLocator do
       define :get_locator, action: :read, get_by: [:id]
       define :upsert_locator, action: :upsert
+      define :list_document_locators, action: :documents_for_commune, args: [:commune_id]
+      define :list_locators, action: :for_commune, args: [:commune_id]
     end
 
     resource BrusselsWtf.Ingestion.SourceRecord do
+      define :get_source_record_by_origin, action: :by_origin, args: [:commune_id, :origin_url]
       define :upsert_source_record, action: :upsert
+      define :link_source_record_to_meeting, action: :link_meeting
     end
 
     resource BrusselsWtf.Ingestion.RetrievalObservation do
-      define :record_observation, action: :create
+      define :record_observation, action: :record
+      define :list_observations, action: :for_locator, args: [:source_locator_id]
     end
 
     resource BrusselsWtf.Ingestion.SourceVersion do
@@ -51,5 +56,32 @@ defmodule BrusselsWtf.Ingestion do
       {:ok, _job} -> :ok
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  @doc "Runs one locator check through the public ingestion boundary."
+  def check_locator(locator_id, poll_run_id) do
+    BrusselsWtf.Ingestion.Pipeline.retrieve(locator_id, poll_run_id)
+  end
+
+  @doc "Returns immutable source history through Ash-backed domain reads."
+  def source_history!(commune_id, origin_url) when is_binary(origin_url) do
+    record = get_source_record_by_origin!(commune_id, origin_url)
+    locator = commune_id |> list_document_locators!() |> Enum.find(&(&1.url == origin_url))
+    observations = if locator, do: list_observations!(locator.id), else: []
+
+    versions =
+      record.versions
+      |> Ash.load!(:processing_runs)
+      |> Enum.sort_by(& &1.first_retrieved_at, DateTime)
+
+    %{
+      source_record: record,
+      versions: versions,
+      observations: observations,
+      processing_runs:
+        versions
+        |> Enum.flat_map(& &1.processing_runs)
+        |> Enum.sort_by(& &1.inserted_at, DateTime)
+    }
   end
 end

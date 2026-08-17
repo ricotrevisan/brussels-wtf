@@ -6,8 +6,12 @@ defmodule BrusselsWtf.Communes.Adapter do
   @type locator :: %{
           url: String.t(),
           meeting_identifier: String.t(),
+          scheduled_on: Date.t(),
           role: atom(),
-          parent_index_url: String.t()
+          language: atom(),
+          observed_label: String.t(),
+          parent_index_url: String.t(),
+          item_identifier: String.t() | nil
         }
 
   @callback discover(html :: binary(), index_url :: String.t()) ::

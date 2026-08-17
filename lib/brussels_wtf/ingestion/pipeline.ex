@@ -1,53 +1,103 @@
 defmodule BrusselsWtf.Ingestion.Pipeline do
   @moduledoc """
-  Named domain steps invoked by Oban workers.
+  Commune ingestion boundary invoked by Oban workers.
 
-  Workers own I/O orchestration. These functions persist through Ash actions
-  and enqueue the next queue.
+  External I/O remains behind controllable HTTP, archive, and processor
+  adapters; all durable transitions use named Ash actions.
   """
-
-  require Ash.Query
 
   alias BrusselsWtf.Council
   alias BrusselsWtf.Ingestion
   alias BrusselsWtf.Workers
 
-  @extract_processor "extract"
-  @processor_version "skeletal-1"
-  @config_hash "none"
+  @extract_processor "native-extraction"
+  @processor_version "fixture-contract-1"
+  @config_hash "sha256:fixture-contract-1"
 
   @spec discover_and_enqueue(Ecto.UUID.t()) :: :ok
   def discover_and_enqueue(commune_id) do
     commune = Ingestion.get_commune!(commune_id)
-    adapter = BrusselsWtf.Communes.adapter!(commune.slug)
+    now = BrusselsWtf.Clock.utc_now()
 
     poll_run =
-      Ingestion.start_poll_run!(%{
+      Ingestion.start_poll_run!(%{commune_id: commune.id, started_at: now, kind: :poll_now})
+
+    index_locator =
+      Ingestion.upsert_locator!(%{
         commune_id: commune.id,
-        started_at: BrusselsWtf.Clock.utc_now(),
-        kind: :poll_now
+        url: commune.index_url,
+        parent_index_url: commune.index_url,
+        meeting_identifier: "index",
+        role: :index,
+        language: :fr,
+        observed_label: "Authoritative council index",
+        discovered_at: now
       })
 
-    {:ok, %{status: 200, body: body}} = BrusselsWtf.HTTP.get(commune.index_url)
-    {:ok, locators} = adapter.discover(body, commune.index_url)
+    prior = List.last(Ingestion.list_observations!(index_locator.id))
 
-    Enum.each(locators, fn locator ->
-      stored =
-        Ingestion.upsert_locator!(%{
-          commune_id: commune.id,
-          url: locator.url,
-          parent_index_url: locator.parent_index_url,
-          meeting_identifier: locator.meeting_identifier,
-          role: locator.role,
-          discovered_at: BrusselsWtf.Clock.utc_now()
-        })
+    case BrusselsWtf.HTTP.get(commune.index_url, conditional_options(index_locator.id)) do
+      {:ok, %{status: status, body: body} = response} when status in 200..299 ->
+        index_sha = BrusselsWtf.Digest.sha256(body)
+        adapter = BrusselsWtf.Communes.adapter!(commune.slug)
 
-      %{locator_id: stored.id, poll_run_id: poll_run.id}
-      |> Workers.FetchLocator.new()
-      |> Oban.insert!()
-    end)
+        case adapter.discover(body, commune.index_url) do
+          {:ok, discovered} ->
+            record_observation(index_locator, poll_run.id, response,
+              status: if(prior && prior.sha256 == index_sha, do: :unchanged, else: :success),
+              sha256: index_sha
+            )
 
-    :ok
+            stored =
+              Enum.map(discovered, fn locator ->
+                Ingestion.upsert_locator!(%{
+                  commune_id: commune.id,
+                  url: locator.url,
+                  parent_index_url: locator.parent_index_url,
+                  meeting_identifier: locator.meeting_identifier,
+                  scheduled_on: locator.scheduled_on,
+                  role: locator.role,
+                  language: locator.language,
+                  observed_label: locator.observed_label,
+                  item_identifier: locator.item_identifier,
+                  discovered_at: now
+                })
+              end)
+
+            mark_disappeared(commune.id, poll_run.id, stored, now)
+
+            stored
+            |> Enum.filter(&(&1.role in [:agenda, :project]))
+            |> Enum.each(fn locator ->
+              %{locator_id: locator.id, poll_run_id: poll_run.id}
+              |> Workers.FetchLocator.new()
+              |> Oban.insert!()
+            end)
+
+          {:error, reason} ->
+            record_observation(index_locator, poll_run.id, response,
+              status: :failure,
+              sha256: index_sha,
+              error_kind: "parser_failure",
+              error_message: safe_error(reason)
+            )
+        end
+
+        :ok
+
+      {:ok, response} ->
+        record_observation(index_locator, poll_run.id, response,
+          status: :failure,
+          error_kind: "http_status",
+          error_message: "authoritative index returned HTTP #{response.status}"
+        )
+
+        :ok
+
+      {:error, failure} ->
+        record_transport_failure(index_locator, poll_run.id, failure, now)
+        :ok
+    end
   end
 
   @spec retrieve(Ecto.UUID.t(), Ecto.UUID.t()) :: :ok
@@ -55,96 +105,70 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     locator = Ingestion.get_locator!(locator_id)
     now = BrusselsWtf.Clock.utc_now()
 
-    case BrusselsWtf.HTTP.get(locator.url) do
-      {:ok, %{status: 200, body: body, final_url: final_url}} ->
-        sha256 = BrusselsWtf.Digest.sha256(body)
-        {:ok, object_key} = BrusselsWtf.Archive.put(sha256, body)
+    case BrusselsWtf.HTTP.get(locator.url, conditional_options(locator.id)) do
+      {:ok, %{status: 304} = response} ->
+        case existing_record(locator.commune_id, locator.url) |> latest_version() do
+          nil ->
+            record_observation(locator, poll_run_id, response,
+              status: :failure,
+              error_kind: "not_modified_without_version",
+              error_message: "HTTP 304 was observed before any archived source version"
+            )
 
-        source_record =
-          Ingestion.upsert_source_record!(%{
-            commune_id: locator.commune_id,
-            origin_url: locator.url,
-            role: locator.role,
-            original_language: :fr
-          })
-
-        version =
-          Ingestion.upsert_source_version!(%{
-            source_record_id: source_record.id,
-            sha256: sha256,
-            byte_size: byte_size(body),
-            media_type: media_type(locator.url),
-            object_key: object_key,
-            first_retrieved_at: now
-          })
-
-        already_processed? = processed?(version.id)
-
-        Ingestion.record_observation!(%{
-          source_locator_id: locator.id,
-          poll_run_id: poll_run_id,
-          observed_at: now,
-          status: if(already_processed?, do: :unchanged, else: :success),
-          http_status: 200,
-          sha256: sha256,
-          final_url: final_url
-        })
-
-        unless already_processed? do
-          %{source_version_id: version.id}
-          |> Workers.ExtractSource.new()
-          |> Oban.insert!()
+          version ->
+            record_observation(locator, poll_run_id, response,
+              status: :unchanged,
+              sha256: version.sha256,
+              source_version_id: version.id
+            )
         end
 
         :ok
 
-      {:ok, %{status: status, final_url: final_url}} ->
-        Ingestion.record_observation!(%{
-          source_locator_id: locator.id,
-          poll_run_id: poll_run_id,
-          observed_at: now,
+      {:ok, %{status: status, body: body} = response} when status in 200..299 ->
+        archive_success(locator, poll_run_id, response, body, now)
+
+      {:ok, response} ->
+        record_observation(locator, poll_run_id, response,
           status: :failure,
-          http_status: status,
-          final_url: final_url
-        })
+          error_kind: "http_status",
+          error_message: "source locator returned HTTP #{response.status}"
+        )
 
         :ok
 
-      {:error, _reason} ->
-        Ingestion.record_observation!(%{
-          source_locator_id: locator.id,
-          poll_run_id: poll_run_id,
-          observed_at: now,
-          status: :failure
-        })
-
+      {:error, failure} ->
+        record_transport_failure(locator, poll_run_id, failure, now)
         :ok
     end
   end
 
-  @spec extract(Ecto.UUID.t()) :: :ok
+  @spec extract(Ecto.UUID.t()) :: :ok | {:error, term()}
   def extract(source_version_id) do
-    version =
-      Ash.load!(Ingestion.get_source_version!(source_version_id), :source_record)
+    version = Ash.load!(Ingestion.get_source_version!(source_version_id), :source_record)
 
-    {:ok, bytes} = BrusselsWtf.Archive.get(version.object_key)
-    {:ok, extracted} = BrusselsWtf.Processors.extract(%{sha256: version.sha256}, bytes)
+    with {:ok, bytes} <- BrusselsWtf.Archive.get(version.object_key),
+         actual when actual == version.sha256 <- BrusselsWtf.Digest.sha256(bytes),
+         {:ok, extracted} <- BrusselsWtf.Processors.extract(%{sha256: version.sha256}, bytes) do
+      run =
+        Ingestion.record_processing_run!(%{
+          source_version_id: version.id,
+          processor_name: @extract_processor,
+          processor_version: @processor_version,
+          config_hash: @config_hash,
+          status: :succeeded,
+          output: Map.put(extracted, "sha256", version.sha256)
+        })
 
-    run =
-      Ingestion.record_processing_run!(%{
-        source_version_id: version.id,
-        processor_name: @extract_processor,
-        processor_version: @processor_version,
-        config_hash: @config_hash,
-        status: :succeeded,
-        output: Map.put(extracted, "sha256", version.sha256)
-      })
+      %{processing_run_id: run.id, locator_url: version.source_record.origin_url}
+      |> Workers.NormalizeSource.new()
+      |> Oban.insert!()
 
-    %{processing_run_id: run.id, locator_url: version.source_record.origin_url}
-    |> Workers.NormalizeSource.new()
-    |> Oban.insert!()
-
-    :ok
+      :ok
+    else
+      actual when is_binary(actual) -> {:error, {:archived_hash_mismatch, version.sha256, actual}}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   @spec normalize(Ecto.UUID.t(), String.t()) :: :ok
@@ -154,7 +178,8 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         source_version: [source_record: [:commune]]
       )
 
-    source_record = run.source_version.source_record
+    version = run.source_version
+    source_record = version.source_record
     {:ok, normalized} = BrusselsWtf.Processors.normalize(run.output)
     {:ok, locales} = BrusselsWtf.Processors.generate_locales(run.output)
 
@@ -165,25 +190,42 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         scheduled_on: Date.from_iso8601!(normalized["scheduled_on"])
       })
 
-    items = List.wrap(normalized["items"])
+    Ingestion.link_source_record_to_meeting!(source_record, %{council_meeting_id: meeting.id})
+    agenda = record_agenda(normalized["agenda"], meeting, version)
 
-    Enum.each(items, fn item ->
-      Council.upsert_agenda_item!(%{
-        council_meeting_id: meeting.id,
-        item_number: item["item_number"],
-        source_wording: item["source_wording"],
-        procedural_state: procedural_state(item["kind"])
+    Enum.each(List.wrap(normalized["items"]), fn candidate ->
+      item =
+        Council.upsert_agenda_item!(%{
+          council_meeting_id: meeting.id,
+          item_number: candidate["item_number"],
+          authoritative_identifier: candidate["authoritative_identifier"],
+          source_wording: candidate["source_wording"],
+          current_source_version_id: version.id,
+          current_version_order: current_version_order(version),
+          procedural_state: :unknown,
+          outcome: :unknown
+        })
+
+      Council.record_agenda_item_version!(%{
+        agenda_item_id: item.id,
+        source_version_id: version.id,
+        agenda_id: agenda && agenda.id,
+        authoritative_identifier: candidate["authoritative_identifier"],
+        source_wording: candidate["source_wording"]
       })
-    end)
 
-    first = List.first(items) || %{}
-    procedural_state = procedural_state(first["kind"])
+      if List.wrap(candidate["proposals"]) != [] do
+        Council.mark_agenda_item_proposed!(item)
+      end
+
+      record_proposals(candidate["proposals"], item, version, citation_url)
+    end)
 
     page =
       Council.upsert_meeting_page!(%{
         council_meeting_id: meeting.id,
         citation_url: citation_url,
-        procedural_state: procedural_state
+        procedural_state: :unknown
       })
 
     Enum.each(locales, fn {locale, variant} ->
@@ -196,7 +238,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
       })
     end)
 
-    %{meeting_id: meeting.id}
+    %{meeting_id: meeting.id, processing_run_id: run.id}
     |> Workers.PublishMeeting.new()
     |> Oban.insert!()
 
@@ -208,36 +250,258 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     meeting = Ash.load!(Council.get_meeting!(meeting_id), :meeting_page)
     page = meeting.meeting_page
     locales = Council.list_locale_variants!(page.id)
-    have = MapSet.new(Enum.map(locales, & &1.locale))
 
-    if MapSet.equal?(have, MapSet.new(["fr", "nl", "en"])) do
+    if MapSet.new(Enum.map(locales, & &1.locale)) == MapSet.new(["fr", "nl", "en"]) do
       Council.publish_meeting_page!(page)
     end
 
     :ok
   end
 
-  defp processed?(source_version_id) do
-    BrusselsWtf.Ingestion.ProcessingRun
-    |> Ash.Query.filter(source_version_id == ^source_version_id)
-    |> Ash.read_one!()
-    |> is_struct()
+  defp archive_success(locator, poll_run_id, response, body, now) do
+    existing = existing_record(locator.commune_id, locator.url)
+    sha256 = BrusselsWtf.Digest.sha256(body)
+    existed? = existing && Enum.any?(existing.versions, &(&1.sha256 == sha256))
+
+    case BrusselsWtf.Archive.store(body) do
+      {:ok, %{sha256: ^sha256, object_key: object_key}} ->
+        source_record =
+          Ingestion.upsert_source_record!(%{
+            commune_id: locator.commune_id,
+            origin_url: locator.url,
+            role: locator.role,
+            original_language: locator.language
+          })
+
+        version =
+          Ingestion.upsert_source_version!(%{
+            source_record_id: source_record.id,
+            sha256: sha256,
+            byte_size: byte_size(body),
+            media_type: media_type(response, locator.url),
+            object_key: object_key,
+            first_retrieved_at: now
+          })
+
+        record_observation(locator, poll_run_id, response,
+          status: if(existed?, do: :unchanged, else: :success),
+          sha256: sha256,
+          source_version_id: version.id
+        )
+
+        unless processed?(version) do
+          %{source_version_id: version.id}
+          |> Workers.ExtractSource.new()
+          |> Oban.insert!()
+        end
+
+        :ok
+
+      {:error, reason} ->
+        record_observation(locator, poll_run_id, response,
+          status: :failure,
+          error_kind: "archive_verification_failed",
+          error_message: safe_error(reason)
+        )
+
+        :ok
+    end
   end
 
-  defp media_type(url) do
+  defp record_agenda(nil, _meeting, _version), do: nil
+
+  defp record_agenda(agenda, meeting, version) do
+    Council.record_agenda!(%{
+      council_meeting_id: meeting.id,
+      source_version_id: version.id,
+      kind: agenda_kind(agenda["kind"]),
+      language: language(agenda["language"])
+    })
+  end
+
+  defp record_proposals(proposals, item, version, citation_url) do
+    Enum.each(List.wrap(proposals), fn candidate ->
+      proposal =
+        Council.record_proposal!(%{
+          agenda_item_id: item.id,
+          source_version_id: version.id,
+          text: candidate["text"],
+          status: :proposed
+        })
+
+      if evidence = candidate["evidence"] do
+        Council.record_evidence!(%{
+          proposal_id: proposal.id,
+          source_version_id: version.id,
+          claim: :proposal,
+          excerpt: evidence["excerpt"],
+          location: evidence["location"],
+          citation_url: citation_url,
+          retrieved_at: version.first_retrieved_at,
+          applicable_from: parse_date(evidence["applicable_from"]),
+          applicable_until: parse_date(evidence["applicable_until"])
+        })
+      end
+    end)
+  end
+
+  defp mark_disappeared(commune_id, poll_run_id, discovered, now) do
+    discovered_ids = MapSet.new(Enum.map(discovered, & &1.id))
+
+    commune_id
+    |> Ingestion.list_document_locators!()
+    |> Enum.reject(&MapSet.member?(discovered_ids, &1.id))
+    |> Enum.each(fn locator ->
+      Ingestion.record_observation!(%{
+        source_locator_id: locator.id,
+        poll_run_id: poll_run_id,
+        observed_at: now,
+        status: :disappeared,
+        final_url: locator.url,
+        error_kind: "disappeared_from_index",
+        error_message: "locator was absent from the authoritative index observation"
+      })
+    end)
+  end
+
+  defp record_transport_failure(locator, poll_run_id, failure, now) do
+    Ingestion.record_observation!(%{
+      source_locator_id: locator.id,
+      poll_run_id: poll_run_id,
+      observed_at: now,
+      status: :failure,
+      final_url: Map.get(failure, :final_url, locator.url),
+      response_headers: normalize_headers(Map.get(failure, :response_headers, %{})),
+      redirect_chain: normalize_redirects(Map.get(failure, :redirect_chain, [])),
+      error_kind: error_kind(failure.reason),
+      error_message: safe_error(failure.reason)
+    })
+  end
+
+  defp record_observation(locator, poll_run_id, response, attrs) do
+    Ingestion.record_observation!(%{
+      source_locator_id: locator.id,
+      source_version_id: attrs[:source_version_id],
+      poll_run_id: poll_run_id,
+      observed_at: BrusselsWtf.Clock.utc_now(),
+      status: Keyword.fetch!(attrs, :status),
+      http_status: response.status,
+      sha256: attrs[:sha256],
+      final_url: Map.get(response, :final_url, locator.url),
+      response_headers: normalize_headers(Map.get(response, :headers, %{})),
+      redirect_chain: normalize_redirects(Map.get(response, :redirect_chain, [])),
+      error_kind: attrs[:error_kind],
+      error_message: attrs[:error_message]
+    })
+  end
+
+  defp existing_record(commune_id, url) do
+    case Ingestion.get_source_record_by_origin(commune_id, url) do
+      {:ok, record} -> record
+      _ -> nil
+    end
+  end
+
+  defp latest_version(nil), do: nil
+
+  defp latest_version(record) do
+    Enum.max_by(record.versions, &DateTime.to_unix(&1.first_retrieved_at, :microsecond), fn ->
+      nil
+    end)
+  end
+
+  defp processed?(version) do
+    version |> Ash.load!(:processing_runs) |> Map.fetch!(:processing_runs) |> Enum.any?()
+  end
+
+  defp conditional_options(locator_id) do
+    observations = Ingestion.list_observations!(locator_id)
+
+    headers =
+      %{}
+      |> put_conditional_header("if-none-match", latest_header(observations, "etag"))
+      |> put_conditional_header(
+        "if-modified-since",
+        latest_header(observations, "last-modified")
+      )
+
+    [headers: headers]
+  end
+
+  defp latest_header(observations, name) do
+    observations
+    |> Enum.reverse()
+    |> Enum.find_value(fn observation ->
+      observation.response_headers |> Map.get(name, []) |> List.first()
+    end)
+  end
+
+  defp put_conditional_header(headers, _name, nil), do: headers
+  defp put_conditional_header(headers, name, value), do: Map.put(headers, name, [value])
+
+  defp normalize_headers(headers) when is_map(headers) do
+    Map.new(headers, fn {key, value} -> {to_string(key), List.wrap(value)} end)
+  end
+
+  defp normalize_headers(headers) when is_list(headers) do
+    headers
+    |> Enum.group_by(fn {key, _} -> to_string(key) end, fn {_, value} -> value end)
+  end
+
+  defp normalize_redirects(redirects) do
+    Enum.map(redirects, fn redirect ->
+      Map.new(redirect, fn {key, value} -> {to_string(key), value} end)
+    end)
+  end
+
+  defp media_type(response, url) do
+    response
+    |> Map.get(:headers, %{})
+    |> normalize_headers()
+    |> Map.get("content-type", [])
+    |> List.first()
+    |> case do
+      nil -> media_type_from_url(url)
+      value -> value |> String.split(";", parts: 2) |> hd()
+    end
+  end
+
+  defp media_type_from_url(url) do
     cond do
       String.ends_with?(url, ".pdf") -> "application/pdf"
       String.ends_with?(url, ".html") -> "text/html"
-      true -> "text/plain"
+      true -> "application/octet-stream"
     end
   end
+
+  defp error_kind(reason) when is_atom(reason), do: Atom.to_string(reason)
+  defp error_kind({kind, _}) when is_atom(kind), do: Atom.to_string(kind)
+  defp error_kind(_), do: "transport_error"
+
+  defp safe_error(reason),
+    do: reason |> inspect(limit: 20, printable_limit: 500) |> String.slice(0, 1_000)
+
+  defp current_version_order(version) do
+    "#{DateTime.to_iso8601(version.first_retrieved_at)}:#{version.sha256}"
+  end
+
+  defp parse_date(nil), do: nil
+  defp parse_date(value), do: Date.from_iso8601!(value)
+
+  defp agenda_kind("complementary"), do: :complementary
+  defp agenda_kind("supplement"), do: :supplement
+  defp agenda_kind("addendum"), do: :addendum
+  defp agenda_kind("corrected"), do: :corrected
+  defp agenda_kind("final"), do: :final
+  defp agenda_kind(_), do: :base
+
+  defp language("fr"), do: :fr
+  defp language("nl"), do: :nl
+  defp language("en"), do: :en
+  defp language(_), do: :bilingual
 
   defp provenance_for(locale) when locale in ["nl", :nl, "en", :en],
     do: [:ai_generated, :machine_translated]
 
   defp provenance_for(_locale), do: [:ai_generated]
-
-  defp procedural_state("decision"), do: :decision
-  defp procedural_state("unknown"), do: :unknown
-  defp procedural_state(_), do: :proposal
 end

@@ -1,0 +1,22 @@
+{
+  "meeting_identifier": "268",
+  "scheduled_on": "2026-07-02",
+  "items": [
+    {
+      "item_number": "4",
+      "authoritative_identifier": "4",
+      "source_wording": "Octroi d’une subvention de projet relative à une projection en plein air du film « La venue de l’avenir ».",
+      "proposals": [
+        {
+          "text": "Octroyer une subvention de 700,00 EUR et une aide non numéraire évaluée à 5.158,00 EUR à l’asbl Libération Films Animation.",
+          "evidence": {
+            "claim": "proposal",
+            "excerpt": "DECIDE : 1. d'octroyer une subvention de projet en numéraire d'un montant de 700,00 EUR",
+            "location": "Notes explicatives publiques, page 6/483",
+            "applicable_from": "2026-07-02"
+          }
+        }
+      ]
+    }
+  ]
+}

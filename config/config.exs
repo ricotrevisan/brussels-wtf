@@ -58,7 +58,7 @@ config :brussels_wtf,
   ash_domains: [BrusselsWtf.Ingestion, BrusselsWtf.Council, BrusselsWtf.Review],
   clock: BrusselsWtf.Clock.System,
   http: BrusselsWtf.HTTP.Req,
-  archive: BrusselsWtf.Archive.Memory,
+  archive: BrusselsWtf.Archive.Unconfigured,
   processors: BrusselsWtf.Processors.Unimplemented
 
 config :brussels_wtf, Oban,

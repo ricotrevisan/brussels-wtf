@@ -30,6 +30,7 @@ defmodule BrusselsWtf.Ingestion.ProcessingRun do
 
       upsert? true
       upsert_identity :unique_processing
+      upsert_fields []
     end
   end
 

@@ -76,3 +76,6 @@ config :phoenix_live_view,
   debug_attributes: true,
   # Enable helpful, but potentially expensive runtime checks
   enable_expensive_runtime_checks: true
+
+# Local development uses an explicitly configured ephemeral private adapter.
+config :brussels_wtf, archive: BrusselsWtf.Archive.Memory

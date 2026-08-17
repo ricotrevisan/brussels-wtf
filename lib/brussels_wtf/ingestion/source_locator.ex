@@ -1,7 +1,5 @@
 defmodule BrusselsWtf.Ingestion.SourceLocator do
-  @moduledoc """
-  An exact discovered URL plus its parent index and meeting context.
-  """
+  @moduledoc "An exact discovered URL plus its parent index and meeting context."
 
   use Ash.Resource,
     otp_app: :brussels_wtf,
@@ -18,41 +16,79 @@ defmodule BrusselsWtf.Ingestion.SourceLocator do
 
     create :upsert do
       primary? true
-      accept [:commune_id, :url, :parent_index_url, :meeting_identifier, :role, :discovered_at]
+
+      accept [
+        :commune_id,
+        :url,
+        :parent_index_url,
+        :meeting_identifier,
+        :scheduled_on,
+        :role,
+        :language,
+        :observed_label,
+        :item_identifier,
+        :discovered_at
+      ]
+
       upsert? true
-      upsert_identity :unique_url
+      upsert_identity :unique_commune_url
+
+      upsert_fields [
+        :parent_index_url,
+        :meeting_identifier,
+        :scheduled_on,
+        :role,
+        :language,
+        :observed_label,
+        :item_identifier
+      ]
+    end
+
+    read :documents_for_commune do
+      argument :commune_id, :uuid, allow_nil?: false
+      filter expr(commune_id == ^arg(:commune_id) and role != :index)
+      prepare build(sort: [url: :asc])
+    end
+
+    read :for_commune do
+      argument :commune_id, :uuid, allow_nil?: false
+      filter expr(commune_id == ^arg(:commune_id))
     end
   end
 
   attributes do
     uuid_v7_primary_key :id
-
-    attribute :url, :string do
-      allow_nil? false
-      public? true
-    end
-
-    attribute :parent_index_url, :string do
-      allow_nil? false
-      public? true
-    end
-
-    attribute :meeting_identifier, :string do
-      allow_nil? false
-      public? true
-    end
+    attribute :url, :string, allow_nil?: false, public?: true
+    attribute :parent_index_url, :string, allow_nil?: false, public?: true
+    attribute :meeting_identifier, :string, allow_nil?: false, public?: true
+    attribute :scheduled_on, :date, public?: true
 
     attribute :role, :atom do
       allow_nil? false
       public? true
-      constraints one_of: [:agenda, :supplement, :addendum, :minutes, :register]
+
+      constraints one_of: [
+                    :index,
+                    :agenda,
+                    :project,
+                    :supplement,
+                    :addendum,
+                    :minutes,
+                    :register,
+                    :recording
+                  ]
     end
 
-    attribute :discovered_at, :utc_datetime_usec do
+    attribute :language, :atom do
       allow_nil? false
       public? true
+      default :bilingual
+      constraints one_of: [:fr, :nl, :en, :bilingual]
     end
 
+    attribute :observed_label, :string, public?: true
+    attribute :item_identifier, :string, public?: true
+    attribute :discovered_at, :utc_datetime_usec, allow_nil?: false, public?: true
     timestamps()
   end
 
@@ -61,9 +97,11 @@ defmodule BrusselsWtf.Ingestion.SourceLocator do
       allow_nil? false
       public? true
     end
+
+    has_many :observations, BrusselsWtf.Ingestion.RetrievalObservation
   end
 
   identities do
-    identity :unique_url, [:url]
+    identity :unique_commune_url, [:commune_id, :url]
   end
 end

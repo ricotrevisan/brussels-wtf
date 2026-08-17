@@ -20,8 +20,14 @@ defmodule BrusselsWtf.Archive.Memory do
   @impl true
   def put(sha256, bytes) do
     key = BrusselsWtf.Archive.object_key(sha256)
-    Agent.update(__MODULE__, &Map.put(&1, key, bytes))
-    {:ok, key}
+
+    Agent.get_and_update(__MODULE__, fn objects ->
+      case Map.fetch(objects, key) do
+        :error -> {{:ok, key}, Map.put(objects, key, bytes)}
+        {:ok, ^bytes} -> {{:ok, key}, objects}
+        {:ok, _different_bytes} -> {{:error, :content_address_collision}, objects}
+      end
+    end)
   end
 
   @impl true

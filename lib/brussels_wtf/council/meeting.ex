@@ -16,6 +16,19 @@ defmodule BrusselsWtf.Council.Meeting do
   actions do
     defaults [:read]
 
+    read :ingested_by_identity do
+      get? true
+      argument :commune_slug, :string, allow_nil?: false
+      argument :municipal_identifier, :string, allow_nil?: false
+
+      filter expr(
+               municipal_identifier == ^arg(:municipal_identifier) and
+                 commune.slug == ^arg(:commune_slug)
+             )
+
+      prepare build(load: [:commune, :agendas, agenda_items: [:versions, proposals: [:evidence]]])
+    end
+
     create :upsert do
       primary? true
       accept [:commune_id, :municipal_identifier, :scheduled_on]
@@ -51,6 +64,10 @@ defmodule BrusselsWtf.Council.Meeting do
     end
 
     has_many :agenda_items, BrusselsWtf.Council.AgendaItem do
+      destination_attribute :council_meeting_id
+    end
+
+    has_many :agendas, BrusselsWtf.Council.Agenda do
       destination_attribute :council_meeting_id
     end
   end

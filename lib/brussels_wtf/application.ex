@@ -37,6 +37,7 @@ defmodule BrusselsWtf.Application do
   defp archive_children do
     case Application.get_env(:brussels_wtf, :archive) do
       BrusselsWtf.Archive.Memory -> [BrusselsWtf.Archive.Memory]
+      BrusselsWtf.Archive.Unconfigured -> [BrusselsWtf.Archive.Unconfigured]
       _ -> []
     end
   end

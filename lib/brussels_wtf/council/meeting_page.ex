@@ -34,7 +34,15 @@ defmodule BrusselsWtf.Council.MeetingPage do
       argument :commune_slug, :string, allow_nil?: false
       argument :municipal_identifier, :string, allow_nil?: false
 
-      prepare build(load: [:locale_variants, council_meeting: [:commune]])
+      prepare build(
+                load: [
+                  :locale_variants,
+                  council_meeting: [
+                    :commune,
+                    agenda_items: [proposals: [evidence: [:source_version]]]
+                  ]
+                ]
+              )
 
       filter expr(
                publication_status == :published and

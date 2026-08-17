@@ -1,7 +1,5 @@
 defmodule BrusselsWtf.Ingestion.SourceVersion do
-  @moduledoc """
-  An immutable byte snapshot identified by SHA-256.
-  """
+  @moduledoc "An immutable byte snapshot identified by SHA-256."
 
   use Ash.Resource,
     otp_app: :brussels_wtf,
@@ -30,37 +28,17 @@ defmodule BrusselsWtf.Ingestion.SourceVersion do
 
       upsert? true
       upsert_identity :unique_source_record_hash
+      upsert_fields []
     end
   end
 
   attributes do
     uuid_v7_primary_key :id
-
-    attribute :sha256, :string do
-      allow_nil? false
-      public? true
-    end
-
-    attribute :byte_size, :integer do
-      allow_nil? false
-      public? true
-    end
-
-    attribute :media_type, :string do
-      allow_nil? false
-      public? true
-    end
-
-    attribute :object_key, :string do
-      allow_nil? false
-      public? true
-    end
-
-    attribute :first_retrieved_at, :utc_datetime_usec do
-      allow_nil? false
-      public? true
-    end
-
+    attribute :sha256, :string, allow_nil?: false, public?: true
+    attribute :byte_size, :integer, allow_nil?: false, public?: true
+    attribute :media_type, :string, allow_nil?: false, public?: true
+    attribute :object_key, :string, allow_nil?: false, public?: true
+    attribute :first_retrieved_at, :utc_datetime_usec, allow_nil?: false, public?: true
     timestamps()
   end
 
@@ -69,6 +47,9 @@ defmodule BrusselsWtf.Ingestion.SourceVersion do
       allow_nil? false
       public? true
     end
+
+    has_many :processing_runs, BrusselsWtf.Ingestion.ProcessingRun
+    has_many :observations, BrusselsWtf.Ingestion.RetrievalObservation
   end
 
   identities do

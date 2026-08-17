@@ -1,12 +1,71 @@
 {
   "commune": "ixelles",
-  "meeting_identifier": "fixture-1",
-  "index_url": "https://fixtures.test/ixelles/meetings/fixture-1",
-  "source_url": "https://fixtures.test/ixelles/meetings/fixture-1/agenda.txt",
-  "source_path": "sources/agenda.txt",
-  "observed_at": "2026-03-01T10:00:00Z",
+  "meeting_identifier": "268",
+  "index_url": "https://www.ixelles.be/site/11-Ordres-du-jour-et-proces-verbaux?langue=fr",
+  "observed_at": "2026-08-10T10:00:00Z",
+  "index_response": {
+    "headers": {
+      "content-type": [
+        "text/html; charset=UTF-8"
+      ],
+      "etag": [
+        "\"captured-index-268\""
+      ]
+    }
+  },
+  "sources": [
+    {
+      "name": "agenda",
+      "url": "https://www.ixelles.be/uploads/conseil/odj/268.pdf",
+      "fixture_path": "sources/268-agenda.extract.txt",
+      "processor_path": "processors/agenda",
+      "headers": {
+        "content-type": [
+          "application/pdf"
+        ],
+        "etag": [
+          "\"34de8-6558c5680f90c\""
+        ],
+        "last-modified": [
+          "Wed, 01 Jul 2026 13:04:55 GMT"
+        ]
+      },
+      "fixture_sha256": "b197df30a45cb5a25f16b9724877e3c52c54c59a91f79e4751f1754a3ba2dc9c"
+    },
+    {
+      "name": "projects",
+      "url": "https://www.ixelles.be/uploads/conseil/projets/268.pdf",
+      "fixture_path": "sources/268-projects.extract.txt",
+      "processor_path": "processors/projects",
+      "headers": {
+        "content-type": [
+          "application/pdf"
+        ],
+        "etag": [
+          "\"28e875-654fe1bae46a5\""
+        ],
+        "last-modified": [
+          "Wed, 24 Jun 2026 11:23:43 GMT"
+        ]
+      },
+      "final_url": "https://redirect.fixtures.test/ixelles/268-projects.pdf",
+      "redirect_chain": [
+        {
+          "status": 302,
+          "url": "https://www.ixelles.be/uploads/conseil/projets/268.pdf",
+          "location": "https://redirect.fixtures.test/ixelles/268-projects.pdf"
+        }
+      ],
+      "fixture_sha256": "445cdac3f83f8421b667adddeb158ad8bac1c9e2d1393af8f5f0adf41aa3ffc3"
+    }
+  ],
   "expected": {
-    "path": "/meetings/ixelles/fixture-1",
-    "title_en": "Demonstration proposal for the principal acceptance seam"
-  }
+    "path": "/meetings/ixelles/268",
+    "title_en": "Proposed grant for ‘Bruxelles fait son cinéma’",
+    "item_identifier": "4",
+    "proposal_text": "Octroyer une subvention de 700,00 EUR et une aide non numéraire évaluée à 5.158,00 EUR à l’asbl Libération Films Animation.",
+    "citation_url": "https://www.ixelles.be/uploads/conseil/projets/268.pdf"
+  },
+  "captured_at": "2026-08-10T10:00:00Z",
+  "fixture_notice": "Source fixture hashes identify minimal test extracts only, not the full official PDFs. See README.md."
 }
