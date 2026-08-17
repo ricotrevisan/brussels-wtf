@@ -8,8 +8,6 @@ defmodule BrusselsWtf.Repo.Migrations.LocatorContextIdentity do
   use Ecto.Migration
 
   def up do
-    execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
-
     drop_if_exists unique_index(:source_locators, [:commune_id, :url],
                      name: "source_locators_unique_commune_url_index"
                    )
@@ -20,24 +18,19 @@ defmodule BrusselsWtf.Repo.Migrations.LocatorContextIdentity do
 
     flush()
 
-    execute("""
-    UPDATE source_locators
-    SET discovery_key = encode(
-      digest(
-        concat_ws('|',
-          CASE WHEN parent_index_url IS NULL THEN '~' ELSE octet_length(parent_index_url)::text || ':' || parent_index_url END,
-          CASE WHEN meeting_identifier IS NULL THEN '~' ELSE octet_length(meeting_identifier)::text || ':' || meeting_identifier END,
-          CASE WHEN scheduled_on IS NULL THEN '~' ELSE octet_length(scheduled_on::text)::text || ':' || scheduled_on::text END,
-          CASE WHEN role IS NULL THEN '~' ELSE octet_length(role)::text || ':' || role END,
-          CASE WHEN language IS NULL THEN '~' ELSE octet_length(language)::text || ':' || language END,
-          CASE WHEN observed_label IS NULL THEN '~' ELSE octet_length(observed_label)::text || ':' || observed_label END,
-          CASE WHEN item_identifier IS NULL THEN '~' ELSE octet_length(item_identifier)::text || ':' || item_identifier END
-        )::bytea,
-        'sha256'
-      ),
-      'hex'
-    )
-    """)
+    %{rows: rows} =
+      repo().query!("""
+      SELECT id, parent_index_url, meeting_identifier, scheduled_on, role, language,
+             observed_label, item_identifier
+      FROM source_locators
+      """)
+
+    Enum.each(rows, fn [id | context] ->
+      repo().query!(
+        "UPDATE source_locators SET discovery_key = $1 WHERE id = $2",
+        [discovery_key(context), id]
+      )
+    end)
 
     alter table(:source_locators) do
       modify :discovery_key, :text, null: false
@@ -111,4 +104,17 @@ defmodule BrusselsWtf.Repo.Migrations.LocatorContextIdentity do
              name: "source_locators_unique_commune_url_index"
            )
   end
+
+  defp discovery_key(context) do
+    canonical =
+      context
+      |> Enum.map(&canonical_part/1)
+      |> Enum.join("|")
+
+    :crypto.hash(:sha256, canonical) |> Base.encode16(case: :lower)
+  end
+
+  defp canonical_part(nil), do: "~"
+  defp canonical_part(%Date{} = date), do: canonical_part(Date.to_iso8601(date))
+  defp canonical_part(value), do: "#{byte_size(value)}:#{value}"
 end

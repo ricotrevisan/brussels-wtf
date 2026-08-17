@@ -3,10 +3,16 @@ defmodule BrusselsWtfWeb.PublicEvidence do
 
   def proposals(%{proposals: %Ash.NotLoaded{}}), do: []
 
-  def proposals(%{proposals: proposals, current_source_version_id: current_source_version_id}) do
-    Enum.filter(proposals, fn proposal ->
-      proposal.synthetic or proposal.source_version_id == current_source_version_id
-    end)
+  def proposals(%{proposals: proposals}) do
+    {synthetic, authoritative} = Enum.split_with(proposals, & &1.synthetic)
+
+    current_authoritative =
+      authoritative
+      |> Enum.reject(&match?(%Ash.NotLoaded{}, &1.source_version))
+      |> Enum.group_by(& &1.source_version.source_record_id)
+      |> Enum.map(fn {_source_record_id, versions} -> newest(versions, & &1.source_version) end)
+
+    Enum.sort_by(synthetic ++ current_authoritative, &proposal_sort_key/1)
   end
 
   def source_proposals(item) do
@@ -21,9 +27,39 @@ defmodule BrusselsWtfWeb.PublicEvidence do
     |> Enum.flat_map(fn proposal ->
       proposal.evidence
       |> loaded_list()
+      |> current_evidence()
       |> Enum.map(&presentation/1)
     end)
   end
+
+  defp current_evidence(evidence) do
+    {synthetic, authoritative} = Enum.split_with(evidence, & &1.synthetic)
+
+    current_authoritative =
+      authoritative
+      |> Enum.reject(&match?(%Ash.NotLoaded{}, &1.source_version))
+      |> Enum.group_by(&{&1.claim, &1.source_version.source_record_id})
+      |> Enum.map(fn {_lineage, versions} -> newest(versions, & &1.source_version) end)
+
+    Enum.sort_by(synthetic ++ current_authoritative, & &1.id)
+  end
+
+  defp newest(records, source_version) do
+    Enum.max_by(records, fn record ->
+      version = source_version.(record)
+
+      {
+        DateTime.to_unix(version.first_retrieved_at, :microsecond),
+        DateTime.to_unix(version.inserted_at, :microsecond),
+        version.id
+      }
+    end)
+  end
+
+  defp proposal_sort_key(%{synthetic: true} = proposal), do: {1, proposal.id}
+
+  defp proposal_sort_key(proposal),
+    do: {0, proposal.source_version.source_record_id, proposal.source_version.id}
 
   defp presentation(evidence) do
     source_version = loaded_value(evidence.source_version)

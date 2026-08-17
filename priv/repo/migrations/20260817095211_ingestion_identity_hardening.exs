@@ -10,6 +10,17 @@ defmodule BrusselsWtf.Repo.Migrations.IngestionIdentityHardening do
   def up do
     execute("""
     UPDATE agenda_items
+    SET item_number = regexp_replace(item_number, ' [[]source-version:[0-9a-f-]+[]]$', ''),
+        continuity_key =
+          'number:' || regexp_replace(item_number, ' [[]source-version:[0-9a-f-]+[]]$', '') ||
+          ':source:' || current_source_version_id::text
+    WHERE (authoritative_identifier IS NULL OR authoritative_identifier = '')
+      AND current_source_version_id IS NOT NULL
+      AND item_number ~ ' [[]source-version:[0-9a-f-]+[]]$'
+    """)
+
+    execute("""
+    UPDATE agenda_items
     SET continuity_key = 'number:' || item_number || ':source:' || current_source_version_id::text
     WHERE (authoritative_identifier IS NULL OR authoritative_identifier = '')
       AND current_source_version_id IS NOT NULL
@@ -34,18 +45,32 @@ defmodule BrusselsWtf.Repo.Migrations.IngestionIdentityHardening do
 
   def down do
     execute("""
+    WITH ranked AS (
+      SELECT id,
+             item_number AS original_item_number,
+             current_source_version_id,
+             row_number() OVER (
+               PARTITION BY council_meeting_id, item_number
+               ORDER BY inserted_at, id
+             ) AS position
+      FROM agenda_items
+      WHERE (authoritative_identifier IS NULL OR authoritative_identifier = '')
+        AND current_source_version_id IS NOT NULL
+        AND continuity_key =
+          'number:' || item_number || ':source:' || current_source_version_id::text
+    ), mapped AS (
+      SELECT id,
+             CASE
+               WHEN position = 1 THEN original_item_number
+               ELSE original_item_number || ' [source-version:' || current_source_version_id::text || ']'
+             END AS rollback_item_number
+      FROM ranked
+    )
     UPDATE agenda_items AS item
-    SET continuity_key = 'number:' || item.item_number
-    WHERE (item.authoritative_identifier IS NULL OR item.authoritative_identifier = '')
-      AND item.current_source_version_id IS NOT NULL
-      AND item.continuity_key = 'number:' || item.item_number || ':source:' || item.current_source_version_id::text
-      AND NOT EXISTS (
-        SELECT 1
-        FROM agenda_items AS conflict
-        WHERE conflict.council_meeting_id = item.council_meeting_id
-          AND conflict.id <> item.id
-          AND conflict.continuity_key = 'number:' || item.item_number
-      )
+    SET item_number = mapped.rollback_item_number,
+        continuity_key = 'number:' || mapped.rollback_item_number
+    FROM mapped
+    WHERE item.id = mapped.id
     """)
 
     drop_if_exists unique_index(:retrieval_observations, [:source_locator_id, :check_key],

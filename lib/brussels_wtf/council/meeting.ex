@@ -26,7 +26,16 @@ defmodule BrusselsWtf.Council.Meeting do
                  commune.slug == ^arg(:commune_slug)
              )
 
-      prepare build(load: [:commune, :agendas, agenda_items: [:versions, proposals: [:evidence]]])
+      prepare build(
+                load: [
+                  :commune,
+                  :agendas,
+                  agenda_items: [
+                    :versions,
+                    proposals: [:source_version, evidence: [:source_version]]
+                  ]
+                ]
+              )
     end
 
     create :upsert do

@@ -31,7 +31,7 @@ defmodule BrusselsWtf.Council.Dossier do
                     agenda_item: [
                       :decision,
                       :coverage_variants,
-                      proposals: [evidence: [:source_version]],
+                      proposals: [:source_version, evidence: [:source_version]],
                       council_meeting: [:commune, meeting_page: [:locale_variants]]
                     ]
                   ]

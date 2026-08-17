@@ -94,6 +94,17 @@ defmodule BrusselsWtfWeb.PrincipalSeamTest do
     assert evidence.citation_url == scenario.expected.citation_url
     assert evidence.location == "Notes explicatives publiques, page 6/483"
 
+    projected_item =
+      Ash.load!(item, proposals: [:source_version, evidence: [:source_version]])
+
+    assert [%{text: public_proposal_text}] =
+             BrusselsWtfWeb.PublicEvidence.source_proposals(projected_item)
+
+    assert public_proposal_text == scenario.expected.proposal_text
+
+    assert [%{location: "Notes explicatives publiques, page 6/483"}] =
+             BrusselsWtfWeb.PublicEvidence.for_item(projected_item)
+
     page = meeting |> Ash.load!(:meeting_page) |> Map.fetch!(:meeting_page)
     assert page.publication_status == :draft
 
@@ -229,6 +240,17 @@ replacement captured at the same locator"
            |> MapSet.member?(corrected_wording)
 
     assert Enum.any?(item.versions, &(&1.source_wording != corrected_wording))
+
+    projected_item =
+      Ash.load!(item, proposals: [:source_version, evidence: [:source_version]])
+
+    assert length(projected_item.proposals) == 2
+
+    assert [%{text: ^corrected_proposal}] =
+             BrusselsWtfWeb.PublicEvidence.source_proposals(projected_item)
+
+    assert [%{location: ^corrected_location}] =
+             BrusselsWtfWeb.PublicEvidence.for_item(projected_item)
 
     Enum.each(["fr", "nl", "en"], fn locale ->
       BrusselsWtf.Council.upsert_coverage_variant!(%{

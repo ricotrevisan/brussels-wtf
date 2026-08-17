@@ -37,7 +37,7 @@ defmodule BrusselsWtf.Council.MeetingPage do
                     agenda_items: [
                       :decision,
                       :coverage_variants,
-                      proposals: [evidence: [:source_version]],
+                      proposals: [:source_version, evidence: [:source_version]],
                       dossier_links: [:dossier]
                     ]
                   ]
@@ -61,7 +61,7 @@ defmodule BrusselsWtf.Council.MeetingPage do
                     agenda_items: [
                       :decision,
                       :coverage_variants,
-                      proposals: [evidence: [:source_version]],
+                      proposals: [:source_version, evidence: [:source_version]],
                       dossier_links: [:dossier]
                     ]
                   ]
