@@ -48,30 +48,35 @@ defmodule BrusselsWtf.Communes.Ixelles do
   end
 
   defp parse_row(cells, year, index_url) when length(cells) >= 2 do
-    with {:ok, scheduled_on} <- scheduled_on(hd(cells), year),
-         links <- links(cells, index_url),
-         document_links <-
-           Enum.filter(links, &match?({role, _} when role != :recording, &1.kind)),
-         {:ok, meeting_identifier} <- meeting_identifier(document_links) do
-      {:ok,
-       Enum.map(document_links ++ Enum.filter(links, &(&1.kind == :recording)), fn link ->
-         {role, _identifier} = normalize_kind(link.kind, meeting_identifier)
+    links = links(cells, index_url)
 
-         %{
-           url: link.url,
-           meeting_identifier: meeting_identifier,
-           scheduled_on: scheduled_on,
-           role: role,
-           language: language(role),
-           observed_label: link.label,
-           parent_index_url: index_url,
-           item_identifier: nil
-         }
-       end)}
+    if links == [] do
+      {:ok, []}
     else
-      :error -> {:ok, []}
-      {:error, :no_meeting_identifier} -> {:ok, []}
-      {:error, reason} -> {:error, reason}
+      document_links =
+        Enum.filter(links, &match?({role, _} when role != :recording, &1.kind))
+
+      with {:ok, scheduled_on} <- scheduled_on(hd(cells), year),
+           {:ok, meeting_identifier} <- meeting_identifier(document_links) do
+        {:ok,
+         Enum.map(document_links ++ Enum.filter(links, &(&1.kind == :recording)), fn link ->
+           {role, _identifier} = normalize_kind(link.kind, meeting_identifier)
+
+           %{
+             url: link.url,
+             meeting_identifier: meeting_identifier,
+             scheduled_on: scheduled_on,
+             role: role,
+             language: language(role),
+             observed_label: link.label,
+             parent_index_url: index_url,
+             item_identifier: nil
+           }
+         end)}
+      else
+        :error -> {:error, :invalid_meeting_date}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 

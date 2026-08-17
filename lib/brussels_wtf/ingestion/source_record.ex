@@ -44,6 +44,7 @@ defmodule BrusselsWtf.Ingestion.SourceRecord do
       public? true
 
       constraints one_of: [
+                    :index,
                     :agenda,
                     :project,
                     :supplement,

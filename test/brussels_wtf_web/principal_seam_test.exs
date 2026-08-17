@@ -38,6 +38,17 @@ defmodule BrusselsWtfWeb.PrincipalSeamTest do
     assert [%{status: :success, response_headers: %{"etag" => ["\"captured-index-268\""]}}] =
              BrusselsWtf.Ingestion.list_observations!(index_locator.id)
 
+    index_history =
+      BrusselsWtf.Ingestion.source_history!(scenario.commune.id, scenario.index_url)
+
+    assert index_history.source_record.role == :index
+    assert [%{sha256: index_hash} = index_version] = index_history.versions
+
+    assert index_hash == "d234d97d684563af424662121e39e7f08be2f47954225ac3dec2a9360fedd34c"
+    assert {:ok, archived_index} = BrusselsWtf.Archive.get(index_version.object_key)
+    assert archived_index == scenario.index_body
+    assert index_history.processing_runs == []
+
     agenda_history =
       BrusselsWtf.Ingestion.source_history!(scenario.commune.id, scenario.sources.agenda.url)
 
@@ -100,6 +111,12 @@ defmodule BrusselsWtfWeb.PrincipalSeamTest do
     assert :ok = BrusselsWtf.Ingestion.poll_now("ixelles")
     assert :ok = BrusselsWtf.Test.Harness.drain_pipeline()
 
+    unchanged_index =
+      BrusselsWtf.Ingestion.source_history!(scenario.commune.id, scenario.index_url)
+
+    assert length(unchanged_index.versions) == 1
+    assert Enum.map(unchanged_index.observations, & &1.status) == [:success, :unchanged]
+
     assert %{
              "if-none-match" => ["\"28e875-654fe1bae46a5\""],
              "if-modified-since" => ["Wed, 24 Jun 2026 11:23:43 GMT"]
@@ -109,6 +126,12 @@ defmodule BrusselsWtfWeb.PrincipalSeamTest do
       status: 304,
       headers: %{"etag" => ["\"28e875-6558c5680f90c\""]},
       final_url: scenario.sources.projects.url
+    })
+
+    BrusselsWtf.HTTP.Stub.put(scenario.index_url, %{
+      status: 304,
+      headers: %{"etag" => ["\"captured-index-268\""]},
+      final_url: scenario.index_url
     })
 
     assert :ok = BrusselsWtf.Ingestion.poll_now("ixelles")
@@ -122,6 +145,20 @@ defmodule BrusselsWtfWeb.PrincipalSeamTest do
     assert length(unchanged.versions) == 1
     assert length(unchanged.processing_runs) == 1
 
+    index_after_304 =
+      BrusselsWtf.Ingestion.source_history!(scenario.commune.id, scenario.index_url)
+
+    assert length(index_after_304.versions) == 1
+    assert List.last(index_after_304.observations).status == :unchanged
+    assert List.last(index_after_304.observations).http_status == 304
+
+    changed_index_body = scenario.index_body <> "\n<!-- captured index revision -->"
+
+    BrusselsWtf.HTTP.Stub.put(scenario.index_url, %{
+      body: changed_index_body,
+      headers: %{"content-type" => ["text/html"], "etag" => ["\"index-revision-2\""]}
+    })
+
     changed_bytes = scenario.sources.projects.bytes <> "
 replacement captured at the same locator"
     changed_hash = "6356d799c2a44e86feb0bd027aa32ef207fae26882f57e40032370ffa2ebe604"
@@ -132,11 +169,9 @@ replacement captured at the same locator"
       "Corrected captured wording for the proposed outdoor film screening."
 
     changed_outputs =
-      put_in(
-        scenario.sources.projects.outputs,
-        [:normalize, "items", Access.at(0), "source_wording"],
-        corrected_wording
-      )
+      scenario.sources.projects.outputs
+      |> put_in([:normalize, "items", Access.at(0), "source_wording"], corrected_wording)
+      |> put_in([:normalize, "items", Access.at(0), "item_number"], "44")
 
     BrusselsWtf.Test.Harness.respond_with_changed_source(
       :projects,
@@ -160,6 +195,15 @@ replacement captured at the same locator"
     assert MapSet.new(Enum.map(changed.versions, & &1.sha256)) ==
              MapSet.new([scenario.sources.projects.sha256, changed_hash])
 
+    changed_index =
+      BrusselsWtf.Ingestion.source_history!(scenario.commune.id, scenario.index_url)
+
+    assert MapSet.new(Enum.map(changed_index.versions, & &1.sha256)) ==
+             MapSet.new([
+               "d234d97d684563af424662121e39e7f08be2f47954225ac3dec2a9360fedd34c",
+               "c271304b80a647fffd390291ed62cc9028dedc8ae7a92b81742f5c327a75e6b8"
+             ])
+
     Enum.each(changed.versions, fn version ->
       assert {:ok, archived} = BrusselsWtf.Archive.get(version.object_key)
       assert BrusselsWtf.Digest.sha256(archived) == version.sha256
@@ -169,6 +213,7 @@ replacement captured at the same locator"
     assert [item] = meeting.agenda_items
     changed_version = Enum.find(changed.versions, &(&1.sha256 == changed_hash))
     assert item.current_source_version_id == changed_version.id
+    assert item.item_number == "44"
     assert item.source_wording == corrected_wording
 
     assert MapSet.new(Enum.map(item.versions, & &1.source_wording))
@@ -222,8 +267,16 @@ replacement captured at the same locator"
     assert [%{status: :success}] =
              BrusselsWtf.Ingestion.list_observations!(project_locator.id)
 
+    mixed_valid_and_malformed_index = """
+    <h3>[2026]</h3><table>
+      <tr><th>Date</th><th>Agenda</th></tr>
+      <tr><td>02/07</td><td><a href="../uploads/conseil/odj/268.pdf">Ordre du jour</a></td></tr>
+      <tr><td>date inconnue</td><td><a href="../uploads/conseil/odj/269.pdf">Ordre du jour</a></td></tr>
+    </table>
+    """
+
     BrusselsWtf.HTTP.Stub.put(scenario.index_url, %{
-      body: "<html><body>maintenance response without council structure</body></html>",
+      body: mixed_valid_and_malformed_index,
       headers: %{"content-type" => ["text/html"]}
     })
 

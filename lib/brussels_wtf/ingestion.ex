@@ -66,7 +66,7 @@ defmodule BrusselsWtf.Ingestion do
   @doc "Returns immutable source history through Ash-backed domain reads."
   def source_history!(commune_id, origin_url) when is_binary(origin_url) do
     record = get_source_record_by_origin!(commune_id, origin_url)
-    locator = commune_id |> list_document_locators!() |> Enum.find(&(&1.url == origin_url))
+    locator = commune_id |> list_locators!() |> Enum.find(&(&1.url == origin_url))
     observations = if locator, do: list_observations!(locator.id), else: []
 
     versions =

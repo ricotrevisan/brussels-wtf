@@ -67,5 +67,6 @@
     "citation_url": "https://www.ixelles.be/uploads/conseil/projets/268.pdf"
   },
   "captured_at": "2026-08-10T10:00:00Z",
-  "fixture_notice": "Source fixture hashes identify minimal test extracts only, not the full official PDFs. See README.md."
+  "fixture_notice": "Source fixture hashes identify minimal test extracts only, not the full official PDFs. See README.md.",
+  "index_fixture_sha256": "d234d97d684563af424662121e39e7f08be2f47954225ac3dec2a9360fedd34c"
 }

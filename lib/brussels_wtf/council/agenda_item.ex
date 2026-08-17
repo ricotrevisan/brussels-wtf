@@ -31,11 +31,14 @@ defmodule BrusselsWtf.Council.AgendaItem do
         :outcome
       ]
 
+      change BrusselsWtf.Council.Changes.SetAgendaItemContinuity
+
       upsert? true
-      upsert_identity :unique_item
+      upsert_identity :unique_item_continuity
       return_skipped_upsert? true
 
       upsert_fields [
+        :item_number,
         :authoritative_identifier,
         :source_wording,
         :current_source_version_id,
@@ -58,8 +61,10 @@ defmodule BrusselsWtf.Council.AgendaItem do
         :outcome
       ]
 
+      change BrusselsWtf.Council.Changes.SetAgendaItemContinuity
+
       upsert? true
-      upsert_identity :unique_item
+      upsert_identity :unique_anchor
       upsert_fields [:source_wording, :procedural_state, :outcome]
     end
 
@@ -75,7 +80,17 @@ defmodule BrusselsWtf.Council.AgendaItem do
     attribute :stable_anchor, :string, allow_nil?: false, public?: true
     attribute :authoritative_identifier, :string, public?: true
     attribute :source_wording, :string, allow_nil?: false, public?: true
-    attribute :current_version_order, :string, public?: true
+
+    attribute :current_version_order, :string do
+      allow_nil? false
+      public? true
+      default ""
+    end
+
+    attribute :continuity_key, :string do
+      allow_nil? false
+      public? true
+    end
 
     attribute :procedural_state, :atom do
       allow_nil? false
@@ -114,7 +129,7 @@ defmodule BrusselsWtf.Council.AgendaItem do
   end
 
   identities do
-    identity :unique_item, [:council_meeting_id, :item_number]
+    identity :unique_item_continuity, [:council_meeting_id, :continuity_key]
     identity :unique_anchor, [:council_meeting_id, :stable_anchor]
   end
 end

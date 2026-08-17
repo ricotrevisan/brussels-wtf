@@ -34,51 +34,74 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         discovered_at: now
       })
 
-    prior = List.last(Ingestion.list_observations!(index_locator.id))
-
     case BrusselsWtf.HTTP.get(commune.index_url, conditional_options(index_locator.id)) do
-      {:ok, %{status: status, body: body} = response} when status in 200..299 ->
-        index_sha = BrusselsWtf.Digest.sha256(body)
-        adapter = BrusselsWtf.Communes.adapter!(commune.slug)
-
-        case adapter.discover(body, commune.index_url) do
-          {:ok, discovered} ->
+      {:ok, %{status: 304} = response} ->
+        case existing_record(commune.id, commune.index_url) |> latest_version() do
+          nil ->
             record_observation(index_locator, poll_run.id, response,
-              status: if(prior && prior.sha256 == index_sha, do: :unchanged, else: :success),
-              sha256: index_sha
+              status: :failure,
+              error_kind: "not_modified_without_version",
+              error_message: "HTTP 304 was observed before any archived index version"
             )
 
-            stored =
-              Enum.map(discovered, fn locator ->
-                Ingestion.upsert_locator!(%{
-                  commune_id: commune.id,
-                  url: locator.url,
-                  parent_index_url: locator.parent_index_url,
-                  meeting_identifier: locator.meeting_identifier,
-                  scheduled_on: locator.scheduled_on,
-                  role: locator.role,
-                  language: locator.language,
-                  observed_label: locator.observed_label,
-                  item_identifier: locator.item_identifier,
-                  discovered_at: now
-                })
-              end)
+          version ->
+            record_observation(index_locator, poll_run.id, response,
+              status: :unchanged,
+              sha256: version.sha256,
+              source_version_id: version.id
+            )
 
-            mark_disappeared(commune.id, poll_run.id, stored, now)
+            enqueue_document_fetches(commune.id, poll_run.id)
+        end
 
-            stored
-            |> Enum.filter(&(&1.role in [:agenda, :project]))
-            |> Enum.each(fn locator ->
-              %{locator_id: locator.id, poll_run_id: poll_run.id}
-              |> Workers.FetchLocator.new()
-              |> Oban.insert!()
-            end)
+        :ok
+
+      {:ok, %{status: status, body: body} = response} when status in 200..299 ->
+        case archive_index(index_locator, response, body, now) do
+          {:ok, version, observation_status} ->
+            adapter = BrusselsWtf.Communes.adapter!(commune.slug)
+
+            case adapter.discover(body, commune.index_url) do
+              {:ok, discovered} ->
+                record_observation(index_locator, poll_run.id, response,
+                  status: observation_status,
+                  sha256: version.sha256,
+                  source_version_id: version.id
+                )
+
+                stored =
+                  Enum.map(discovered, fn locator ->
+                    Ingestion.upsert_locator!(%{
+                      commune_id: commune.id,
+                      url: locator.url,
+                      parent_index_url: locator.parent_index_url,
+                      meeting_identifier: locator.meeting_identifier,
+                      scheduled_on: locator.scheduled_on,
+                      role: locator.role,
+                      language: locator.language,
+                      observed_label: locator.observed_label,
+                      item_identifier: locator.item_identifier,
+                      discovered_at: now
+                    })
+                  end)
+
+                mark_disappeared(commune.id, poll_run.id, stored, now)
+                enqueue_document_fetches(commune.id, poll_run.id)
+
+              {:error, reason} ->
+                record_observation(index_locator, poll_run.id, response,
+                  status: :failure,
+                  sha256: version.sha256,
+                  source_version_id: version.id,
+                  error_kind: "parser_failure",
+                  error_message: safe_error(reason)
+                )
+            end
 
           {:error, reason} ->
             record_observation(index_locator, poll_run.id, response,
               status: :failure,
-              sha256: index_sha,
-              error_kind: "parser_failure",
+              error_kind: "archive_verification_failed",
               error_message: safe_error(reason)
             )
         end
@@ -257,6 +280,45 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     end
 
     :ok
+  end
+
+  defp archive_index(locator, response, body, now) do
+    existing = existing_record(locator.commune_id, locator.url)
+    sha256 = BrusselsWtf.Digest.sha256(body)
+    existed? = existing && Enum.any?(existing.versions, &(&1.sha256 == sha256))
+
+    with {:ok, %{sha256: ^sha256, object_key: object_key}} <- BrusselsWtf.Archive.store(body) do
+      source_record =
+        Ingestion.upsert_source_record!(%{
+          commune_id: locator.commune_id,
+          origin_url: locator.url,
+          role: :index,
+          original_language: locator.language
+        })
+
+      version =
+        Ingestion.upsert_source_version!(%{
+          source_record_id: source_record.id,
+          sha256: sha256,
+          byte_size: byte_size(body),
+          media_type: media_type(response, locator.url),
+          object_key: object_key,
+          first_retrieved_at: now
+        })
+
+      {:ok, version, if(existed?, do: :unchanged, else: :success)}
+    end
+  end
+
+  defp enqueue_document_fetches(commune_id, poll_run_id) do
+    commune_id
+    |> Ingestion.list_document_locators!()
+    |> Enum.filter(&(&1.role in [:agenda, :project]))
+    |> Enum.each(fn locator ->
+      %{locator_id: locator.id, poll_run_id: poll_run_id}
+      |> Workers.FetchLocator.new()
+      |> Oban.insert!()
+    end)
   end
 
   defp archive_success(locator, poll_run_id, response, body, now) do

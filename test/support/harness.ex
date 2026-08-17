@@ -12,6 +12,11 @@ defmodule BrusselsWtf.Test.Harness do
     dir = Path.join(@fixtures, name)
     scenario = read_json(Path.join(dir, "scenario.json"))
     index = File.read!(Path.join(dir, "index.html"))
+
+    if BrusselsWtf.Digest.sha256(index) != scenario["index_fixture_sha256"] do
+      raise "captured index fixture hash does not match scenario manifest"
+    end
+
     {:ok, observed_at, _} = DateTime.from_iso8601(scenario["observed_at"])
 
     reset_adapters()
@@ -73,6 +78,7 @@ defmodule BrusselsWtf.Test.Harness do
     loaded = %{
       commune: commune,
       index_url: scenario["index_url"],
+      index_body: index,
       sources: sources,
       expected: atomize_keys(scenario["expected"])
     }

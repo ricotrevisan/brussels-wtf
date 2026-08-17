@@ -37,4 +37,17 @@ defmodule BrusselsWtf.Communes.IxellesTest do
                "https://www.ixelles.be/council"
              )
   end
+
+  test "a malformed authoritative row makes the whole parse fail rather than disappear history" do
+    html = """
+    <h3>[2026]</h3><table>
+      <tr><th>Date</th><th>Agenda</th></tr>
+      <tr><td>02/07</td><td><a href="../uploads/conseil/odj/268.pdf">Ordre du jour</a></td></tr>
+      <tr><td>date inconnue</td><td><a href="../uploads/conseil/odj/269.pdf">Ordre du jour</a></td></tr>
+    </table>
+    """
+
+    assert {:error, {:invalid_index, :invalid_meeting_date}} =
+             BrusselsWtf.Communes.Ixelles.discover(html, "https://www.ixelles.be/council")
+  end
 end
