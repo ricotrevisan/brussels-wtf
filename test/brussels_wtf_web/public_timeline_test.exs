@@ -126,6 +126,131 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
     refute ixelles =~ "Decision: nil"
   end
 
+  test "an exact page locale never substitutes for missing item coverage", %{conn: conn} do
+    commune =
+      BrusselsWtf.Ingestion.create_commune!(%{
+        slug: "item-locale-gap",
+        name: "Item Locale Gap",
+        index_url: "https://example.invalid/item-locale-gap"
+      })
+
+    meeting =
+      BrusselsWtf.Council.upsert_meeting!(%{
+        commune_id: commune.id,
+        municipal_identifier: "item-incomplete",
+        scheduled_on: ~D[2026-09-21]
+      })
+
+    item =
+      BrusselsWtf.Council.upsert_agenda_item!(%{
+        council_meeting_id: meeting.id,
+        item_number: "1",
+        stable_anchor: "agenda-item-1",
+        source_wording: "ITEM-EN-SOURCE",
+        procedural_state: :proposal
+      })
+
+    BrusselsWtf.Council.upsert_proposal!(%{
+      agenda_item_id: item.id,
+      statement: "ITEM-EN-SOURCE"
+    })
+
+    BrusselsWtf.Council.upsert_coverage_variant!(%{
+      agenda_item_id: item.id,
+      locale: "en",
+      title: "ITEM-EN-TITLE",
+      summary: "ITEM-EN-SUMMARY",
+      proposal_summary: "ITEM-EN-SUMMARY",
+      provenance: []
+    })
+
+    page =
+      BrusselsWtf.Council.upsert_meeting_page!(%{
+        council_meeting_id: meeting.id,
+        citation_url: "https://example.invalid/item-locale-gap",
+        procedural_state: :proposal
+      })
+
+    for {locale, title, summary} <- [
+          {"fr", "PAGE-FR-TITLE", "PAGE-FR-SUMMARY"},
+          {"en", "PAGE-EN-TITLE", "PAGE-EN-SUMMARY"}
+        ] do
+      BrusselsWtf.Council.upsert_locale_variant!(%{
+        meeting_page_id: page.id,
+        locale: locale,
+        title: title,
+        summary: summary,
+        provenance: []
+      })
+    end
+
+    BrusselsWtf.Council.publish_meeting_page!(page)
+
+    document =
+      conn
+      |> get("/meetings/item-locale-gap/item-incomplete?lang=fr")
+      |> html_response(200)
+      |> LazyHTML.from_document()
+
+    article = document["article#agenda-item-1"] |> LazyHTML.text()
+    assert LazyHTML.text(document["h1"]) =~ "PAGE-FR-TITLE"
+    assert article =~ "Contenu du point indisponible en français"
+    refute article =~ "PAGE-FR-SUMMARY"
+    refute article =~ "ITEM-EN"
+  end
+
+  test "meeting state renders unknown when a disposition record is absent", %{conn: conn} do
+    page =
+      BrusselsWtf.Council.list_published_meeting_pages!()
+      |> Enum.find(&(&1.council_meeting.municipal_identifier == "demo-ixelles"))
+
+    item = List.first(page.council_meeting.agenda_items)
+
+    BrusselsWtf.Council.upsert_agenda_item!(%{
+      council_meeting_id: page.council_meeting.id,
+      item_number: item.item_number,
+      stable_anchor: item.stable_anchor,
+      source_wording: item.source_wording,
+      procedural_state: :decision
+    })
+
+    document =
+      conn
+      |> get("/meetings/ixelles/demo-ixelles?lang=en")
+      |> html_response(200)
+      |> LazyHTML.from_document()
+
+    article = document["article#agenda-item-mobility-1"] |> LazyHTML.text()
+    assert article =~ "Outcome unknown"
+    refute article =~ "Decision:"
+  end
+
+  test "a stored disposition wins over a stale non-decision procedural state", %{conn: conn} do
+    page =
+      BrusselsWtf.Council.list_published_meeting_pages!()
+      |> Enum.find(&(&1.council_meeting.municipal_identifier == "demo-brussels"))
+
+    item = List.first(page.council_meeting.agenda_items)
+
+    BrusselsWtf.Council.upsert_agenda_item!(%{
+      council_meeting_id: page.council_meeting.id,
+      item_number: item.item_number,
+      stable_anchor: item.stable_anchor,
+      source_wording: item.source_wording,
+      procedural_state: :unknown
+    })
+
+    document =
+      conn
+      |> get("/meetings/city-of-brussels/demo-brussels?lang=en")
+      |> html_response(200)
+      |> LazyHTML.from_document()
+
+    article = document["article#agenda-item-administration-3"] |> LazyHTML.text()
+    assert article =~ "Decision: approved"
+    refute article =~ "Outcome unknown"
+  end
+
   test "stored proposal and final-decision copy remain distinct", %{conn: conn} do
     html =
       conn

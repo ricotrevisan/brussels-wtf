@@ -101,7 +101,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
   defp coverage_item(assigns) do
     variant =
       Enum.find(assigns.item.coverage_variants, &(&1.locale == assigns.locale)) ||
-        page_coverage_variant(assigns.page.locale_variants, assigns.locale)
+        unavailable_coverage_variant(assigns.locale)
 
     assigns =
       assigns
@@ -124,14 +124,14 @@ defmodule BrusselsWtfWeb.MeetingPage do
         </div>
 
         <div
-          :if={@item.procedural_state in [:proposal, :unknown]}
+          :if={@display_state in [:proposal, :unknown]}
           class="border-l-4 border-warning pl-3"
         >
           <h3 class="font-semibold">{text(@locale, :outcome_unknown)}</h3>
           <p class="mt-1 text-sm">{text(@locale, :unknown_explanation)}</p>
         </div>
 
-        <div :if={loaded?(@item.decision)} class="border-l-4 border-success pl-3">
+        <div :if={@display_state == :decision} class="border-l-4 border-success pl-3">
           <h3 class="font-semibold">
             {text(@locale, :decision)}: {disposition_label(
               @locale,
@@ -196,26 +196,14 @@ defmodule BrusselsWtfWeb.MeetingPage do
     """
   end
 
-  defp page_coverage_variant(variants, locale) do
-    case Enum.find(variants, &(&1.locale == locale)) do
-      nil ->
-        %{
-          title: text(locale, :unavailable_title),
-          summary: text(locale, :unavailable_explanation),
-          proposal_summary: nil,
-          decision_summary: nil,
-          provenance: []
-        }
-
-      variant ->
-        %{
-          title: variant.title,
-          summary: variant.summary,
-          proposal_summary: variant.summary,
-          decision_summary: nil,
-          provenance: variant.provenance
-        }
-    end
+  defp unavailable_coverage_variant(locale) do
+    %{
+      title: text(locale, :item_unavailable),
+      summary: text(locale, :unavailable_explanation),
+      proposal_summary: nil,
+      decision_summary: nil,
+      provenance: []
+    }
   end
 
   defp proposal_copy(variant, :decision, locale),
@@ -287,6 +275,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
     %{
       skip: "Skip to content",
       unavailable_title: "Coverage unavailable in English",
+      item_unavailable: "Agenda-item coverage unavailable in English",
       unavailable_explanation:
         "This meeting has no complete English coverage. No text from another language is substituted.",
       decision_copy_unavailable: "Decision copy is unavailable in English.",
@@ -311,6 +300,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
     %{
       skip: "Aller au contenu",
       unavailable_title: "Contenu indisponible en français",
+      item_unavailable: "Contenu du point indisponible en français",
       unavailable_explanation:
         "Cette réunion ne dispose pas d’une version française complète. Aucun texte d’une autre langue n’est substitué.",
       decision_copy_unavailable: "Le texte de la décision n’est pas disponible en français.",
@@ -336,6 +326,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
     %{
       skip: "Naar inhoud",
       unavailable_title: "Inhoud niet beschikbaar in het Nederlands",
+      item_unavailable: "Inhoud van het agendapunt niet beschikbaar in het Nederlands",
       unavailable_explanation:
         "Voor deze vergadering is geen volledige Nederlandse versie beschikbaar. Tekst uit een andere taal wordt niet ingevoegd.",
       decision_copy_unavailable: "De beslissingstekst is niet beschikbaar in het Nederlands.",

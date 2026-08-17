@@ -177,7 +177,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
   defp entry(page, item, locale) do
     variant =
       Enum.find(item.coverage_variants, &(&1.locale == locale)) ||
-        page_coverage_variant(page.locale_variants, locale)
+        unavailable_coverage_variant(locale)
 
     decision = loaded_or_nil(item.decision)
     state = display_state(item, decision)
@@ -201,26 +201,14 @@ defmodule BrusselsWtfWeb.TimelinePage do
     }
   end
 
-  defp page_coverage_variant(variants, locale) do
-    case Enum.find(variants, &(&1.locale == locale)) do
-      nil ->
-        %{
-          title: text(locale, :unavailable_title),
-          summary: text(locale, :unavailable_explanation),
-          proposal_summary: nil,
-          decision_summary: nil,
-          provenance: []
-        }
-
-      variant ->
-        %{
-          title: variant.title,
-          summary: variant.summary,
-          proposal_summary: variant.summary,
-          decision_summary: nil,
-          provenance: variant.provenance
-        }
-    end
+  defp unavailable_coverage_variant(locale) do
+    %{
+      title: text(locale, :item_unavailable),
+      summary: text(locale, :unavailable_explanation),
+      proposal_summary: nil,
+      decision_summary: nil,
+      provenance: []
+    }
   end
 
   defp display_state(_item, decision) when not is_nil(decision), do: :decision
@@ -296,6 +284,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
     %{
       skip: "Skip to content",
       unavailable_title: "Coverage unavailable in English",
+      item_unavailable: "Agenda-item coverage unavailable in English",
       unavailable_explanation:
         "No complete English coverage is available; no other language is substituted.",
       decision_copy_unavailable: "Decision copy is unavailable in English.",
@@ -325,6 +314,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
     %{
       skip: "Aller au contenu",
       unavailable_title: "Contenu indisponible en français",
+      item_unavailable: "Contenu du point indisponible en français",
       unavailable_explanation:
         "Aucune version française complète n’est disponible ; aucune autre langue n’est substituée.",
       decision_copy_unavailable: "Le texte de la décision n’est pas disponible en français.",
@@ -355,6 +345,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
     %{
       skip: "Naar inhoud",
       unavailable_title: "Inhoud niet beschikbaar in het Nederlands",
+      item_unavailable: "Inhoud van het agendapunt niet beschikbaar in het Nederlands",
       unavailable_explanation:
         "Er is geen volledige Nederlandse versie beschikbaar; een andere taal wordt niet ingevoegd.",
       decision_copy_unavailable: "De beslissingstekst is niet beschikbaar in het Nederlands.",

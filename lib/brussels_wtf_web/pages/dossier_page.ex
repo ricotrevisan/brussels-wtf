@@ -101,7 +101,7 @@ defmodule BrusselsWtfWeb.DossierPage do
     if page && page.publication_status == :published do
       variant =
         Enum.find(item.coverage_variants, &(&1.locale == locale)) ||
-          exact_page_variant(page.locale_variants, locale)
+          unavailable_item_variant(locale)
 
       decision = loaded_or_nil(item.decision)
 
@@ -127,24 +127,13 @@ defmodule BrusselsWtfWeb.DossierPage do
     end
   end
 
-  defp exact_page_variant(variants, locale) do
-    case Enum.find(variants, &(&1.locale == locale)) do
-      nil ->
-        %{
-          title: text(locale, :unavailable),
-          summary: text(locale, :unavailable),
-          proposal_summary: nil,
-          decision_summary: nil
-        }
-
-      variant ->
-        %{
-          title: variant.title,
-          summary: variant.summary,
-          proposal_summary: variant.summary,
-          decision_summary: nil
-        }
-    end
+  defp unavailable_item_variant(locale) do
+    %{
+      title: text(locale, :item_unavailable),
+      summary: text(locale, :unavailable),
+      proposal_summary: nil,
+      decision_summary: nil
+    }
   end
 
   defp summary(variant, :decision, locale),
@@ -167,6 +156,7 @@ defmodule BrusselsWtfWeb.DossierPage do
   defp text("fr", :title), do: "Chronologie du dossier"
   defp text("fr", :item), do: "Point"
   defp text("fr", :unavailable), do: "Contenu indisponible en français"
+  defp text("fr", :item_unavailable), do: "Contenu du point indisponible en français"
 
   defp text("fr", :decision_unavailable),
     do: "Le texte de la décision n’est pas disponible en français."
@@ -181,6 +171,9 @@ defmodule BrusselsWtfWeb.DossierPage do
   defp text("nl", :item), do: "Agendapunt"
   defp text("nl", :unavailable), do: "Inhoud niet beschikbaar in het Nederlands"
 
+  defp text("nl", :item_unavailable),
+    do: "Inhoud van het agendapunt niet beschikbaar in het Nederlands"
+
   defp text("nl", :decision_unavailable),
     do: "De beslissingstekst is niet beschikbaar in het Nederlands."
 
@@ -193,6 +186,7 @@ defmodule BrusselsWtfWeb.DossierPage do
   defp text(_locale, :title), do: "Dossier timeline"
   defp text(_locale, :item), do: "Agenda item"
   defp text(_locale, :unavailable), do: "Coverage unavailable in English"
+  defp text(_locale, :item_unavailable), do: "Agenda-item coverage unavailable in English"
   defp text(_locale, :decision_unavailable), do: "Decision copy is unavailable in English."
 
   defp text(_locale, :synthetic_reference),
