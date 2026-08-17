@@ -21,6 +21,7 @@ defmodule BrusselsWtf.Council do
 
     resource BrusselsWtf.Council.AgendaItem do
       define :upsert_agenda_item, action: :upsert
+      define :upsert_rendered_agenda_item, action: :upsert_rendered
       define :mark_agenda_item_proposed, action: :mark_proposed
     end
 
@@ -30,10 +31,12 @@ defmodule BrusselsWtf.Council do
 
     resource BrusselsWtf.Council.Proposal do
       define :record_proposal, action: :record
+      define :upsert_proposal, action: :upsert_rendered
     end
 
     resource BrusselsWtf.Council.Evidence do
       define :record_evidence, action: :record
+      define :upsert_evidence, action: :upsert_reference
     end
 
     resource BrusselsWtf.Council.Decision do

@@ -21,7 +21,7 @@
       "references": null,
       "scale": null,
       "size": null,
-      "source": "slug",
+      "source": "disposition",
       "type": "text"
     },
     {
@@ -33,7 +33,7 @@
       "references": null,
       "scale": null,
       "size": null,
-      "source": "title",
+      "source": "statement",
       "type": "text"
     },
     {
@@ -59,6 +59,39 @@
       "size": null,
       "source": "updated_at",
       "type": "utc_datetime_usec"
+    },
+    {
+      "allow_nil?": false,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": {
+        "deferrable": false,
+        "destination_attribute": "id",
+        "destination_attribute_default": null,
+        "destination_attribute_generated": null,
+        "index?": false,
+        "index_where": null,
+        "match_tenant?": false,
+        "match_type": null,
+        "match_with": null,
+        "multitenancy": {
+          "attribute": null,
+          "global": null,
+          "strategy": null
+        },
+        "name": "decisions_agenda_item_id_fkey",
+        "on_delete": null,
+        "on_update": null,
+        "primary_key?": true,
+        "schema": "public",
+        "table": "agenda_items"
+      },
+      "scale": null,
+      "size": null,
+      "source": "agenda_item_id",
+      "type": "uuid"
     }
   ],
   "base_filter": null,
@@ -67,19 +100,19 @@
   "custom_indexes": [],
   "custom_statements": [],
   "has_create_action": true,
-  "hash": "866F5ADEACB30543E51946A7252A921128B154FE8E5DCA6E25B271D5ED6F3D99",
+  "hash": "3DED321C91E91B0DEC23F95D3B0D3327F1E3B8B9E14928C7BB5DE1982573F003",
   "identities": [
     {
       "all_tenants?": false,
       "base_filter": null,
-      "index_name": "dossiers_unique_slug_index",
+      "index_name": "decisions_one_per_item_index",
       "keys": [
         {
           "type": "atom",
-          "value": "slug"
+          "value": "agenda_item_id"
         }
       ],
-      "name": "unique_slug",
+      "name": "one_per_item",
       "nils_distinct?": true,
       "where": null
     }
@@ -91,5 +124,5 @@
   },
   "repo": "Elixir.BrusselsWtf.Repo",
   "schema": null,
-  "table": "dossiers"
+  "table": "decisions"
 }

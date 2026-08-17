@@ -14,14 +14,14 @@
     },
     {
       "allow_nil?": false,
-      "default": "\"draft\"",
+      "default": "nil",
       "generated?": false,
       "precision": null,
       "primary_key?": false,
       "references": null,
       "scale": null,
       "size": null,
-      "source": "publication_status",
+      "source": "item_number",
       "type": "text"
     },
     {
@@ -33,7 +33,7 @@
       "references": null,
       "scale": null,
       "size": null,
-      "source": "citation_url",
+      "source": "stable_anchor",
       "type": "text"
     },
     {
@@ -45,12 +45,36 @@
       "references": null,
       "scale": null,
       "size": null,
-      "source": "revision_published_at",
-      "type": "utc_datetime_usec"
+      "source": "authoritative_identifier",
+      "type": "text"
     },
     {
       "allow_nil?": false,
-      "default": "\"proposal\"",
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "source_wording",
+      "type": "text"
+    },
+    {
+      "allow_nil?": true,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "current_version_order",
+      "type": "text"
+    },
+    {
+      "allow_nil?": false,
+      "default": "\"unknown\"",
       "generated?": false,
       "precision": null,
       "primary_key?": false,
@@ -58,6 +82,18 @@
       "scale": null,
       "size": null,
       "source": "procedural_state",
+      "type": "text"
+    },
+    {
+      "allow_nil?": false,
+      "default": "\"unknown\"",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "outcome",
       "type": "text"
     },
     {
@@ -105,7 +141,7 @@
           "global": null,
           "strategy": null
         },
-        "name": "meeting_pages_council_meeting_id_fkey",
+        "name": "agenda_items_council_meeting_id_fkey",
         "on_delete": null,
         "on_update": null,
         "primary_key?": true,
@@ -116,6 +152,39 @@
       "size": null,
       "source": "council_meeting_id",
       "type": "uuid"
+    },
+    {
+      "allow_nil?": true,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": {
+        "deferrable": false,
+        "destination_attribute": "id",
+        "destination_attribute_default": null,
+        "destination_attribute_generated": null,
+        "index?": false,
+        "index_where": null,
+        "match_tenant?": false,
+        "match_type": null,
+        "match_with": null,
+        "multitenancy": {
+          "attribute": null,
+          "global": null,
+          "strategy": null
+        },
+        "name": "agenda_items_current_source_version_id_fkey",
+        "on_delete": null,
+        "on_update": null,
+        "primary_key?": true,
+        "schema": "public",
+        "table": "source_versions"
+      },
+      "scale": null,
+      "size": null,
+      "source": "current_source_version_id",
+      "type": "uuid"
     }
   ],
   "base_filter": null,
@@ -124,19 +193,41 @@
   "custom_indexes": [],
   "custom_statements": [],
   "has_create_action": true,
-  "hash": "617DEFEAD4135F690DB71B37A14E04E8CCD2696B5E45E61E5889C39226441F97",
+  "hash": "66E1F3B1274AE6A45E0973FA313B7F34BEDE81A814ABA34A359CBCBEB4209F16",
   "identities": [
     {
       "all_tenants?": false,
       "base_filter": null,
-      "index_name": "meeting_pages_one_page_per_meeting_index",
+      "index_name": "agenda_items_unique_item_index",
       "keys": [
         {
           "type": "atom",
           "value": "council_meeting_id"
+        },
+        {
+          "type": "atom",
+          "value": "item_number"
         }
       ],
-      "name": "one_page_per_meeting",
+      "name": "unique_item",
+      "nils_distinct?": true,
+      "where": null
+    },
+    {
+      "all_tenants?": false,
+      "base_filter": null,
+      "index_name": "agenda_items_unique_anchor_index",
+      "keys": [
+        {
+          "type": "atom",
+          "value": "council_meeting_id"
+        },
+        {
+          "type": "atom",
+          "value": "stable_anchor"
+        }
+      ],
+      "name": "unique_anchor",
       "nils_distinct?": true,
       "where": null
     }
@@ -148,5 +239,5 @@
   },
   "repo": "Elixir.BrusselsWtf.Repo",
   "schema": null,
-  "table": "meeting_pages"
+  "table": "agenda_items"
 }

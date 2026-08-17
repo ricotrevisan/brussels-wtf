@@ -167,7 +167,7 @@ defmodule BrusselsWtf.Seeds.PublicTimeline do
       })
 
     item =
-      Council.upsert_agenda_item!(%{
+      Council.upsert_rendered_agenda_item!(%{
         council_meeting_id: meeting.id,
         item_number: record.number,
         stable_anchor: record.anchor,
@@ -175,7 +175,14 @@ defmodule BrusselsWtf.Seeds.PublicTimeline do
         procedural_state: record.state
       })
 
-    Council.upsert_proposal!(%{agenda_item_id: item.id, statement: record.proposal_statement})
+    proposal =
+      Council.upsert_proposal!(%{
+        agenda_item_id: item.id,
+        text: record.proposal_statement,
+        status: :proposed,
+        render_key: "synthetic-seed",
+        synthetic: true
+      })
 
     if record.disposition do
       Council.upsert_decision!(%{
@@ -186,12 +193,14 @@ defmodule BrusselsWtf.Seeds.PublicTimeline do
     end
 
     Council.upsert_evidence!(%{
-      agenda_item_id: item.id,
+      proposal_id: proposal.id,
+      claim: :proposal,
+      excerpt: "Synthetic interface demonstration reference",
       citation_url: citation_url,
       source_title: record.source_title,
       location: "Landing page · DEMO",
       retrieved_at: @retrieved_at,
-      checksum: nil,
+      render_key: "synthetic-seed",
       synthetic: true
     })
 

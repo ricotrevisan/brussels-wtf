@@ -67,7 +67,8 @@ defmodule BrusselsWtfWeb.PrincipalSeamTest do
     assert agenda_version_id == hd(agenda_history.versions).id
 
     assert [
-             %{authoritative_identifier: "4", procedural_state: :proposal, outcome: :unknown} = item
+             %{authoritative_identifier: "4", procedural_state: :proposal, outcome: :unknown} =
+               item
            ] = meeting.agenda_items
 
     agenda_membership = Enum.find(item.versions, &(&1.source_version_id == agenda_version_id))

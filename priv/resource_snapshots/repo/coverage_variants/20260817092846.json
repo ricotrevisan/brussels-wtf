@@ -14,6 +14,81 @@
     },
     {
       "allow_nil?": false,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "locale",
+      "type": "text"
+    },
+    {
+      "allow_nil?": false,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "title",
+      "type": "text"
+    },
+    {
+      "allow_nil?": false,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "summary",
+      "type": "text"
+    },
+    {
+      "allow_nil?": true,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "proposal_summary",
+      "type": "text"
+    },
+    {
+      "allow_nil?": true,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "decision_summary",
+      "type": "text"
+    },
+    {
+      "allow_nil?": false,
+      "default": "[]",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "provenance",
+      "type": [
+        "array",
+        "text"
+      ]
+    },
+    {
+      "allow_nil?": false,
       "default": "fragment(\"(now() AT TIME ZONE 'utc')\")",
       "generated?": false,
       "precision": null,
@@ -57,7 +132,7 @@
           "global": null,
           "strategy": null
         },
-        "name": "dossier_links_agenda_item_id_fkey",
+        "name": "coverage_variants_agenda_item_id_fkey",
         "on_delete": null,
         "on_update": null,
         "primary_key?": true,
@@ -68,39 +143,6 @@
       "size": null,
       "source": "agenda_item_id",
       "type": "uuid"
-    },
-    {
-      "allow_nil?": false,
-      "default": "nil",
-      "generated?": false,
-      "precision": null,
-      "primary_key?": false,
-      "references": {
-        "deferrable": false,
-        "destination_attribute": "id",
-        "destination_attribute_default": null,
-        "destination_attribute_generated": null,
-        "index?": false,
-        "index_where": null,
-        "match_tenant?": false,
-        "match_type": null,
-        "match_with": null,
-        "multitenancy": {
-          "attribute": null,
-          "global": null,
-          "strategy": null
-        },
-        "name": "dossier_links_dossier_id_fkey",
-        "on_delete": null,
-        "on_update": null,
-        "primary_key?": true,
-        "schema": "public",
-        "table": "dossiers"
-      },
-      "scale": null,
-      "size": null,
-      "source": "dossier_id",
-      "type": "uuid"
     }
   ],
   "base_filter": null,
@@ -109,12 +151,12 @@
   "custom_indexes": [],
   "custom_statements": [],
   "has_create_action": true,
-  "hash": "09648D07DF5AE7E544B991C81715B4682031065D8EC90A6025649A6F02C034F0",
+  "hash": "CEE3799F1882A098B0F915C4BC10BDCD05193933D368DA02CDA67734551EAF6D",
   "identities": [
     {
       "all_tenants?": false,
       "base_filter": null,
-      "index_name": "dossier_links_unique_link_index",
+      "index_name": "coverage_variants_unique_locale_index",
       "keys": [
         {
           "type": "atom",
@@ -122,10 +164,10 @@
         },
         {
           "type": "atom",
-          "value": "dossier_id"
+          "value": "locale"
         }
       ],
-      "name": "unique_link",
+      "name": "unique_locale",
       "nils_distinct?": true,
       "where": null
     }
@@ -137,5 +179,5 @@
   },
   "repo": "Elixir.BrusselsWtf.Repo",
   "schema": null,
-  "table": "dossier_links"
+  "table": "coverage_variants"
 }

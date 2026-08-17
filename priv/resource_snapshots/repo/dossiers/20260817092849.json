@@ -21,7 +21,19 @@
       "references": null,
       "scale": null,
       "size": null,
-      "source": "statement",
+      "source": "slug",
+      "type": "text"
+    },
+    {
+      "allow_nil?": false,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "title",
       "type": "text"
     },
     {
@@ -47,39 +59,6 @@
       "size": null,
       "source": "updated_at",
       "type": "utc_datetime_usec"
-    },
-    {
-      "allow_nil?": false,
-      "default": "nil",
-      "generated?": false,
-      "precision": null,
-      "primary_key?": false,
-      "references": {
-        "deferrable": false,
-        "destination_attribute": "id",
-        "destination_attribute_default": null,
-        "destination_attribute_generated": null,
-        "index?": false,
-        "index_where": null,
-        "match_tenant?": false,
-        "match_type": null,
-        "match_with": null,
-        "multitenancy": {
-          "attribute": null,
-          "global": null,
-          "strategy": null
-        },
-        "name": "proposals_agenda_item_id_fkey",
-        "on_delete": null,
-        "on_update": null,
-        "primary_key?": true,
-        "schema": "public",
-        "table": "agenda_items"
-      },
-      "scale": null,
-      "size": null,
-      "source": "agenda_item_id",
-      "type": "uuid"
     }
   ],
   "base_filter": null,
@@ -88,19 +67,19 @@
   "custom_indexes": [],
   "custom_statements": [],
   "has_create_action": true,
-  "hash": "F8402204C0B0BE8DB8F59D15D88F24C3FC63D68EC4ED65DAAD3B05DBD8C61B9B",
+  "hash": "8CE9B91BE1AC7855A8128156107DA5EAEF2913E64DC23C35231028A2C908B063",
   "identities": [
     {
       "all_tenants?": false,
       "base_filter": null,
-      "index_name": "proposals_one_per_item_index",
+      "index_name": "dossiers_unique_slug_index",
       "keys": [
         {
           "type": "atom",
-          "value": "agenda_item_id"
+          "value": "slug"
         }
       ],
-      "name": "one_per_item",
+      "name": "unique_slug",
       "nils_distinct?": true,
       "where": null
     }
@@ -112,5 +91,5 @@
   },
   "repo": "Elixir.BrusselsWtf.Repo",
   "schema": null,
-  "table": "proposals"
+  "table": "dossiers"
 }

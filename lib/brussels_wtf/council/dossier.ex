@@ -29,10 +29,9 @@ defmodule BrusselsWtf.Council.Dossier do
                 load: [
                   dossier_links: [
                     agenda_item: [
-                      :proposal,
                       :decision,
-                      :evidences,
                       :coverage_variants,
+                      proposals: [evidence: [:source_version]],
                       council_meeting: [:commune, meeting_page: [:locale_variants]]
                     ]
                   ]

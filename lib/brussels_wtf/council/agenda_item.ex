@@ -48,6 +48,21 @@ defmodule BrusselsWtf.Council.AgendaItem do
                        )
     end
 
+    create :upsert_rendered do
+      accept [
+        :council_meeting_id,
+        :item_number,
+        :stable_anchor,
+        :source_wording,
+        :procedural_state,
+        :outcome
+      ]
+
+      upsert? true
+      upsert_identity :unique_item
+      upsert_fields [:source_wording, :procedural_state, :outcome]
+    end
+
     update :mark_proposed do
       accept []
       change set_attribute(:procedural_state, :proposal)

@@ -193,7 +193,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       provenance: variant.provenance,
       state: state,
       disposition: decision && decision.disposition,
-      evidences: item.evidences,
+      evidences: BrusselsWtfWeb.PublicEvidence.for_item(item),
       dossiers: Enum.map(item.dossier_links, & &1.dossier),
       href:
         "/meetings/#{page.council_meeting.commune.slug}/#{page.council_meeting.municipal_identifier}" <>

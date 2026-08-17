@@ -14,81 +14,6 @@
     },
     {
       "allow_nil?": false,
-      "default": "nil",
-      "generated?": false,
-      "precision": null,
-      "primary_key?": false,
-      "references": null,
-      "scale": null,
-      "size": null,
-      "source": "locale",
-      "type": "text"
-    },
-    {
-      "allow_nil?": false,
-      "default": "nil",
-      "generated?": false,
-      "precision": null,
-      "primary_key?": false,
-      "references": null,
-      "scale": null,
-      "size": null,
-      "source": "title",
-      "type": "text"
-    },
-    {
-      "allow_nil?": false,
-      "default": "nil",
-      "generated?": false,
-      "precision": null,
-      "primary_key?": false,
-      "references": null,
-      "scale": null,
-      "size": null,
-      "source": "summary",
-      "type": "text"
-    },
-    {
-      "allow_nil?": true,
-      "default": "nil",
-      "generated?": false,
-      "precision": null,
-      "primary_key?": false,
-      "references": null,
-      "scale": null,
-      "size": null,
-      "source": "proposal_summary",
-      "type": "text"
-    },
-    {
-      "allow_nil?": true,
-      "default": "nil",
-      "generated?": false,
-      "precision": null,
-      "primary_key?": false,
-      "references": null,
-      "scale": null,
-      "size": null,
-      "source": "decision_summary",
-      "type": "text"
-    },
-    {
-      "allow_nil?": false,
-      "default": "[]",
-      "generated?": false,
-      "precision": null,
-      "primary_key?": false,
-      "references": null,
-      "scale": null,
-      "size": null,
-      "source": "provenance",
-      "type": [
-        "array",
-        "text"
-      ]
-    },
-    {
-      "allow_nil?": false,
       "default": "fragment(\"(now() AT TIME ZONE 'utc')\")",
       "generated?": false,
       "precision": null,
@@ -132,7 +57,7 @@
           "global": null,
           "strategy": null
         },
-        "name": "coverage_variants_agenda_item_id_fkey",
+        "name": "dossier_links_agenda_item_id_fkey",
         "on_delete": null,
         "on_update": null,
         "primary_key?": true,
@@ -143,6 +68,39 @@
       "size": null,
       "source": "agenda_item_id",
       "type": "uuid"
+    },
+    {
+      "allow_nil?": false,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": {
+        "deferrable": false,
+        "destination_attribute": "id",
+        "destination_attribute_default": null,
+        "destination_attribute_generated": null,
+        "index?": false,
+        "index_where": null,
+        "match_tenant?": false,
+        "match_type": null,
+        "match_with": null,
+        "multitenancy": {
+          "attribute": null,
+          "global": null,
+          "strategy": null
+        },
+        "name": "dossier_links_dossier_id_fkey",
+        "on_delete": null,
+        "on_update": null,
+        "primary_key?": true,
+        "schema": "public",
+        "table": "dossiers"
+      },
+      "scale": null,
+      "size": null,
+      "source": "dossier_id",
+      "type": "uuid"
     }
   ],
   "base_filter": null,
@@ -151,12 +109,12 @@
   "custom_indexes": [],
   "custom_statements": [],
   "has_create_action": true,
-  "hash": "3257F19319179671BD9A737846C1E7022A6E1D399ADE3430D3EC9C6DC5F8F1C8",
+  "hash": "D99DBCF9AB4AE4C7F27A7D0B0D21A3817444510DE95C3685B0F1F915EE5E17B0",
   "identities": [
     {
       "all_tenants?": false,
       "base_filter": null,
-      "index_name": "coverage_variants_unique_locale_index",
+      "index_name": "dossier_links_unique_link_index",
       "keys": [
         {
           "type": "atom",
@@ -164,10 +122,10 @@
         },
         {
           "type": "atom",
-          "value": "locale"
+          "value": "dossier_id"
         }
       ],
-      "name": "unique_locale",
+      "name": "unique_link",
       "nils_distinct?": true,
       "where": null
     }
@@ -179,5 +137,5 @@
   },
   "repo": "Elixir.BrusselsWtf.Repo",
   "schema": null,
-  "table": "coverage_variants"
+  "table": "dossier_links"
 }

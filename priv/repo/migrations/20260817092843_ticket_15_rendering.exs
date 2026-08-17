@@ -1,4 +1,4 @@
-defmodule BrusselsWtf.Repo.Migrations.RenderStoredTimeline do
+defmodule BrusselsWtf.Repo.Migrations.Ticket15Rendering do
   @moduledoc """
   Updates resources based on their most recent snapshots.
 
@@ -35,6 +35,20 @@ defmodule BrusselsWtf.Repo.Migrations.RenderStoredTimeline do
     create unique_index(:agenda_items, [:council_meeting_id, :stable_anchor],
              name: "agenda_items_unique_anchor_index"
            )
+
+    alter table(:claim_evidence) do
+      add :source_title, :text
+      add :render_key, :text
+      add :synthetic, :boolean, null: false, default: false
+    end
+
+    create unique_index(:claim_evidence, [:proposal_id, :render_key],
+             name: "claim_evidence_unique_rendered_reference_index"
+           )
+
+    alter table(:claim_evidence) do
+      modify :source_version_id, :uuid, null: true
+    end
 
     create table(:coverage_variants, primary_key: false) do
       add :id, :uuid, null: false, default: fragment("uuid_generate_v7()"), primary_key: true
@@ -148,86 +162,41 @@ defmodule BrusselsWtf.Repo.Migrations.RenderStoredTimeline do
 
     create unique_index(:dossiers, [:slug], name: "dossiers_unique_slug_index")
 
-    create table(:evidence, primary_key: false) do
-      add :id, :uuid, null: false, default: fragment("uuid_generate_v7()"), primary_key: true
-      add :citation_url, :text, null: false
-      add :source_title, :text, null: false
-      add :location, :text, null: false
-      add :retrieved_at, :utc_datetime_usec, null: false
-      add :checksum, :text
-      add :synthetic, :boolean, null: false, default: false
-
-      add :inserted_at, :utc_datetime_usec,
-        null: false,
-        default: fragment("(now() AT TIME ZONE 'utc')")
-
-      add :updated_at, :utc_datetime_usec,
-        null: false,
-        default: fragment("(now() AT TIME ZONE 'utc')")
-
-      add :agenda_item_id,
-          references(:agenda_items,
-            column: :id,
-            name: "evidence_agenda_item_id_fkey",
-            type: :uuid,
-            prefix: "public"
-          ),
-          null: false
-    end
-
-    create unique_index(:evidence, [:agenda_item_id, :citation_url],
-             name: "evidence_source_for_item_index"
-           )
-
     alter table(:meeting_pages) do
       add :revision_published_at, :utc_datetime_usec
     end
 
-    create table(:proposals, primary_key: false) do
-      add :id, :uuid, null: false, default: fragment("uuid_generate_v7()"), primary_key: true
-      add :statement, :text, null: false
-
-      add :inserted_at, :utc_datetime_usec,
-        null: false,
-        default: fragment("(now() AT TIME ZONE 'utc')")
-
-      add :updated_at, :utc_datetime_usec,
-        null: false,
-        default: fragment("(now() AT TIME ZONE 'utc')")
-
-      add :agenda_item_id,
-          references(:agenda_items,
-            column: :id,
-            name: "proposals_agenda_item_id_fkey",
-            type: :uuid,
-            prefix: "public"
-          ),
-          null: false
+    alter table(:proposals) do
+      add :render_key, :text
+      add :synthetic, :boolean, null: false, default: false
     end
 
-    create unique_index(:proposals, [:agenda_item_id], name: "proposals_one_per_item_index")
+    create unique_index(:proposals, [:agenda_item_id, :render_key],
+             name: "proposals_unique_rendered_item_index"
+           )
+
+    alter table(:proposals) do
+      modify :source_version_id, :uuid, null: true
+    end
   end
 
   def down do
-    drop constraint(:proposals, "proposals_agenda_item_id_fkey")
+    alter table(:proposals) do
+      modify :source_version_id, :uuid, null: false
+    end
 
-    drop_if_exists unique_index(:proposals, [:agenda_item_id],
-                     name: "proposals_one_per_item_index"
+    drop_if_exists unique_index(:proposals, [:agenda_item_id, :render_key],
+                     name: "proposals_unique_rendered_item_index"
                    )
 
-    drop table(:proposals)
+    alter table(:proposals) do
+      remove :synthetic
+      remove :render_key
+    end
 
     alter table(:meeting_pages) do
       remove :revision_published_at
     end
-
-    drop constraint(:evidence, "evidence_agenda_item_id_fkey")
-
-    drop_if_exists unique_index(:evidence, [:agenda_item_id, :citation_url],
-                     name: "evidence_source_for_item_index"
-                   )
-
-    drop table(:evidence)
 
     drop_if_exists unique_index(:dossiers, [:slug], name: "dossiers_unique_slug_index")
 
@@ -269,6 +238,20 @@ defmodule BrusselsWtf.Repo.Migrations.RenderStoredTimeline do
                    )
 
     drop table(:coverage_variants)
+
+    alter table(:claim_evidence) do
+      modify :source_version_id, :uuid, null: false
+    end
+
+    drop_if_exists unique_index(:claim_evidence, [:proposal_id, :render_key],
+                     name: "claim_evidence_unique_rendered_reference_index"
+                   )
+
+    alter table(:claim_evidence) do
+      remove :synthetic
+      remove :render_key
+      remove :source_title
+    end
 
     drop_if_exists unique_index(:agenda_items, [:council_meeting_id, :stable_anchor],
                      name: "agenda_items_unique_anchor_index"

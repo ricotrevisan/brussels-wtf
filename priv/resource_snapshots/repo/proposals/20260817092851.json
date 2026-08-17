@@ -21,44 +21,8 @@
       "references": null,
       "scale": null,
       "size": null,
-      "source": "citation_url",
+      "source": "text",
       "type": "text"
-    },
-    {
-      "allow_nil?": false,
-      "default": "nil",
-      "generated?": false,
-      "precision": null,
-      "primary_key?": false,
-      "references": null,
-      "scale": null,
-      "size": null,
-      "source": "source_title",
-      "type": "text"
-    },
-    {
-      "allow_nil?": false,
-      "default": "nil",
-      "generated?": false,
-      "precision": null,
-      "primary_key?": false,
-      "references": null,
-      "scale": null,
-      "size": null,
-      "source": "location",
-      "type": "text"
-    },
-    {
-      "allow_nil?": false,
-      "default": "nil",
-      "generated?": false,
-      "precision": null,
-      "primary_key?": false,
-      "references": null,
-      "scale": null,
-      "size": null,
-      "source": "retrieved_at",
-      "type": "utc_datetime_usec"
     },
     {
       "allow_nil?": true,
@@ -69,7 +33,7 @@
       "references": null,
       "scale": null,
       "size": null,
-      "source": "checksum",
+      "source": "render_key",
       "type": "text"
     },
     {
@@ -83,6 +47,18 @@
       "size": null,
       "source": "synthetic",
       "type": "boolean"
+    },
+    {
+      "allow_nil?": false,
+      "default": "\"proposed\"",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "status",
+      "type": "text"
     },
     {
       "allow_nil?": false,
@@ -129,7 +105,7 @@
           "global": null,
           "strategy": null
         },
-        "name": "evidence_agenda_item_id_fkey",
+        "name": "proposals_agenda_item_id_fkey",
         "on_delete": null,
         "on_update": null,
         "primary_key?": true,
@@ -140,6 +116,39 @@
       "size": null,
       "source": "agenda_item_id",
       "type": "uuid"
+    },
+    {
+      "allow_nil?": true,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": {
+        "deferrable": false,
+        "destination_attribute": "id",
+        "destination_attribute_default": null,
+        "destination_attribute_generated": null,
+        "index?": false,
+        "index_where": null,
+        "match_tenant?": false,
+        "match_type": null,
+        "match_with": null,
+        "multitenancy": {
+          "attribute": null,
+          "global": null,
+          "strategy": null
+        },
+        "name": "proposals_source_version_id_fkey",
+        "on_delete": null,
+        "on_update": null,
+        "primary_key?": true,
+        "schema": "public",
+        "table": "source_versions"
+      },
+      "scale": null,
+      "size": null,
+      "source": "source_version_id",
+      "type": "uuid"
     }
   ],
   "base_filter": null,
@@ -148,12 +157,12 @@
   "custom_indexes": [],
   "custom_statements": [],
   "has_create_action": true,
-  "hash": "C086894EE0FB3116D28F0FC44DA991D27BD0AB58114317E16447E8EB3AB4B8D8",
+  "hash": "272A9ACF437624F6A37DFF9351C21A9CF239BE4932B0AFE06E20E0178B965FDF",
   "identities": [
     {
       "all_tenants?": false,
       "base_filter": null,
-      "index_name": "evidence_source_for_item_index",
+      "index_name": "proposals_unique_item_source_index",
       "keys": [
         {
           "type": "atom",
@@ -161,10 +170,28 @@
         },
         {
           "type": "atom",
-          "value": "citation_url"
+          "value": "source_version_id"
         }
       ],
-      "name": "source_for_item",
+      "name": "unique_item_source",
+      "nils_distinct?": true,
+      "where": null
+    },
+    {
+      "all_tenants?": false,
+      "base_filter": null,
+      "index_name": "proposals_unique_rendered_item_index",
+      "keys": [
+        {
+          "type": "atom",
+          "value": "agenda_item_id"
+        },
+        {
+          "type": "atom",
+          "value": "render_key"
+        }
+      ],
+      "name": "unique_rendered_item",
       "nils_distinct?": true,
       "where": null
     }
@@ -176,5 +203,5 @@
   },
   "repo": "Elixir.BrusselsWtf.Repo",
   "schema": null,
-  "table": "evidence"
+  "table": "proposals"
 }

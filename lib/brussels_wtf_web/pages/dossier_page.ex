@@ -117,7 +117,7 @@ defmodule BrusselsWtfWeb.DossierPage do
           item_number: item.item_number,
           title: variant.title,
           summary: summary(variant, state, locale),
-          evidences: item.evidences,
+          evidences: BrusselsWtfWeb.PublicEvidence.for_item(item),
           href:
             "/meetings/#{meeting.commune.slug}/#{meeting.municipal_identifier}?lang=#{locale}##{item.stable_anchor}"
         }

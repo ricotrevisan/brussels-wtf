@@ -14,14 +14,14 @@
     },
     {
       "allow_nil?": false,
-      "default": "nil",
+      "default": "\"draft\"",
       "generated?": false,
       "precision": null,
       "primary_key?": false,
       "references": null,
       "scale": null,
       "size": null,
-      "source": "item_number",
+      "source": "publication_status",
       "type": "text"
     },
     {
@@ -33,11 +33,11 @@
       "references": null,
       "scale": null,
       "size": null,
-      "source": "stable_anchor",
+      "source": "citation_url",
       "type": "text"
     },
     {
-      "allow_nil?": false,
+      "allow_nil?": true,
       "default": "nil",
       "generated?": false,
       "precision": null,
@@ -45,8 +45,8 @@
       "references": null,
       "scale": null,
       "size": null,
-      "source": "source_wording",
-      "type": "text"
+      "source": "revision_published_at",
+      "type": "utc_datetime_usec"
     },
     {
       "allow_nil?": false,
@@ -105,7 +105,7 @@
           "global": null,
           "strategy": null
         },
-        "name": "agenda_items_council_meeting_id_fkey",
+        "name": "meeting_pages_council_meeting_id_fkey",
         "on_delete": null,
         "on_update": null,
         "primary_key?": true,
@@ -124,41 +124,19 @@
   "custom_indexes": [],
   "custom_statements": [],
   "has_create_action": true,
-  "hash": "D30391123170A98F2A74E03FDD1FEBF3A4D3AC7243FDDA94B8621F8748D11C8F",
+  "hash": "1BECD8F8737E06086F0F740DE64F5B7797EED521FBDD4DAA55497D4C39C79DA6",
   "identities": [
     {
       "all_tenants?": false,
       "base_filter": null,
-      "index_name": "agenda_items_unique_item_index",
+      "index_name": "meeting_pages_one_page_per_meeting_index",
       "keys": [
         {
           "type": "atom",
           "value": "council_meeting_id"
-        },
-        {
-          "type": "atom",
-          "value": "item_number"
         }
       ],
-      "name": "unique_item",
-      "nils_distinct?": true,
-      "where": null
-    },
-    {
-      "all_tenants?": false,
-      "base_filter": null,
-      "index_name": "agenda_items_unique_anchor_index",
-      "keys": [
-        {
-          "type": "atom",
-          "value": "council_meeting_id"
-        },
-        {
-          "type": "atom",
-          "value": "stable_anchor"
-        }
-      ],
-      "name": "unique_anchor",
+      "name": "one_page_per_meeting",
       "nils_distinct?": true,
       "where": null
     }
@@ -170,5 +148,5 @@
   },
   "repo": "Elixir.BrusselsWtf.Repo",
   "schema": null,
-  "table": "agenda_items"
+  "table": "meeting_pages"
 }

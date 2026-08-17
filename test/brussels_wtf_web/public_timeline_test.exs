@@ -69,7 +69,7 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
         scheduled_on: ~D[2026-09-20]
       })
 
-    BrusselsWtf.Council.upsert_agenda_item!(%{
+    BrusselsWtf.Council.upsert_rendered_agenda_item!(%{
       council_meeting_id: meeting.id,
       item_number: "1",
       stable_anchor: "agenda-item-1",
@@ -111,7 +111,7 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
 
     item = List.first(page.council_meeting.agenda_items)
 
-    BrusselsWtf.Council.upsert_agenda_item!(%{
+    BrusselsWtf.Council.upsert_rendered_agenda_item!(%{
       council_meeting_id: page.council_meeting.id,
       item_number: item.item_number,
       stable_anchor: item.stable_anchor,
@@ -142,7 +142,7 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
       })
 
     item =
-      BrusselsWtf.Council.upsert_agenda_item!(%{
+      BrusselsWtf.Council.upsert_rendered_agenda_item!(%{
         council_meeting_id: meeting.id,
         item_number: "1",
         stable_anchor: "agenda-item-1",
@@ -152,7 +152,10 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
 
     BrusselsWtf.Council.upsert_proposal!(%{
       agenda_item_id: item.id,
-      statement: "ITEM-EN-SOURCE"
+      text: "ITEM-EN-SOURCE",
+      status: :proposed,
+      render_key: "test-item-en",
+      synthetic: true
     })
 
     BrusselsWtf.Council.upsert_coverage_variant!(%{
@@ -206,7 +209,7 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
 
     item = List.first(page.council_meeting.agenda_items)
 
-    BrusselsWtf.Council.upsert_agenda_item!(%{
+    BrusselsWtf.Council.upsert_rendered_agenda_item!(%{
       council_meeting_id: page.council_meeting.id,
       item_number: item.item_number,
       stable_anchor: item.stable_anchor,
@@ -232,7 +235,7 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
 
     item = List.first(page.council_meeting.agenda_items)
 
-    BrusselsWtf.Council.upsert_agenda_item!(%{
+    BrusselsWtf.Council.upsert_rendered_agenda_item!(%{
       council_meeting_id: page.council_meeting.id,
       item_number: item.item_number,
       stable_anchor: item.stable_anchor,
@@ -303,7 +306,7 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
 
     item = List.first(page.council_meeting.agenda_items)
 
-    BrusselsWtf.Council.upsert_agenda_item!(%{
+    BrusselsWtf.Council.upsert_rendered_agenda_item!(%{
       council_meeting_id: page.council_meeting.id,
       item_number: item.item_number,
       stable_anchor: "a-new-anchor-must-not-replace-the-public-one",

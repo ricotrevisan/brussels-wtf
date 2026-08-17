@@ -107,6 +107,9 @@ defmodule BrusselsWtfWeb.MeetingPage do
       assigns
       |> assign(:coverage_variant, variant)
       |> assign(:display_state, display_state(assigns.item))
+      |> assign(:proposals, BrusselsWtfWeb.PublicEvidence.proposals(assigns.item))
+      |> assign(:source_proposals, BrusselsWtfWeb.PublicEvidence.source_proposals(assigns.item))
+      |> assign(:evidences, BrusselsWtfWeb.PublicEvidence.for_item(assigns.item))
 
     ~H"""
     <article id={@item.stable_anchor} class="scroll-mt-4 py-7" tabindex="-1">
@@ -116,10 +119,19 @@ defmodule BrusselsWtfWeb.MeetingPage do
       <h2 class="mt-2 text-2xl font-semibold leading-snug">{@coverage_variant.title}</h2>
 
       <div class="mt-4 space-y-3">
-        <div :if={loaded?(@item.proposal)}>
+        <div :if={@proposals != []}>
           <h3 class="font-semibold">{text(@locale, :proposal)}</h3>
           <p class="mt-1 leading-7">
             {proposal_copy(@coverage_variant, @display_state, @locale)}
+          </p>
+          <blockquote
+            :for={proposal <- @source_proposals}
+            class="mt-3 border-l-2 border-base-300 pl-3 text-sm"
+          >
+            {proposal.text}
+          </blockquote>
+          <p :if={@source_proposals != [] and @item.outcome == :unknown} class="mt-2 text-sm">
+            {unknown_outcome_label(@locale)}
           </p>
         </div>
 
@@ -167,8 +179,8 @@ defmodule BrusselsWtfWeb.MeetingPage do
 
       <section aria-label={text(@locale, :evidence)} class="mt-6">
         <h3 class="font-semibold">{text(@locale, :evidence)}</h3>
-        <ul :if={@item.evidences != []} class="mt-2 space-y-3">
-          <li :for={evidence <- @item.evidences} class="text-sm">
+        <ul :if={@evidences != []} class="mt-2 space-y-3">
+          <li :for={evidence <- @evidences} class="text-sm">
             <a href={evidence.citation_url} rel="external" class="underline underline-offset-2">
               {evidence.source_title}
             </a>
@@ -186,7 +198,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
             </span>
           </li>
         </ul>
-        <p :if={@item.evidences == []} class="mt-2 text-sm">
+        <p :if={@evidences == []} class="mt-2 text-sm">
           <a href={@page.citation_url} rel="external" class="underline underline-offset-2">
             {text(@locale, :source)}
           </a>
@@ -266,6 +278,10 @@ defmodule BrusselsWtfWeb.MeetingPage do
 
   defp format_date(date), do: Date.to_iso8601(date)
   defp format_datetime(datetime), do: Calendar.strftime(datetime, "%Y-%m-%d %H:%M UTC")
+
+  defp unknown_outcome_label("fr"), do: "Résultat inconnu"
+  defp unknown_outcome_label("nl"), do: "Onbekende uitkomst"
+  defp unknown_outcome_label(_locale), do: "Unknown outcome"
 
   defp text("fr", key), do: Map.fetch!(fr_text(), key)
   defp text("nl", key), do: Map.fetch!(nl_text(), key)
