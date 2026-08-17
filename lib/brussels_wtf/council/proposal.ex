@@ -17,13 +17,17 @@ defmodule BrusselsWtf.Council.Proposal do
     create :record do
       primary? true
       accept [:agenda_item_id, :source_version_id, :text, :status]
+      validate present(:source_version_id)
+
       upsert? true
       upsert_identity :unique_item_source
       upsert_fields []
     end
 
     create :upsert_rendered do
-      accept [:agenda_item_id, :text, :status, :render_key, :synthetic]
+      accept [:agenda_item_id, :text, :status, :render_key]
+      validate present(:render_key)
+      change set_attribute(:synthetic, true)
       upsert? true
       upsert_identity :unique_rendered_item
       upsert_fields [:text, :status, :synthetic]

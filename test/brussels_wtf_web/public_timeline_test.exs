@@ -6,6 +6,23 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
     :ok
   end
 
+  test "demonstration references remain explicitly synthetic and source-version free" do
+    page =
+      BrusselsWtf.Council.list_published_meeting_pages!()
+      |> Enum.find(&(&1.council_meeting.municipal_identifier == "demo-ixelles"))
+
+    proposal =
+      page.council_meeting.agenda_items |> List.first() |> Map.fetch!(:proposals) |> List.first()
+
+    evidence = List.first(proposal.evidence)
+
+    assert proposal.synthetic
+    assert proposal.source_version_id == nil
+    assert evidence.synthetic
+    assert evidence.source_version_id == nil
+    assert evidence.render_key == "synthetic-seed"
+  end
+
   test "the timeline renders stored coverage for all communes in distinct sections", %{conn: conn} do
     conn = get(conn, "/?lang=en")
     html = html_response(conn, 200)
@@ -154,8 +171,7 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
       agenda_item_id: item.id,
       text: "ITEM-EN-SOURCE",
       status: :proposed,
-      render_key: "test-item-en",
-      synthetic: true
+      render_key: "test-item-en"
     })
 
     BrusselsWtf.Council.upsert_coverage_variant!(%{

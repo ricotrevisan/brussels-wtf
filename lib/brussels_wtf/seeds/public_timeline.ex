@@ -180,8 +180,7 @@ defmodule BrusselsWtf.Seeds.PublicTimeline do
         agenda_item_id: item.id,
         text: record.proposal_statement,
         status: :proposed,
-        render_key: "synthetic-seed",
-        synthetic: true
+        render_key: "synthetic-seed"
       })
 
     if record.disposition do
@@ -200,8 +199,7 @@ defmodule BrusselsWtf.Seeds.PublicTimeline do
       source_title: record.source_title,
       location: "Landing page · DEMO",
       retrieved_at: @retrieved_at,
-      render_key: "synthetic-seed",
-      synthetic: true
+      render_key: "synthetic-seed"
     })
 
     {dossier_slug, dossier_title} = record.dossier

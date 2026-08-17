@@ -29,6 +29,8 @@ defmodule BrusselsWtf.Council.Evidence do
         :applicable_until
       ]
 
+      validate present(:source_version_id)
+
       upsert? true
       upsert_identity :unique_proposal_source_claim
       upsert_fields []
@@ -43,10 +45,11 @@ defmodule BrusselsWtf.Council.Evidence do
         :citation_url,
         :retrieved_at,
         :source_title,
-        :render_key,
-        :synthetic
+        :render_key
       ]
 
+      validate present(:render_key)
+      change set_attribute(:synthetic, true)
       upsert? true
       upsert_identity :unique_rendered_reference
 
