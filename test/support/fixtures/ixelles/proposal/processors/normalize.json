@@ -1,0 +1,11 @@
+{
+  "meeting_identifier": "fixture-1",
+  "scheduled_on": "2026-03-15",
+  "items": [
+    {
+      "item_number": "1",
+      "source_wording": "Demonstration proposal for the principal acceptance seam",
+      "kind": "proposal"
+    }
+  ]
+}

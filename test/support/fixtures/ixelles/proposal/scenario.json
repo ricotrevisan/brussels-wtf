@@ -1,0 +1,12 @@
+{
+  "commune": "ixelles",
+  "meeting_identifier": "fixture-1",
+  "index_url": "https://fixtures.test/ixelles/meetings/fixture-1",
+  "source_url": "https://fixtures.test/ixelles/meetings/fixture-1/agenda.txt",
+  "source_path": "sources/agenda.txt",
+  "observed_at": "2026-03-01T10:00:00Z",
+  "expected": {
+    "path": "/meetings/ixelles/fixture-1",
+    "title_en": "Demonstration proposal for the principal acceptance seam"
+  }
+}
