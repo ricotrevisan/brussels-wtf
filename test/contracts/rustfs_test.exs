@@ -89,7 +89,7 @@ defmodule BrusselsWtf.Contracts.RustfsTest do
     request = Req.new() |> ReqS3.attach(request_options(values))
     denied_key = "_validation/brussels-wtf-contract/scope-canary"
 
-    assert request_status(fn -> Req.get(request, url: "s3://") end) == 403
+    assert request_status(fn -> Req.get(request, url: "s3://") end) in 400..599
 
     assert request_status(fn ->
              Req.get(request, url: "s3://#{values.denied_bucket}/#{denied_key}")

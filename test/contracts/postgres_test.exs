@@ -7,7 +7,13 @@ defmodule BrusselsWtf.Contracts.PostgresTest do
     url = System.fetch_env!("POSTGRES_CONTRACT_URL")
     expected_database = System.fetch_env!("POSTGRES_CONTRACT_DATABASE")
     expected_role = System.fetch_env!("POSTGRES_CONTRACT_ROLE")
-    {:ok, connection} = Postgrex.start_link(url: url)
+
+    connection_options =
+      url
+      |> Ecto.Repo.Supervisor.parse_url()
+      |> Keyword.delete(:scheme)
+
+    {:ok, connection} = Postgrex.start_link(connection_options)
 
     on_exit(fn -> GenServer.stop(connection) end)
 
@@ -19,8 +25,12 @@ defmodule BrusselsWtf.Contracts.PostgresTest do
     assert [[database, role]] =
              query!(context.connection, "select current_database(), current_user").rows
 
-    assert database == context.expected_database
-    assert role == context.expected_role
+    assert expected_identity?(
+             database,
+             role,
+             context.expected_database,
+             context.expected_role
+           )
   end
 
   test "the application role has no cluster-level powers", %{connection: connection} do
@@ -39,24 +49,24 @@ defmodule BrusselsWtf.Contracts.PostgresTest do
   } do
     inherited_elevated_roles =
       query!(connection, """
-      select rolname
+      select count(*)
       from pg_roles
       where rolname <> current_user
         and pg_has_role(current_user, oid, 'member')
         and (rolsuper or rolcreatedb or rolcreaterole or rolreplication or rolbypassrls)
       """)
 
-    assert inherited_elevated_roles.rows == []
+    assert inherited_elevated_roles.rows == [[0]]
 
     other_database_create_rights =
       query!(connection, """
-      select datname
+      select count(*)
       from pg_database
       where datname <> current_database()
         and has_database_privilege(current_user, oid, 'CREATE')
       """)
 
-    assert other_database_create_rights.rows == []
+    assert other_database_create_rights.rows == [[0]]
   end
 
   test "every application migration is up", %{connection: connection} do
@@ -92,6 +102,10 @@ defmodule BrusselsWtf.Contracts.PostgresTest do
     after
       query!(connection, "rollback")
     end
+  end
+
+  defp expected_identity?(database, role, expected_database, expected_role) do
+    database == expected_database and role == expected_role
   end
 
   defp query!(connection, statement), do: Postgrex.query!(connection, statement, [])

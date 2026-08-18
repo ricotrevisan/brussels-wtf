@@ -28,7 +28,7 @@ RUSTFS_CONTRACT_SECRET_ACCESS_KEY='(secret)' \
 MIX_ENV=test mix test --include external test/contracts/rustfs_test.exs
 ```
 
-The suite proves real SigV4 endpoint/region/path-style compatibility, content-addressed write and read-after-write hashing, metadata, a deterministic 64 MiB upload, disposable-prefix delete access, anonymous-read denial, list-buckets denial, and canary-bucket GET/PUT denial. Its two deterministic raw fixtures remain for the non-production bucket lifecycle to clean up; application credentials deliberately have no raw-object delete interface.
+The suite proves real SigV4 endpoint/region/path-style compatibility, content-addressed write and read-after-write hashing, metadata, a deterministic 64 MiB upload, disposable-prefix delete access, anonymous-read denial, unavailable bucket enumeration, and explicit canary-bucket GET/PUT denial. Its two deterministic raw fixtures remain for the non-production bucket lifecycle to clean up; application credentials deliberately have no raw-object delete interface.
 
 Retain ReqS3 only after this exact suite passes. If it fails because ReqS3 is incompatible with rustFS, implement the existing `BrusselsWtf.Archive` behaviour with ExAws/ExAws.S3 and run the same behavioral contract. Do not build a custom S3 client.
 
