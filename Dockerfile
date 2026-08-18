@@ -53,4 +53,4 @@ COPY --from=builder --chown=nobody:root /app/_build/prod/rel/brussels_wtf ./
 
 USER nobody
 EXPOSE 3000
-CMD ["sh", "-c", "/app/bin/migrate && /app/bin/server"]
+CMD ["sh", "-c", "/app/bin/migrate && /app/bin/validate_archive && /app/bin/server"]

@@ -18,6 +18,10 @@ defmodule BrusselsWtfWeb.Router do
     plug :accepts, ["json"]
   end
 
+  scope "/health", BrusselsWtfWeb do
+    get "/live", HealthController, :live
+  end
+
   scope "/", BrusselsWtfWeb do
     pipe_through :browser
 

@@ -41,6 +41,45 @@ if config_env() == :dev do
 end
 
 if config_env() == :prod do
+  archive_environment = %{
+    access_key_id: "SOURCE_ARCHIVE_S3_ACCESS_KEY_ID",
+    secret_access_key: "SOURCE_ARCHIVE_S3_SECRET_ACCESS_KEY",
+    region: "SOURCE_ARCHIVE_S3_REGION",
+    endpoint_url: "SOURCE_ARCHIVE_S3_ENDPOINT",
+    bucket: "SOURCE_ARCHIVE_S3_BUCKET"
+  }
+
+  archive_config =
+    Map.new(archive_environment, fn {key, name} -> {key, System.get_env(name)} end)
+
+  missing_archive_environment =
+    archive_environment
+    |> Enum.filter(fn {key, _name} -> archive_config[key] in [nil, ""] end)
+    |> Enum.map(fn {_key, name} -> name end)
+
+  cond do
+    missing_archive_environment == [] ->
+      config :brussels_wtf, :archive, BrusselsWtf.Archive.S3
+
+      config :brussels_wtf, BrusselsWtf.Archive.S3,
+        bucket: archive_config.bucket,
+        validation_prefix: "_validation/brussels-wtf",
+        req_options: [
+          aws_endpoint_url_s3: archive_config.endpoint_url,
+          aws_sigv4: [
+            access_key_id: archive_config.access_key_id,
+            secret_access_key: archive_config.secret_access_key,
+            region: archive_config.region
+          ]
+        ]
+
+    length(missing_archive_environment) == map_size(archive_environment) ->
+      :ok
+
+    true ->
+      raise "incomplete source archive configuration; missing #{Enum.join(missing_archive_environment, ", ")}"
+  end
+
   database_url =
     System.get_env("DATABASE_URL") ||
       raise """
