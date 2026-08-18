@@ -41,6 +41,24 @@ if config_env() == :dev do
 end
 
 if config_env() == :prod do
+  review_username =
+    System.get_env("REVIEW_USERNAME") ||
+      raise "environment variable REVIEW_USERNAME is missing"
+
+  review_password =
+    System.get_env("REVIEW_PASSWORD") ||
+      raise "environment variable REVIEW_PASSWORD is missing"
+
+  if byte_size(review_password) < 16 do
+    raise "environment variable REVIEW_PASSWORD must contain at least 16 characters"
+  end
+
+  config :brussels_wtf, :review_auth,
+    actor_id: "rico",
+    username: review_username,
+    password: review_password,
+    session_ttl_seconds: 28_800
+
   archive_environment = %{
     access_key_id: "SOURCE_ARCHIVE_S3_ACCESS_KEY_ID",
     secret_access_key: "SOURCE_ARCHIVE_S3_SECRET_ACCESS_KEY",

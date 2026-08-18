@@ -8,7 +8,9 @@ defmodule BrusselsWtfWeb.Endpoint do
     store: :cookie,
     key: "_brussels_wtf_key",
     signing_salt: "vgXGTx5o",
-    same_site: "Lax"
+    encryption_salt: "JZn4Kx7r",
+    same_site: "Lax",
+    secure: Application.compile_env(:brussels_wtf, :session_cookie_secure, false)
   ]
 
   socket "/live", Phoenix.LiveView.Socket,

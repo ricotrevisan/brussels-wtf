@@ -1,5 +1,12 @@
 import Config
 config :brussels_wtf, :allow_synthetic_seeds, true
+
+config :brussels_wtf, :review_auth,
+  actor_id: "rico",
+  username: "rico",
+  password: "review-secret",
+  session_ttl_seconds: 28_800
+
 config :ash, policies: [show_policy_breakdowns?: true], disable_async?: true
 
 # Configure your database

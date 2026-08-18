@@ -61,7 +61,14 @@ config :brussels_wtf,
   archive: BrusselsWtf.Archive.Unconfigured,
   readiness: BrusselsWtf.Readiness.Monitor,
   processors: BrusselsWtf.Processors.Unimplemented,
-  allow_synthetic_seeds: false
+  allow_synthetic_seeds: false,
+  session_cookie_secure: false,
+  review_auth: [
+    actor_id: "rico",
+    username: nil,
+    password: nil,
+    session_ttl_seconds: 28_800
+  ]
 
 config :brussels_wtf, Oban,
   repo: BrusselsWtf.Repo,

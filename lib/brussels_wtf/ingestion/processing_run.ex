@@ -55,7 +55,7 @@ defmodule BrusselsWtf.Ingestion.ProcessingRun do
     attribute :status, :atom do
       allow_nil? false
       public? true
-      constraints one_of: [:succeeded, :failed]
+      constraints one_of: [:queued, :succeeded, :failed]
     end
 
     attribute :output, :map, public?: true

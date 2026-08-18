@@ -18,6 +18,10 @@ defmodule BrusselsWtfWeb.Router do
     plug :accepts, ["json"]
   end
 
+  pipeline :reviewer do
+    plug BrusselsWtfWeb.Plugs.RequireReviewer
+  end
+
   scope "/health", BrusselsWtfWeb do
     get "/live", HealthController, :live
     get "/ready", HealthController, :ready
@@ -26,9 +30,23 @@ defmodule BrusselsWtfWeb.Router do
   scope "/", BrusselsWtfWeb do
     pipe_through :browser
 
+    get "/review/login", ReviewSessionController, :new
+    post "/review/session", ReviewSessionController, :create
+    delete "/review/session", ReviewSessionController, :delete
+
     dstar("/", TimelinePage)
     dstar("/meetings/:commune/:municipal_id", MeetingPage)
     dstar("/dossiers/:slug", DossierPage)
+  end
+
+  scope "/review", BrusselsWtfWeb do
+    pipe_through [:browser, :reviewer]
+
+    dstar("/", ReviewInboxPage)
+    dstar("/cases/:id", ReviewCasePage)
+    post "/cases/:case_id/actions/:action", ReviewActionController, :create
+    post "/cases/:case_id/notes", ReviewNoteController, :create
+    get "/artifacts/:id", ReviewArtifactController, :show
   end
 
   if Application.compile_env(:brussels_wtf, :dev_routes) do
