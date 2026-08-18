@@ -19,4 +19,7 @@ defmodule BrusselsWtf.Archive.Unconfigured do
 
   @impl true
   def get(_object_key), do: {:error, :source_archive_not_configured}
+
+  @impl true
+  def ready?, do: {:error, :source_archive_not_configured}
 end

@@ -5,6 +5,7 @@ defmodule BrusselsWtf.ArchiveTest do
     @behaviour BrusselsWtf.Archive
     def put(sha256, _bytes), do: {:ok, BrusselsWtf.Archive.object_key(sha256)}
     def get(_key), do: {:ok, "different bytes"}
+    def ready?, do: :ok
   end
 
   setup do

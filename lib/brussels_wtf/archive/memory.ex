@@ -31,6 +31,9 @@ defmodule BrusselsWtf.Archive.Memory do
   end
 
   @impl true
+  def ready?, do: :ok
+
+  @impl true
   def get(object_key) do
     case Agent.get(__MODULE__, &Map.fetch(&1, object_key)) do
       {:ok, bytes} -> {:ok, bytes}

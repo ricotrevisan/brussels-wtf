@@ -3,7 +3,7 @@ defmodule BrusselsWtf.Archive.S3 do
   Private content-addressed source archive backed by an S3-compatible bucket.
 
   ReqS3 supplies AWS Signature V4 and path-style endpoint support for rustFS.
-  Credentials and the endpoint stay in the standard AWS runtime environment.
+  Credentials and the endpoint stay in redacted application runtime configuration.
   """
   @behaviour BrusselsWtf.Archive
 
@@ -15,52 +15,60 @@ defmodule BrusselsWtf.Archive.S3 do
 
   @impl true
   def put(sha256, bytes) when is_binary(sha256) and is_binary(bytes) do
-    with :ok <- validate_content(sha256, bytes) do
-      put_once(Archive.object_key(sha256), sha256, bytes)
-    end
+    safely(fn ->
+      with :ok <- validate_content(sha256, bytes) do
+        put_once(Archive.object_key(sha256), sha256, bytes)
+      end
+    end)
   end
 
   @impl true
   def get(object_key) when is_binary(object_key) do
-    with :ok <- validate_object_key(object_key) do
-      case Req.get(request(), url: object_url(object_key)) do
-        {:ok, %{status: status, body: body}} when status in 200..299 and is_binary(body) ->
-          {:ok, body}
-
-        {:ok, %{status: 404}} ->
-          {:error, :not_found}
-
-        {:ok, %{status: status}} ->
-          {:error, {:archive_http_error, status}}
-
-        {:error, _reason} ->
-          {:error, :archive_unavailable}
+    safely(fn ->
+      with :ok <- validate_object_key(object_key) do
+        get_object(object_key)
       end
-    end
+    end)
   end
+
+  @doc "Returns the stored checksum and byte length for a content-addressed object."
+  @spec metadata(String.t()) ::
+          {:ok, %{sha256: String.t(), content_length: non_neg_integer()}} | {:error, term()}
+  def metadata(object_key) when is_binary(object_key) do
+    safely(fn ->
+      with :ok <- validate_object_key(object_key) do
+        object_metadata(object_key)
+      end
+    end)
+  end
+
+  @impl true
+  def ready?, do: validate()
 
   @doc "Validates write, metadata, read, and delete access under a disposable prefix."
   @spec validate() :: :ok | {:error, term()}
   def validate do
-    bytes = :crypto.strong_rand_bytes(32)
-    sha256 = Digest.sha256(bytes)
-    object_key = validation_object_key()
+    safely(fn ->
+      bytes = :crypto.strong_rand_bytes(32)
+      sha256 = Digest.sha256(bytes)
+      object_key = validation_object_key()
 
-    try do
-      with :ok <- validation_put(object_key, sha256, bytes),
-           :ok <- validation_head(object_key, sha256, byte_size(bytes)),
-           :ok <- validation_get(object_key, bytes),
-           :ok <- validation_delete(object_key),
-           :ok <- validation_absent(object_key) do
-        :ok
+      try do
+        with :ok <- validation_put(object_key, sha256, bytes),
+             :ok <- validation_head(object_key, sha256, byte_size(bytes)),
+             :ok <- validation_get(object_key, bytes),
+             :ok <- validation_delete(object_key),
+             :ok <- validation_absent(object_key) do
+          :ok
+        end
+      after
+        cleanup_validation_object(object_key)
       end
-    after
-      cleanup_validation_object(object_key)
-    end
+    end)
   end
 
   defp validation_put(object_key, sha256, bytes) do
-    request()
+    validation_request()
     |> Req.put(
       url: object_url(object_key),
       body: bytes,
@@ -70,11 +78,14 @@ defmodule BrusselsWtf.Archive.S3 do
         {"x-amz-meta-sha256", sha256}
       ]
     )
-    |> validation_response(:put, 200..299)
+    |> case do
+      {:ok, %{status: status}} when status in 200..299 or status in [409, 412] -> :ok
+      response -> validation_response(response, :put)
+    end
   end
 
   defp validation_head(object_key, sha256, size) do
-    case Req.head(request(), url: object_url(object_key)) do
+    case Req.head(validation_request(), url: object_url(object_key)) do
       {:ok, %{status: status} = response} when status in 200..299 ->
         metadata_sha256 = Req.Response.get_header(response, "x-amz-meta-sha256")
         content_length = Req.Response.get_header(response, "content-length")
@@ -86,12 +97,12 @@ defmodule BrusselsWtf.Archive.S3 do
         end
 
       response ->
-        validation_response(response, :head, 200..299)
+        validation_response(response, :head)
     end
   end
 
   defp validation_get(object_key, expected_bytes) do
-    case Req.get(request(), url: object_url(object_key)) do
+    case Req.get(validation_request(), url: object_url(object_key)) do
       {:ok, %{status: status, body: ^expected_bytes}} when status in 200..299 ->
         :ok
 
@@ -99,37 +110,43 @@ defmodule BrusselsWtf.Archive.S3 do
         {:error, {:archive_validation_failed, :content_mismatch}}
 
       response ->
-        validation_response(response, :get, 200..299)
+        validation_response(response, :get)
     end
   end
 
   defp validation_delete(object_key) do
-    request()
+    validation_request()
     |> Req.delete(url: object_url(object_key))
-    |> validation_response(:delete, 200..299)
+    |> validation_response(:delete)
   end
 
   defp validation_absent(object_key) do
-    case Req.get(request(), url: object_url(object_key)) do
+    case Req.get(validation_request(), url: object_url(object_key)) do
       {:ok, %{status: 404}} -> :ok
       {:ok, %{status: status}} -> {:error, {:archive_validation_failed, :delete, status}}
       {:error, _reason} -> {:error, {:archive_validation_failed, :delete, :unavailable}}
     end
   end
 
-  defp validation_response({:ok, %{status: status}}, _operation, _accepted)
+  defp validation_response({:ok, %{status: status}}, _operation)
        when status >= 200 and status <= 299,
        do: :ok
 
-  defp validation_response({:ok, %{status: status}}, operation, _accepted),
+  defp validation_response({:ok, %{status: status}}, operation),
     do: {:error, {:archive_validation_failed, operation, status}}
 
-  defp validation_response({:error, _reason}, operation, _accepted),
+  defp validation_response({:error, _reason}, operation),
     do: {:error, {:archive_validation_failed, operation, :unavailable}}
 
   defp cleanup_validation_object(object_key) do
-    Req.delete(request(), url: object_url(object_key))
-    :ok
+    try do
+      Req.delete(validation_request(), url: object_url(object_key))
+      :ok
+    rescue
+      _exception -> :ok
+    catch
+      _kind, _reason -> :ok
+    end
   end
 
   defp validation_object_key do
@@ -150,10 +167,12 @@ defmodule BrusselsWtf.Archive.S3 do
            ]
          ) do
       {:ok, %{status: status}} when status in 200..299 ->
-        {:ok, object_key}
+        verify_stored_metadata(object_key, sha256, byte_size(bytes))
 
       {:ok, %{status: status}} when status in [409, 412] ->
-        verify_existing(object_key, bytes)
+        with {:ok, ^object_key} <- verify_existing(object_key, bytes) do
+          verify_stored_metadata(object_key, sha256, byte_size(bytes))
+        end
 
       {:ok, %{status: status}} ->
         {:error, {:archive_http_error, status}}
@@ -171,6 +190,68 @@ defmodule BrusselsWtf.Archive.S3 do
     end
   end
 
+  defp get_object(object_key) do
+    case Req.get(request(), url: object_url(object_key)) do
+      {:ok, %{status: status, body: body}} when status in 200..299 and is_binary(body) ->
+        {:ok, body}
+
+      {:ok, %{status: 404}} ->
+        {:error, :not_found}
+
+      {:ok, %{status: status}} ->
+        {:error, {:archive_http_error, status}}
+
+      {:error, _reason} ->
+        {:error, :archive_unavailable}
+    end
+  end
+
+  defp object_metadata(object_key) do
+    case head_metadata(object_key) do
+      {:ok, metadata} -> {:ok, metadata}
+      {:error, 404} -> {:error, :not_found}
+      {:error, status} when is_integer(status) -> {:error, {:archive_http_error, status}}
+      {:error, :unavailable} -> {:error, :archive_unavailable}
+      {:error, :invalid_metadata} -> {:error, :invalid_metadata}
+    end
+  end
+
+  defp head_metadata(object_key) do
+    case Req.head(request(), url: object_url(object_key)) do
+      {:ok, %{status: status} = response} when status in 200..299 ->
+        with [sha256] <- Req.Response.get_header(response, "x-amz-meta-sha256"),
+             true <- Regex.match?(@sha256_pattern, sha256),
+             [length] <- Req.Response.get_header(response, "content-length"),
+             {content_length, ""} <- Integer.parse(length) do
+          {:ok, %{sha256: sha256, content_length: content_length}}
+        else
+          _other -> {:error, :invalid_metadata}
+        end
+
+      {:ok, %{status: status}} ->
+        {:error, status}
+
+      {:error, _reason} ->
+        {:error, :unavailable}
+    end
+  end
+
+  defp verify_stored_metadata(object_key, sha256, size) do
+    case head_metadata(object_key) do
+      {:ok, %{sha256: ^sha256, content_length: ^size}} -> {:ok, object_key}
+      {:ok, _metadata} -> {:error, :metadata_mismatch}
+      {:error, _reason} -> {:error, :archive_unavailable}
+    end
+  end
+
+  defp safely(fun) do
+    fun.()
+  rescue
+    _exception -> {:error, :archive_unavailable}
+  catch
+    _kind, _reason -> {:error, :archive_unavailable}
+  end
+
   defp validate_content(sha256, bytes) do
     cond do
       not Regex.match?(@sha256_pattern, sha256) -> {:error, :invalid_sha256}
@@ -186,7 +267,13 @@ defmodule BrusselsWtf.Archive.S3 do
     end
   end
 
-  defp request do
+  # Validation uses short, non-retrying requests so all five operations and
+  # best-effort cleanup finish well inside the readiness monitor deadline.
+  defp validation_request do
+    request(retry: false, receive_timeout: 5_000)
+  end
+
+  defp request(overrides \\ []) do
     config = Application.fetch_env!(:brussels_wtf, __MODULE__)
 
     req_options =
@@ -194,10 +281,12 @@ defmodule BrusselsWtf.Archive.S3 do
         raw: true,
         retry: :transient,
         max_retries: 2,
+        retry_delay: fn retry_count -> 500 * (retry_count + 1) end,
         retry_log_level: false,
         receive_timeout: 60_000
       ]
       |> Keyword.merge(Keyword.get(config, :req_options, []))
+      |> Keyword.merge(overrides)
 
     Req.new()
     |> ReqS3.attach(req_options)

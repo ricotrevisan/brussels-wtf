@@ -9,6 +9,7 @@ defmodule BrusselsWtf.Archive do
   @callback put(sha256 :: String.t(), bytes :: binary()) ::
               {:ok, object_key :: String.t()} | {:error, term()}
   @callback get(object_key :: String.t()) :: {:ok, binary()} | {:error, :not_found | term()}
+  @callback ready?() :: :ok | {:error, term()}
 
   @spec store(binary()) ::
           {:ok, %{sha256: String.t(), object_key: String.t()}} | {:error, term()}
@@ -28,6 +29,9 @@ defmodule BrusselsWtf.Archive do
 
   @spec get(String.t()) :: {:ok, binary()} | {:error, :not_found | term()}
   def get(object_key), do: impl().get(object_key)
+
+  @spec ready?() :: :ok | {:error, term()}
+  def ready?, do: impl().ready?()
 
   def object_key(sha256) do
     prefix = String.slice(sha256, 0, 2)

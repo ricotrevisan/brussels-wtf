@@ -16,6 +16,8 @@ defmodule BrusselsWtf.Application do
       ] ++
         archive_children() ++
         [
+          {Task.Supervisor, name: BrusselsWtf.Readiness.TaskSupervisor},
+          BrusselsWtf.Readiness.Monitor,
           {Oban, Application.fetch_env!(:brussels_wtf, Oban)},
           BrusselsWtfWeb.Endpoint
         ]

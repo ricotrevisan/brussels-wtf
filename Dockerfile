@@ -53,4 +53,6 @@ COPY --from=builder --chown=nobody:root /app/_build/prod/rel/brussels_wtf ./
 
 USER nobody
 EXPOSE 3000
-CMD ["sh", "-c", "/app/bin/migrate && /app/bin/validate_archive && /app/bin/server"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD curl --fail --silent --show-error "http://127.0.0.1:${PORT}/health/ready" || exit 1
+CMD ["sh", "-c", "/app/bin/migrate && /app/bin/validate && /app/bin/server"]

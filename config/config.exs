@@ -59,6 +59,7 @@ config :brussels_wtf,
   clock: BrusselsWtf.Clock.System,
   http: BrusselsWtf.HTTP.Req,
   archive: BrusselsWtf.Archive.Unconfigured,
+  readiness: BrusselsWtf.Readiness.Monitor,
   processors: BrusselsWtf.Processors.Unimplemented,
   allow_synthetic_seeds: false
 

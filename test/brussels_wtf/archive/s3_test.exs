@@ -94,6 +94,11 @@ defmodule BrusselsWtf.Archive.S3Test do
     assert {:ok, %{sha256: ^sha256, object_key: object_key}} = Archive.store(bytes)
     assert object_key == "raw/sha256/fb/#{sha256}"
     assert {:ok, ^bytes} = Archive.get(object_key)
+
+    assert {:ok, %{sha256: ^sha256, content_length: content_length}} =
+             S3.metadata(object_key)
+
+    assert content_length == byte_size(bytes)
     assert {:ok, %{object_key: ^object_key}} = Archive.store(bytes)
   end
 
@@ -103,6 +108,30 @@ defmodule BrusselsWtf.Archive.S3Test do
     assert {:error, :invalid_object_key} = S3.get("raw/sha256/00/not-a-digest")
   end
 
+  test "normalizes unexpected client failures without logging private configuration" do
+    Req.Test.stub(S3, fn _conn ->
+      raise "test-secret-key http://rustfs.test/preview-bucket/private-object"
+    end)
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        missing_sha = String.duplicate("0", 64)
+        assert {:error, :archive_unavailable} = S3.get("raw/sha256/00/#{missing_sha}")
+      end)
+
+    refute log =~ "test-secret-key"
+    refute log =~ "rustfs.test"
+    refute log =~ "preview-bucket"
+    refute log =~ "private-object"
+  end
+
+  test "readiness validates disposable write, metadata, read, and delete access", %{
+    objects: objects
+  } do
+    assert :ok = S3.ready?()
+    assert Agent.get(objects, & &1) == %{}
+  end
+
   test "validates write, metadata, read, and delete access without leaving an object", %{
     objects: objects
   } do
@@ -110,7 +139,30 @@ defmodule BrusselsWtf.Archive.S3Test do
     assert Agent.get(objects, & &1) == %{}
   end
 
-  test "the release archive check fails closed before the web server starts", %{objects: objects} do
+  test "a failed validation operation still attempts bounded cleanup" do
+    parent = self()
+
+    Req.Test.stub(S3, fn conn ->
+      case conn.method do
+        "PUT" ->
+          Plug.Conn.send_resp(conn, 200, "")
+
+        "HEAD" ->
+          Plug.Conn.send_resp(conn, 500, "")
+
+        "DELETE" ->
+          send(parent, :cleanup_attempted)
+          Plug.Conn.send_resp(conn, 204, "")
+      end
+    end)
+
+    assert {:error, {:archive_validation_failed, :head, 500}} = S3.validate()
+    assert_received :cleanup_attempted
+  end
+
+  test "release validation checks archive access before the web server starts", %{
+    objects: objects
+  } do
     assert ExUnit.CaptureIO.capture_io(fn ->
              assert :ok = BrusselsWtf.Release.validate_archive()
            end) == "Source archive validation passed\n"

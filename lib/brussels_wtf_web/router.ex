@@ -20,6 +20,7 @@ defmodule BrusselsWtfWeb.Router do
 
   scope "/health", BrusselsWtfWeb do
     get "/live", HealthController, :live
+    get "/ready", HealthController, :ready
   end
 
   scope "/", BrusselsWtfWeb do
