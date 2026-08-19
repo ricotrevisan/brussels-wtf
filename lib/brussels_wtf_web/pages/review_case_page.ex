@@ -183,19 +183,9 @@ defmodule BrusselsWtfWeb.ReviewCasePage do
               required
               class="textarea textarea-bordered mt-1 w-full"
             ></textarea></label>
-            <div :if={action == "retry"} class="mt-3 grid gap-2">
-              <label>Processor
-              <input
-                name="processor_name"
-                value="native-extraction"
-                required
-                class="input input-bordered w-full"
-              /></label>
-              <label>Processor version
-              <input name="processor_version" required class="input input-bordered w-full" /></label>
-              <label>Configuration hash
-              <input name="config_hash" required class="input input-bordered w-full" /></label>
-            </div>
+            <p :if={action == "retry"} class="mt-3 text-sm opacity-75">
+              Retry uses the deployed native PDF processor and its current immutable configuration.
+            </p>
             <label :if={action == "reclassify"} class="mt-3 block">
               Source classification
               <select name="classification" required class="select select-bordered mt-1 w-full">

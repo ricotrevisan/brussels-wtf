@@ -71,10 +71,12 @@ defmodule BrusselsWtf.Review.Changes.AuditAction do
   end
 
   defp action_details(changeset, :retry) do
+    metadata = BrusselsWtf.PDF.Processor.metadata()
+
     (Ash.Changeset.get_argument(changeset, :details) || %{})
-    |> Map.put("processor_name", Ash.Changeset.get_argument(changeset, :processor_name))
-    |> Map.put("processor_version", Ash.Changeset.get_argument(changeset, :processor_version))
-    |> Map.put("config_hash", Ash.Changeset.get_argument(changeset, :config_hash))
+    |> Map.put("processor_name", metadata.native_processor_name)
+    |> Map.put("processor_version", metadata.native_processor_version)
+    |> Map.put("config_hash", metadata.config_hash)
   end
 
   defp action_details(changeset, :reclassify),

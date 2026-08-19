@@ -41,6 +41,7 @@ defmodule BrusselsWtf.Ingestion.ExtractionReview do
     do: "Archived source failed checksum verification and requires review"
 
   defp summary(:resource_limit), do: "PDF processing exceeded a calibrated resource limit"
+  defp summary(:authentication_failure), do: "The PDF is encrypted or requires authentication"
   defp summary(:processor_unavailable), do: "The configured PDF processor is unavailable"
   defp summary(:processor_failure), do: "The PDF processor failed repeatedly"
   defp summary(_classification), do: "PDF processing failed repeatedly and requires review"

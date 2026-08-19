@@ -5,7 +5,16 @@ defmodule BrusselsWtf.PDF.PopplerOcr do
   alias BrusselsWtf.PDF.Quality
 
   @native_flags ["-layout"]
-  @ocr_flags ["--output-type", "pdf", "--rotate-pages", "--redo-ocr", "--jobs", "1"]
+  @ocr_flags [
+    "--output-type",
+    "pdf",
+    "--rotate-pages",
+    "--redo-ocr",
+    "--jobs",
+    "1",
+    "--verbose",
+    "1"
+  ]
 
   @impl true
   def native(meta, bytes) do
@@ -199,13 +208,57 @@ defmodule BrusselsWtf.PDF.PopplerOcr do
       ] ++ args
 
     case raw_command("timeout", full_args) do
-      {:ok, output, 0} -> {:ok, output}
-      {:ok, _output, 124} -> {:error, {:ocr_limit, :wall_time}}
-      {:ok, _output, 137} -> {:error, {:ocr_limit, :memory_or_kill}}
-      {:ok, _output, 152} -> {:error, {:ocr_limit, :cpu}}
-      {:ok, _output, status} -> {:error, {:ocr_failed, status}}
-      {:error, reason} -> {:error, reason}
+      {:ok, output, 0} ->
+        {:ok, output}
+
+      {:ok, _output, 124} ->
+        {:error, {:ocr_limit, :wall_time}}
+
+      {:ok, _output, 137} ->
+        {:error, {:ocr_limit, :memory_or_kill}}
+
+      {:ok, _output, 152} ->
+        {:error, {:ocr_limit, :cpu}}
+
+      {:ok, _output, 2} ->
+        {:error, {:invalid_content, {:ocrmypdf_exit, 2}}}
+
+      {:ok, _output, 3} ->
+        {:error, {:processor_unavailable, "ocrmypdf-dependency"}}
+
+      {:ok, _output, 8} ->
+        {:error, {:authentication_failure, :encrypted_pdf}}
+
+      {:ok, output, 7} ->
+        if signaled_child_failure?(output) do
+          {:error, {:ocr_limit, :cpu_memory_or_kill}}
+        else
+          {:error, {:ocr_failed, {:child_process, 7}}}
+        end
+
+      {:ok, output, status} ->
+        if memory_limit_failure?(output) do
+          {:error, {:ocr_limit, :memory}}
+        else
+          {:error, {:ocr_failed, status}}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
     end
+  end
+
+  defp signaled_child_failure?(output) do
+    String.contains?(output, ["Signals.SIGKILL", "Signals.SIGXCPU"])
+  end
+
+  defp memory_limit_failure?(output) do
+    normalized = String.downcase(output)
+
+    Enum.any?(
+      ["failed to map segment", "cannot allocate memory", "memoryerror"],
+      &String.contains?(normalized, &1)
+    )
   end
 
   defp command(executable, args, wall_ms) do
@@ -214,7 +267,7 @@ defmodule BrusselsWtf.PDF.PopplerOcr do
     case raw_command("timeout", ["--signal=KILL", "#{seconds}s", executable | args]) do
       {:ok, output, 0} -> {:ok, output}
       {:ok, _output, 124} -> {:error, {:processor_limit, :wall_time}}
-      {:ok, _output, status} -> {:error, classify_exit(executable, status)}
+      {:ok, output, status} -> {:error, classify_exit(executable, status, output)}
       {:error, reason} -> {:error, reason}
     end
   end
@@ -228,8 +281,28 @@ defmodule BrusselsWtf.PDF.PopplerOcr do
     end
   end
 
-  defp classify_exit("pdfinfo", status), do: {:invalid_pdf, {:pdfinfo_exit, status}}
-  defp classify_exit(executable, status), do: {:processor_failed, {executable, status}}
+  defp classify_exit(executable, status, output)
+       when executable in ["pdfinfo", "pdftotext"] do
+    if String.contains?(String.downcase(output), "password") do
+      {:authentication_failure, :encrypted_pdf}
+    else
+      classify_pdf_exit(executable, status, output)
+    end
+  end
+
+  defp classify_exit(executable, status, _output),
+    do: {:processor_failed, {executable, status}}
+
+  defp classify_pdf_exit("pdfinfo", status, output) do
+    if String.contains?(String.downcase(output), "syntax error") do
+      {:invalid_pdf, :syntax}
+    else
+      {:processor_failed, {"pdfinfo", status}}
+    end
+  end
+
+  defp classify_pdf_exit("pdftotext", status, _output),
+    do: {:processor_failed, {"pdftotext", status}}
 
   defp tesseract_languages do
     case raw_command("tesseract", ["--list-langs"]) do

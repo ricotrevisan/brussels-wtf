@@ -71,9 +71,6 @@ defmodule BrusselsWtf.Review.Case do
     update :retry do
       require_atomic? false
       argument :note, :string, allow_nil?: false
-      argument :processor_name, :string, allow_nil?: false
-      argument :processor_version, :string, allow_nil?: false
-      argument :config_hash, :string, allow_nil?: false
       argument :details, :map, allow_nil?: false, default: %{}
 
       change {BrusselsWtf.Review.Changes.AuditAction,

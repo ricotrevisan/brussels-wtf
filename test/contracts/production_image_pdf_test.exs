@@ -39,13 +39,25 @@ defmodule BrusselsWtf.Contracts.ProductionImagePdfTest do
     city = contract("city-rotated.pdf")
     scanned = contract("scanned-bilingual.pdf")
     malformed = contract("malformed.pdf")
+    encrypted = contract("encrypted.pdf")
+    unsupported_ocr_input = contract("malformed.pdf", mode: "ocr", pages: "1")
 
+    assert ixelles["process_role"] == "app"
+    assert ixelles["ocr_concurrency"] == nil
     assert ixelles["quality_measurements"]["accepted"]
     assert uccle["quality_measurements"]["accepted"]
     assert forest["quality_measurements"]["rejected_pages"] == [2]
     assert city["quality_measurements"]["rejected_pages"] == [1]
     assert scanned["quality_measurements"]["rejected_pages"] == [1]
-    assert malformed == %{"status" => "error", "classification" => ["invalid_pdf", "redacted"]}
+    assert malformed == %{"status" => "error", "classification" => ["invalid_pdf", "syntax"]}
+
+    assert encrypted == %{
+             "status" => "error",
+             "classification" => ["authentication_failure", "encrypted_pdf"]
+           }
+
+    assert unsupported_ocr_input["status"] == "error"
+    assert hd(unsupported_ocr_input["classification"]) == "invalid_content"
 
     assert ixelles["tool_versions"]["tesseract"] =~ "tesseract 5."
     assert ixelles["tool_versions"]["tesseract_languages"] == "fra,nld,osd"
@@ -60,10 +72,13 @@ defmodule BrusselsWtf.Contracts.ProductionImagePdfTest do
       contract("forest-partial-scan.pdf",
         mode: "ocr",
         pages: "2",
-        env: %{"PROCESS_ROLE" => "ocr"}
+        env: %{"PROCESS_ROLE" => "ocr"},
+        docker_options: ["--cpus", "1", "--memory", "1g"]
       )
 
     assert result["status"] == "ok"
+    assert result["process_role"] == "ocr"
+    assert result["ocr_concurrency"] == 1
     assert result["quality_measurements"]["accepted"]
     assert result["quality_measurements"]["rejected_pages"] == []
     assert is_binary(result["pdf_sha256"])
@@ -93,6 +108,23 @@ defmodule BrusselsWtf.Contracts.ProductionImagePdfTest do
              "classification" => ["oversized_pdf", "byte_limit"]
            }
 
+    assert contract("oversized-pages.pdf") == %{
+             "status" => "error",
+             "classification" => ["oversized_pdf", "page_limit"]
+           }
+
+    assert contract("scanned-bilingual.pdf",
+             mode: "ocr",
+             pages: "1",
+             env: %{"PDF_OCR_CPU_SECONDS" => "1"}
+           ) == %{"status" => "error", "classification" => ["ocr_limit", "cpu_memory_or_kill"]}
+
+    assert contract("scanned-bilingual.pdf",
+             mode: "ocr",
+             pages: "1",
+             env: %{"PDF_OCR_MEMORY_BYTES" => "67108864"}
+           ) == %{"status" => "error", "classification" => ["ocr_limit", "memory"]}
+
     assert contract("scanned-bilingual.pdf",
              mode: "ocr",
              pages: "1",
@@ -105,6 +137,7 @@ defmodule BrusselsWtf.Contracts.ProductionImagePdfTest do
     mode = Keyword.get(options, :mode, "native")
     pages = Keyword.get(options, :pages)
     extra_env = Keyword.get(options, :env, %{})
+    docker_options = Keyword.get(options, :docker_options, [])
 
     environment =
       %{
@@ -120,7 +153,9 @@ defmodule BrusselsWtf.Contracts.ProductionImagePdfTest do
       |> Map.merge(extra_env)
 
     args =
-      ["run", "--rm", "-v", "#{root}:/fixtures:ro"] ++
+      ["run", "--rm"] ++
+        docker_options ++
+        ["-v", "#{root}:/fixtures:ro"] ++
         Enum.flat_map(environment, fn {key, value} -> ["-e", "#{key}=#{value}"] end) ++
         [
           "--entrypoint",

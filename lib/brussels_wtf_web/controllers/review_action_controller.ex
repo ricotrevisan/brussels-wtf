@@ -29,15 +29,7 @@ defmodule BrusselsWtfWeb.ReviewActionController do
 
   def create(conn, _params), do: send_resp(conn, 422, "Required review action fields are missing")
 
-  defp action_inputs("retry", note, params) do
-    %{
-      note: note,
-      processor_name: Map.get(params, "processor_name"),
-      processor_version: Map.get(params, "processor_version"),
-      config_hash: Map.get(params, "config_hash"),
-      details: %{}
-    }
-  end
+  defp action_inputs("retry", note, _params), do: %{note: note, details: %{}}
 
   defp action_inputs("reclassify", note, params),
     do: %{note: note, classification: Map.get(params, "classification")}

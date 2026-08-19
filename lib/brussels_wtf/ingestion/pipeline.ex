@@ -260,10 +260,10 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     version = Ash.load!(Ingestion.get_source_version!(source_version_id), :source_record)
     run = prepare_native_generation(version)
 
-    if run.status in [:succeeded, :failed] do
-      :ok
-    else
-      run_native_attempt(version, run, attempt)
+    case run.status do
+      :succeeded -> reconcile_native_success(version, run)
+      :failed -> :ok
+      :queued -> run_native_attempt(version, run, attempt)
     end
   end
 
@@ -322,62 +322,136 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
   end
 
   defp record_native_result(version, run, result, archived_text, attempt) do
-    completed_at = BrusselsWtf.Clock.utc_now()
-    started_at = DateTime.add(completed_at, -result.duration_ms, :millisecond)
+    {run, native_artifact} =
+      persist_native_success(
+        version,
+        run,
+        result,
+        archived_text,
+        attempt,
+        extraction_summary(result, version.sha256)
+      )
 
-    run =
-      Ingestion.complete_processing_run!(run, %{
-        status: :succeeded,
-        output: extraction_summary(result, version.sha256),
-        tool_versions: result.tool_versions,
-        diagnostics: result.diagnostics,
-        quality_measurements: result.quality_measurements,
-        started_at: started_at,
-        completed_at: completed_at,
-        duration_ms: result.duration_ms
-      })
-
-    record_succeeded_attempt(run, attempt, result, started_at, completed_at)
-
-    native_artifact =
-      Ingestion.upsert_derived_artifact!(%{
-        source_version_id: version.id,
-        processing_run_id: run.id,
-        input_sha256: version.sha256,
-        output_sha256: archived_text.sha256,
-        processor_name: run.processor_name,
-        processor_version: run.processor_version,
-        config_hash: run.config_hash,
-        output_kind: "native-text",
-        object_key: archived_text.object_key,
-        media_type: "text/plain; charset=utf-8",
-        byte_size: byte_size(result.text),
-        schema_version: "derived-artifact-v1",
-        quality_measurements: result.quality_measurements
-      })
-
-    Ingestion.link_processing_run_artifact!(%{
-      processing_run_id: run.id,
-      derived_artifact_id: native_artifact.id,
-      role: :native_output
-    })
-
-    Ingestion.Observability.extraction_completed(
-      %{
-        source_version_id: version.id,
-        processing_run_id: run.id,
-        processor_role: :native_extraction,
-        status: :succeeded
-      },
-      result.duration_ms,
-      result.quality_measurements["rejected_pages"]
-    )
+    emit_extraction_completed(run, version.id, result)
 
     if result.quality_measurements["accepted"] do
       enqueue_normalization(run, version.source_record.origin_url)
     else
       enqueue_ocr(version, run, native_artifact, result.quality_measurements)
     end
+  end
+
+  defp persist_native_success(version, run, result, archived_text, attempt, output) do
+    completed_at = BrusselsWtf.Clock.utc_now()
+    started_at = DateTime.add(completed_at, -result.duration_ms, :millisecond)
+
+    {:ok, {completed, artifact, notifications}} =
+      BrusselsWtf.Repo.transaction(fn ->
+        {completed, run_notifications} =
+          Ingestion.complete_processing_run!(
+            run,
+            %{
+              status: :succeeded,
+              output: output,
+              tool_versions: result.tool_versions,
+              diagnostics: result.diagnostics,
+              quality_measurements: result.quality_measurements,
+              started_at: started_at,
+              completed_at: completed_at,
+              duration_ms: result.duration_ms
+            },
+            return_notifications?: true
+          )
+
+        attempt_notifications =
+          record_succeeded_attempt(completed, attempt, result, started_at, completed_at)
+
+        {artifact, artifact_notifications} =
+          Ingestion.upsert_derived_artifact!(
+            %{
+              source_version_id: version.id,
+              processing_run_id: completed.id,
+              input_sha256: version.sha256,
+              output_sha256: archived_text.sha256,
+              processor_name: completed.processor_name,
+              processor_version: completed.processor_version,
+              config_hash: completed.config_hash,
+              output_kind: "native-text",
+              object_key: archived_text.object_key,
+              media_type: "text/plain; charset=utf-8",
+              byte_size: byte_size(result.text),
+              schema_version: "derived-artifact-v1",
+              quality_measurements: result.quality_measurements
+            },
+            return_notifications?: true
+          )
+
+        {_link, link_notifications} =
+          Ingestion.link_processing_run_artifact!(
+            %{
+              processing_run_id: completed.id,
+              derived_artifact_id: artifact.id,
+              role: :native_output
+            },
+            return_notifications?: true
+          )
+
+        review_notifications =
+          if result.quality_measurements["accepted"] and output["review_case_id"] do
+            {_case, notifications} =
+              BrusselsWtf.Review.complete_retry_with_notifications!(output["review_case_id"])
+
+            notifications
+          else
+            []
+          end
+
+        notifications =
+          run_notifications ++
+            attempt_notifications ++
+            artifact_notifications ++ link_notifications ++ review_notifications
+
+        {completed, artifact, notifications}
+      end)
+
+    Ash.Notifier.notify(notifications)
+    {completed, artifact}
+  end
+
+  defp emit_extraction_completed(run, source_version_id, result) do
+    Ingestion.Observability.extraction_completed(
+      %{
+        source_version_id: source_version_id,
+        processing_run_id: run.id,
+        processor_role: run.processor_role,
+        status: :succeeded
+      },
+      result.duration_ms,
+      result.quality_measurements["rejected_pages"]
+    )
+  end
+
+  defp reconcile_native_success(version, run) do
+    run = Ash.load!(run, :derived_artifacts)
+    artifact = Enum.find(run.derived_artifacts, &(&1.output_kind == "native-text"))
+
+    if run.quality_measurements["accepted"] do
+      if review_case_id = run.output["review_case_id"] do
+        BrusselsWtf.Review.complete_retry!(review_case_id)
+      end
+
+      enqueue_normalization(run, version.source_record.origin_url)
+    else
+      enqueue_ocr(version, run, artifact, run.quality_measurements)
+    end
+  end
+
+  defp reconcile_ocr_success(run) do
+    if review_case_id = run.inputs["review_case_id"] do
+      BrusselsWtf.Review.complete_retry!(review_case_id)
+    end
+
+    enqueue_normalization(run, run.source_version.source_record.origin_url)
   end
 
   defp enqueue_ocr(version, native_run, native_artifact, quality) do
@@ -431,10 +505,10 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         source_version: [:source_record]
       )
 
-    if run.status in [:succeeded, :failed] do
-      :ok
-    else
-      run_ocr_attempt(run, attempt)
+    case run.status do
+      :succeeded -> reconcile_ocr_success(run)
+      :failed -> :ok
+      :queued -> run_ocr_attempt(run, attempt)
     end
   end
 
@@ -454,7 +528,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
                pages
              ),
            :ok <- ensure_accepted_quality(extracted.quality_measurements),
-           {:ok, archived_pdf} <- BrusselsWtf.Archive.store(extracted.searchable_pdf),
+           {:ok, archived_pdf} <- BrusselsWtf.Archive.store(extracted.searchable_pdf, :derived),
            {:ok, archived_text} <- BrusselsWtf.Archive.store(extracted.text, :derived) do
         complete_ocr(run, extracted, archived_pdf, archived_text, attempt)
       else
@@ -489,67 +563,91 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     completed_at = BrusselsWtf.Clock.utc_now()
     started_at = DateTime.add(completed_at, -result.duration_ms, :millisecond)
 
-    completed =
-      Ingestion.complete_processing_run!(run, %{
-        status: :succeeded,
-        output: extraction_summary(result, run.source_version.sha256),
-        tool_versions: result.tool_versions,
-        diagnostics: result.diagnostics,
-        quality_measurements: result.quality_measurements,
-        started_at: started_at,
-        completed_at: completed_at,
-        duration_ms: result.duration_ms
-      })
+    {:ok, {completed, notifications}} =
+      BrusselsWtf.Repo.transaction(fn ->
+        {completed, run_notifications} =
+          Ingestion.complete_processing_run!(
+            run,
+            %{
+              status: :succeeded,
+              output: extraction_summary(result, run.source_version.sha256),
+              tool_versions: result.tool_versions,
+              diagnostics: result.diagnostics,
+              quality_measurements: result.quality_measurements,
+              started_at: started_at,
+              completed_at: completed_at,
+              duration_ms: result.duration_ms
+            },
+            return_notifications?: true
+          )
 
-    record_succeeded_attempt(completed, attempt, result, started_at, completed_at)
+        attempt_notifications =
+          record_succeeded_attempt(completed, attempt, result, started_at, completed_at)
 
-    for {kind, archived, media_type} <- [
-          {"ocr-pdf", archived_pdf, "application/pdf"},
-          {"ocr-text", archived_text, "text/plain; charset=utf-8"}
-        ] do
-      artifact =
-        Ingestion.upsert_derived_artifact!(%{
-          source_version_id: run.source_version.id,
-          processing_run_id: completed.id,
-          input_sha256: run.source_version.sha256,
-          output_sha256: archived.sha256,
-          processor_name: completed.processor_name,
-          processor_version: completed.processor_version,
-          config_hash: completed.config_hash,
-          output_kind: kind,
-          object_key: archived.object_key,
-          media_type: media_type,
-          byte_size:
-            if(kind == "ocr-pdf",
-              do: byte_size(result.searchable_pdf),
-              else: byte_size(result.text)
-            ),
-          schema_version: "derived-artifact-v1",
-          quality_measurements: result.quality_measurements
-        })
+        artifact_notifications =
+          Enum.flat_map(
+            [
+              {"ocr-pdf", archived_pdf, "application/pdf"},
+              {"ocr-text", archived_text, "text/plain; charset=utf-8"}
+            ],
+            fn {kind, archived, media_type} ->
+              {artifact, created_notifications} =
+                Ingestion.upsert_derived_artifact!(
+                  %{
+                    source_version_id: run.source_version.id,
+                    processing_run_id: completed.id,
+                    input_sha256: run.source_version.sha256,
+                    output_sha256: archived.sha256,
+                    processor_name: completed.processor_name,
+                    processor_version: completed.processor_version,
+                    config_hash: completed.config_hash,
+                    output_kind: kind,
+                    object_key: archived.object_key,
+                    media_type: media_type,
+                    byte_size:
+                      if(kind == "ocr-pdf",
+                        do: byte_size(result.searchable_pdf),
+                        else: byte_size(result.text)
+                      ),
+                    schema_version: "derived-artifact-v1",
+                    quality_measurements: result.quality_measurements
+                  },
+                  return_notifications?: true
+                )
 
-      Ingestion.link_processing_run_artifact!(%{
-        processing_run_id: completed.id,
-        derived_artifact_id: artifact.id,
-        role: if(kind == "ocr-pdf", do: :ocr_document, else: :ocr_output)
-      })
-    end
+              {_link, linked_notifications} =
+                Ingestion.link_processing_run_artifact!(
+                  %{
+                    processing_run_id: completed.id,
+                    derived_artifact_id: artifact.id,
+                    role: if(kind == "ocr-pdf", do: :ocr_document, else: :ocr_output)
+                  },
+                  return_notifications?: true
+                )
 
-    if review_case_id = completed.inputs["review_case_id"] do
-      BrusselsWtf.Review.complete_retry!(review_case_id)
-    end
+              created_notifications ++ linked_notifications
+            end
+          )
 
-    Ingestion.Observability.extraction_completed(
-      %{
-        source_version_id: run.source_version.id,
-        processing_run_id: completed.id,
-        processor_role: :ocr,
-        status: :succeeded
-      },
-      result.duration_ms,
-      result.quality_measurements["rejected_pages"]
-    )
+        review_notifications =
+          if review_case_id = completed.inputs["review_case_id"] do
+            {_case, notifications} =
+              BrusselsWtf.Review.complete_retry_with_notifications!(review_case_id)
 
+            notifications
+          else
+            []
+          end
+
+        notifications =
+          run_notifications ++
+            attempt_notifications ++ artifact_notifications ++ review_notifications
+
+        {completed, notifications}
+      end)
+
+    Ash.Notifier.notify(notifications)
+    emit_extraction_completed(completed, run.source_version.id, result)
     enqueue_normalization(completed, run.source_version.source_record.origin_url)
   end
 
@@ -560,10 +658,10 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         source_version: [:source_record]
       )
 
-    if run.status in [:succeeded, :failed] do
-      :ok
-    else
-      run_review_retry_attempt(run, attempt)
+    case run.status do
+      :succeeded -> reconcile_native_success(run.source_version, run)
+      :failed -> :ok
+      :queued -> run_review_retry_attempt(run, attempt)
     end
   end
 
@@ -608,54 +706,16 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
   end
 
   defp complete_review_extraction(run, result, archived_text, attempt) do
-    completed_at = BrusselsWtf.Clock.utc_now()
+    output =
+      extraction_summary(result, run.source_version.sha256)
+      |> Map.merge(Map.take(run.output || %{}, ["review_action_id", "review_case_id", "note"]))
 
-    completed =
-      Ingestion.complete_processing_run!(run, %{
-        status: :succeeded,
-        output:
-          extraction_summary(result, run.source_version.sha256)
-          |> Map.merge(
-            Map.take(run.output || %{}, ["review_action_id", "review_case_id", "note"])
-          ),
-        tool_versions: result.tool_versions,
-        diagnostics: result.diagnostics,
-        quality_measurements: result.quality_measurements,
-        started_at: DateTime.add(completed_at, -result.duration_ms, :millisecond),
-        completed_at: completed_at,
-        duration_ms: result.duration_ms
-      })
+    {completed, artifact} =
+      persist_native_success(run.source_version, run, result, archived_text, attempt, output)
 
-    record_succeeded_attempt(completed, attempt, result, completed.started_at, completed_at)
-
-    artifact =
-      Ingestion.upsert_derived_artifact!(%{
-        source_version_id: run.source_version.id,
-        processing_run_id: completed.id,
-        input_sha256: run.source_version.sha256,
-        output_sha256: archived_text.sha256,
-        processor_name: completed.processor_name,
-        processor_version: completed.processor_version,
-        config_hash: completed.config_hash,
-        output_kind: "native-text",
-        object_key: archived_text.object_key,
-        media_type: "text/plain; charset=utf-8",
-        byte_size: byte_size(result.text),
-        schema_version: "derived-artifact-v1",
-        quality_measurements: result.quality_measurements
-      })
-
-    Ingestion.link_processing_run_artifact!(%{
-      processing_run_id: completed.id,
-      derived_artifact_id: artifact.id,
-      role: :native_output
-    })
+    emit_extraction_completed(completed, run.source_version.id, result)
 
     if result.quality_measurements["accepted"] do
-      if review_case_id = completed.output["review_case_id"] do
-        BrusselsWtf.Review.complete_retry!(review_case_id)
-      end
-
       enqueue_normalization(completed, run.source_version.source_record.origin_url)
     else
       enqueue_ocr(run.source_version, completed, artifact, result.quality_measurements)
@@ -1154,17 +1214,23 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     do: reason |> inspect(limit: 20, printable_limit: 500) |> String.slice(0, 1_000)
 
   defp record_succeeded_attempt(run, attempt, result, started_at, completed_at) do
-    Ingestion.record_processing_attempt!(%{
-      processing_run_id: run.id,
-      attempt: attempt,
-      status: :succeeded,
-      started_at: started_at,
-      completed_at: completed_at,
-      duration_ms: result.duration_ms,
-      diagnostics: result.diagnostics,
-      tool_versions: result.tool_versions,
-      quality_measurements: result.quality_measurements
-    })
+    {_attempt, notifications} =
+      Ingestion.record_processing_attempt!(
+        %{
+          processing_run_id: run.id,
+          attempt: attempt,
+          status: :succeeded,
+          started_at: started_at,
+          completed_at: completed_at,
+          duration_ms: result.duration_ms,
+          diagnostics: result.diagnostics,
+          tool_versions: result.tool_versions,
+          quality_measurements: result.quality_measurements
+        },
+        return_notifications?: true
+      )
+
+    notifications
   end
 
   defp record_failed_attempt(run, attempt, reason, started_at, duration_ms) do
@@ -1203,6 +1269,14 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
   defp safe_failure_detail({kind, {executable, status}})
        when is_atom(kind) and is_binary(executable) and is_integer(status),
        do: %{"kind" => Atom.to_string(kind), "executable" => executable, "exit_status" => status}
+
+  defp safe_failure_detail({kind, {outcome, status}})
+       when is_atom(kind) and is_atom(outcome) and is_integer(status),
+       do: %{
+         "kind" => Atom.to_string(kind),
+         "outcome" => Atom.to_string(outcome),
+         "exit_status" => status
+       }
 
   defp safe_failure_detail(_reason), do: %{"detail" => "redacted"}
 
@@ -1255,12 +1329,9 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
 
   def fail_processing_run(run, classification) do
     now = BrusselsWtf.Clock.utc_now()
-
-    latest_attempt =
-      run
-      |> Ash.load!(:attempts)
-      |> Map.fetch!(:attempts)
-      |> Enum.max_by(& &1.attempt, fn -> nil end)
+    attempts = Ash.load!(run, :attempts).attempts
+    latest_attempt = Enum.max_by(attempts, & &1.attempt, fn -> nil end)
+    first_attempt = Enum.min_by(attempts, & &1.attempt, fn -> nil end)
 
     Ingestion.complete_processing_run!(run, %{
       status: :failed,
@@ -1277,8 +1348,9 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         ),
       quality_measurements:
         if(latest_attempt, do: latest_attempt.quality_measurements, else: %{}),
+      started_at: if(first_attempt, do: first_attempt.started_at, else: now),
       completed_at: now,
-      duration_ms: run.duration_ms || 0,
+      duration_ms: Enum.reduce(attempts, 0, &(&1.duration_ms + &2)),
       output: %{"classification" => Atom.to_string(classification)}
     })
   end

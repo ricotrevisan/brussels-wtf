@@ -59,6 +59,20 @@
       "manual_native_accepted_pages": [
         1
       ]
+    },
+    {
+      "file": "oversized-pages.pdf",
+      "sha256": "8a9c6303be5083c1a3031b8b28a75c803d1272fc5302714fa41ff0a184afcc19",
+      "commune": "hazard",
+      "profile": "page-limit",
+      "manual_native_accepted_pages": []
+    },
+    {
+      "file": "encrypted.pdf",
+      "sha256": "92b270a375373876c4749cf1d2c9d632aab0afd8e0e22baf1b6d8344b40896df",
+      "commune": "hazard",
+      "profile": "authentication",
+      "manual_native_accepted_pages": []
     }
   ]
 }

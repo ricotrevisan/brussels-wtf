@@ -105,13 +105,88 @@ defmodule BrusselsWtf.Ingestion.PdfExtractionTest do
     )
   end
 
+  test "failed attempts preserve safe nested command outcomes", %{version: version} do
+    BrusselsWtf.Processors.Stub.put(version.sha256, %{
+      extract: {:error, {:invalid_pdf, {:pdfinfo_exit, 42}}}
+    })
+
+    assert {:error, {:invalid_pdf, {:pdfinfo_exit, 42}}} =
+             BrusselsWtf.Ingestion.Pipeline.extract(version.id, 1)
+
+    [run] =
+      version.id
+      |> Ingestion.get_source_version!()
+      |> Ash.load!(:processing_runs)
+      |> Map.fetch!(:processing_runs)
+
+    assert [%{diagnostics: diagnostics}] = Ash.load!(run, :attempts).attempts
+
+    assert diagnostics == %{
+             "classification" => "invalid_content",
+             "detail" => %{
+               "kind" => "invalid_pdf",
+               "outcome" => "pdfinfo_exit",
+               "exit_status" => 42
+             }
+           }
+  end
+
+  test "successful generation finalization rolls back as one database unit", %{version: version} do
+    metadata = BrusselsWtf.PDF.Processor.metadata()
+
+    run =
+      Ingestion.create_review_processing_run!(%{
+        source_version_id: version.id,
+        processor_name: metadata.native_processor_name,
+        processor_version: metadata.native_processor_version,
+        config_hash: metadata.config_hash,
+        status: :queued,
+        output: %{"review_case_id" => Ecto.UUID.generate()}
+      })
+
+    assert_raise Ash.Error.Invalid, fn ->
+      BrusselsWtf.Ingestion.Pipeline.retry_extraction(run.id, 1)
+    end
+
+    rolled_back =
+      Ingestion.get_processing_run!(run.id) |> Ash.load!([:attempts, :derived_artifacts])
+
+    assert rolled_back.status == :queued
+    assert rolled_back.attempts == []
+    assert rolled_back.derived_artifacts == []
+    refute_enqueued(worker: BrusselsWtf.Workers.NormalizeSource)
+  end
+
   test "a transient native attempt can succeed without changing the processing identity", %{
     version: version
   } do
     BrusselsWtf.Processors.Stub.put(version.sha256, %{extract: {:error, :temporary_unavailable}})
 
+    handler_id = "native-retry-#{System.unique_integer([:positive])}"
+    test_pid = self()
+
+    :telemetry.attach(
+      handler_id,
+      [:brussels_wtf, :ingestion, :processing, :retry],
+      fn event, measurements, metadata, _config ->
+        send(test_pid, {:telemetry, event, measurements, metadata})
+      end,
+      nil
+    )
+
+    on_exit(fn -> :telemetry.detach(handler_id) end)
+
     assert {:error, :temporary_unavailable} =
-             BrusselsWtf.Ingestion.Pipeline.extract(version.id, 1)
+             perform_job(
+               BrusselsWtf.Workers.ExtractSource,
+               %{source_version_id: version.id},
+               attempt: 1
+             )
+
+    assert_receive {:telemetry, [:brussels_wtf, :ingestion, :processing, :retry], %{count: 1},
+                    %{processing_run_id: run_id, processor_role: :native_extraction, attempt: 1}}
+
+    assert is_binary(run_id)
 
     BrusselsWtf.Processors.Stub.put(version.sha256, %{
       extract: %{
@@ -120,7 +195,12 @@ defmodule BrusselsWtf.Ingestion.PdfExtractionTest do
       }
     })
 
-    assert :ok = BrusselsWtf.Ingestion.Pipeline.extract(version.id, 2)
+    assert :ok =
+             perform_job(
+               BrusselsWtf.Workers.ExtractSource,
+               %{source_version_id: version.id},
+               attempt: 2
+             )
 
     [run] =
       version.id

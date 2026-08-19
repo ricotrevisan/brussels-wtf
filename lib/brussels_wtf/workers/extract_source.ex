@@ -21,11 +21,18 @@ defmodule BrusselsWtf.Workers.ExtractSource do
 
         if BrusselsWtf.Ingestion.ProcessingFailure.deterministic?(classification) or
              attempt >= max_attempts do
-          run = BrusselsWtf.Ingestion.get_processing_run!(processing_run_id)
+          run =
+            processing_run_id
+            |> BrusselsWtf.Ingestion.get_processing_run!()
+            |> Ash.load!(:source_version)
 
-          BrusselsWtf.Ingestion.Pipeline.fail_processing_run(
-            run,
-            BrusselsWtf.Ingestion.ProcessingFailure.terminal(classification)
+          terminal = BrusselsWtf.Ingestion.ProcessingFailure.terminal(classification)
+          BrusselsWtf.Ingestion.Pipeline.fail_processing_run(run, terminal)
+
+          BrusselsWtf.Ingestion.ExtractionReview.open_for_version(
+            run.source_version.id,
+            terminal,
+            run.id
           )
 
           :ok
@@ -67,8 +74,25 @@ defmodule BrusselsWtf.Workers.ExtractSource do
 
           :ok
         else
+          BrusselsWtf.Ingestion.Observability.processing_retry(%{
+            source_version_id: source_version_id,
+            processing_run_id: queued_native_run_id(source_version_id),
+            classification: classification,
+            processor_role: :native_extraction,
+            attempt: attempt
+          })
+
           error
         end
     end
+  end
+
+  defp queued_native_run_id(source_version_id) do
+    source_version_id
+    |> BrusselsWtf.Ingestion.get_source_version!()
+    |> Ash.load!(:processing_runs)
+    |> Map.fetch!(:processing_runs)
+    |> Enum.find(&(&1.processor_role == :native_extraction and &1.status == :queued))
+    |> then(&if(&1, do: &1.id))
   end
 end

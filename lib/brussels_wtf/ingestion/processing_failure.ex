@@ -6,7 +6,8 @@ defmodule BrusselsWtf.Ingestion.ProcessingFailure do
     :unsupported_media,
     :invalid_content,
     :corruption,
-    :resource_limit
+    :resource_limit,
+    :authentication_failure
   ]
 
   def classify(:repeated_quality_failure), do: :repeated_quality_failure
@@ -22,6 +23,7 @@ defmodule BrusselsWtf.Ingestion.ProcessingFailure do
   def classify({:processor_limit, _details}), do: :resource_limit
   def classify({:invalid_ocr_pages, _details}), do: :invalid_content
   def classify({:processor_unavailable, _details}), do: :processor_unavailable
+  def classify({:authentication_failure, _details}), do: :authentication_failure
   def classify({:ocr_failed, _details}), do: :processing_failure
   def classify({:processor_failed, _details}), do: :processing_failure
   def classify(_reason), do: :processing_failure

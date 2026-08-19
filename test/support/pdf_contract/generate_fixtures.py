@@ -41,4 +41,8 @@ writer.add_page(reader.pages[0].rotate(90)); writer.write(str(ROOT/'city-rotated
 (ROOT/'city-unrotated.pdf').unlink()
 
 pdf(Path('scanned-bilingual.pdf'),[{'image':fr+' / '+nl}])
+pdf(Path('oversized-pages.pdf'), [{'lines':['page']} for _ in range(501)])
+reader=PdfReader(str(ROOT/'uccle-bilingual.pdf')); writer=PdfWriter()
+writer.append_pages_from_reader(reader); writer.encrypt('contract-secret')
+with (ROOT/'encrypted.pdf').open('wb') as encrypted: writer.write(encrypted)
 (ROOT/'malformed.pdf').write_bytes(b'%PDF-1.7\nnot a valid xref table\n%%EOF\n')

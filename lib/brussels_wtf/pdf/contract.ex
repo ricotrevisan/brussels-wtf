@@ -33,7 +33,9 @@ defmodule BrusselsWtf.PDF.Contract do
               if(Map.has_key?(value, :searchable_pdf),
                 do: BrusselsWtf.Digest.sha256(value.searchable_pdf),
                 else: nil
-              )
+              ),
+            process_role: Atom.to_string(Application.get_env(:brussels_wtf, :process_role, :app)),
+            ocr_concurrency: configured_ocr_concurrency()
           }
 
         {:error, reason} ->
@@ -41,6 +43,11 @@ defmodule BrusselsWtf.PDF.Contract do
       end
 
     IO.puts("PDF_CONTRACT_JSON=" <> Jason.encode!(safe))
+  end
+
+  defp configured_ocr_concurrency do
+    role = Application.get_env(:brussels_wtf, :process_role, :app)
+    BrusselsWtf.ProcessRole.oban(role) |> Keyword.fetch!(:queues) |> Keyword.get(:ocr)
   end
 
   defp parse_pages(value),

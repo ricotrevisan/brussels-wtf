@@ -149,5 +149,6 @@ The automated checks required to move content from `draft` to `published`. The g
 - A **native extraction generation** always runs Poppler first and retains page-level quality decisions and a private `native-text` derived artifact.
 - An **OCR generation** is created only for rejected native pages. It uses the isolated concurrency-one OCR role with `fra+nld` and retains separate `ocr-pdf` and `ocr-text` artifacts.
 - A **processing-run artifact link** preserves every authoritative processing generation even when identical content-addressed artifact bytes are shared by more than one source origin.
+- A **review retry** derives processor provenance from the deployed executable/configuration contract; reviewer-controlled fields cannot forge it. Terminal retries open a case keyed to the failed generation.
 - Normalization consumes exactly one accepted, checksum-verified text artifact. Processor output maps are summaries, not an alternate evidence store.
 - Automatic transcription remains disabled and requires a separately accepted bilingual benchmark before it can be enabled.

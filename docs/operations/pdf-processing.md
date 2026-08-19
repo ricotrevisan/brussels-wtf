@@ -4,7 +4,7 @@ Issue #21 introduces a Poppler-first extraction contract. Every PDF is checked b
 
 ## Calibrated quality contract
 
-The representative calibration corpus is in `test/support/pdf_calibration/manifest.json`. It retains attributed public administrative PDFs from Ixelles, Uccle, Forest, and the City of Brussels, with capture hashes, manual page labels, source origins, and a repository-suitability disposition. The separate `test/support/pdf_contract` corpus contains agent-authored CC0 image-only, partial-scan, rotated, malformed, and oversized hazards. The pinned production-image contract is authoritative because developer machines need not contain Poppler or OCR.
+The representative calibration corpus is in `test/support/pdf_calibration/manifest.json`. It retains attributed public administrative PDFs from Ixelles, Uccle, Forest, and the City of Brussels, with capture hashes, manual page labels, source origins, and a repository-suitability disposition. The separate `test/support/pdf_contract` corpus contains agent-authored CC0 image-only, partial-scan, rotated, encrypted, malformed, and byte/page-limit hazards. The pinned production-image contract is authoritative because developer machines need not contain Poppler or OCR.
 
 The `pdf-extraction-v1` thresholds are explicit in `config/config.exs`:
 
@@ -29,7 +29,7 @@ The calibrated defaults are 25 MiB input, 500 pages, 120 seconds wall time, 90 C
 
 ## Failure and observability
 
-Poor native quality is routing, not a terminal failure. Invalid/malformed input, oversized input, and exhausted CPU/memory/wall limits are classified and converge on one private extraction review case per processing generation. Other executable failures retry at most three times. Reviewer retry appends a new generation and never mutates raw bytes or prior artifacts.
+Poor native quality is routing, not a terminal failure. Invalid/malformed input, oversized input, and exhausted CPU/memory/wall limits are classified and converge on one private extraction review case per processing generation. Other executable failures retry at most three times. Reviewer retry appends a new generation and never mutates raw bytes or prior artifacts. Reviewers provide only a note; processor name, executable version, and configuration hash are derived from the deployed processor contract rather than accepted from form input. A terminal reviewer retry opens a distinct case keyed to that failed generation.
 
 Safe telemetry covers page rejection counts, native/OCR duration, OCR routing, bounded retries, review-case creation, backlog, and oldest OCR queue age. Correlation identifiers include source version, processing run, and review case. Logs exclude object keys, source bytes/text, command output, endpoints, credentials, and private diagnostics.
 

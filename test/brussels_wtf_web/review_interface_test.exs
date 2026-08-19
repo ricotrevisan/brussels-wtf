@@ -94,6 +94,21 @@ defmodule BrusselsWtfWeb.ReviewInterfaceTest do
         "value"
       )
 
+    assert LazyHTML.attribute(
+             document["form[action$='/actions/retry'] input[name='processor_name']"],
+             "name"
+           ) == []
+
+    assert LazyHTML.attribute(
+             document["form[action$='/actions/retry'] input[name='processor_version']"],
+             "name"
+           ) == []
+
+    assert LazyHTML.attribute(
+             document["form[action$='/actions/retry'] input[name='config_hash']"],
+             "name"
+           ) == []
+
     acted =
       detail
       |> recycle()
@@ -110,6 +125,15 @@ defmodule BrusselsWtfWeb.ReviewInterfaceTest do
 
     assert [%{action: :retry, actor_id: "rico", note: "retry with corrected configuration"}] =
              reviewed.actions
+
+    retry_run =
+      reviewed.source_version.processing_runs
+      |> Enum.find(&(&1.status == :queued))
+
+    metadata = BrusselsWtf.PDF.Processor.metadata()
+    assert retry_run.processor_name == metadata.native_processor_name
+    assert retry_run.processor_version == metadata.native_processor_version
+    assert retry_run.config_hash == metadata.config_hash
 
     detail = get(recycle(acted), ~p"/review/cases/#{context.review_case.id}")
     document = detail |> html_response(200) |> LazyHTML.from_document()

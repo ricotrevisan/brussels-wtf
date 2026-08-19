@@ -73,10 +73,7 @@ defmodule BrusselsWtf.ReviewInboxAndActionsTest do
 
     assert_raise Ash.Error.Forbidden, fn ->
       Review.retry_review_case!(context.review_case, %{
-        note: "try the corrected extractor",
-        processor_name: "native-extraction",
-        processor_version: "2",
-        config_hash: "corrected-fixture"
+        note: "try the corrected extractor"
       })
     end
 
@@ -84,10 +81,7 @@ defmodule BrusselsWtf.ReviewInboxAndActionsTest do
       Review.retry_review_case!(
         context.review_case,
         %{
-          note: "try the corrected extractor",
-          processor_name: "native-extraction",
-          processor_version: "2",
-          config_hash: "corrected-fixture"
+          note: "try the corrected extractor"
         },
         actor: actor
       )
@@ -107,7 +101,7 @@ defmodule BrusselsWtf.ReviewInboxAndActionsTest do
            ] = detail.actions
 
     retry_run = Enum.find(detail.source_version.processing_runs, &(&1.status == :queued))
-    assert %{id: retry_run_id, processor_name: "native-extraction"} = retry_run
+    assert %{id: retry_run_id, processor_name: "poppler-native-text"} = retry_run
 
     assert_enqueued(
       worker: BrusselsWtf.Workers.ExtractSource,
@@ -143,6 +137,54 @@ defmodule BrusselsWtf.ReviewInboxAndActionsTest do
     assert unchanged_version.sha256 == original_version.sha256
     assert unchanged_version.object_key == original_version.object_key
     assert BrusselsWtf.Archive.get(unchanged_version.object_key) == {:ok, original_bytes}
+  end
+
+  test "a terminal reviewer retry opens a case for the failed generation", %{actor: actor} do
+    context = build_case!(generation: "original-generation")
+
+    Review.retry_review_case!(
+      context.review_case,
+      %{
+        note: "retry configured processor"
+      },
+      actor: actor
+    )
+
+    [retry_run] =
+      context.version.id
+      |> Ingestion.get_source_version!()
+      |> Ash.load!(:processing_runs)
+      |> Map.fetch!(:processing_runs)
+
+    BrusselsWtf.Processors.Stub.put(context.version.sha256, %{
+      extract: {:error, :temporary_unavailable}
+    })
+
+    assert :ok =
+             perform_job(
+               BrusselsWtf.Workers.ExtractSource,
+               %{source_version_id: context.version.id, processing_run_id: retry_run.id},
+               attempt: 3,
+               max_attempts: 3
+             )
+
+    failed = Ingestion.get_processing_run!(retry_run.id)
+    assert failed.status == :failed
+    assert failed.failure_classification == "processor_failure"
+    assert failed.started_at
+    assert failed.completed_at
+    assert failed.duration_ms >= 0
+
+    assert [%{started_at: attempt_started, duration_ms: attempt_duration}] =
+             Ash.load!(failed, :attempts).attempts
+
+    assert failed.started_at == attempt_started
+    assert failed.duration_ms == attempt_duration
+
+    cases = Review.list_review_cases!(%{kind: :extraction, status: :open}, actor: actor)
+    assert Enum.any?(cases, &(&1.id == context.review_case.id))
+    assert Enum.any?(cases, &String.ends_with?(&1.processing_generation, retry_run.id))
+    assert Enum.count(cases, &String.ends_with?(&1.processing_generation, retry_run.id)) == 1
   end
 
   test "source-specific revisions fail instead of auditing a no-op", %{actor: actor} do
@@ -198,10 +240,7 @@ defmodule BrusselsWtf.ReviewInboxAndActionsTest do
           Review.retry_review_case!(
             updated,
             %{
-              note: "should not retry",
-              processor_name: "native-extraction",
-              processor_version: "3",
-              config_hash: "excluded"
+              note: "should not retry"
             },
             actor: actor
           )

@@ -36,6 +36,16 @@ defmodule BrusselsWtf.Review do
     end
   end
 
+  def complete_retry_with_notifications!(review_case_id) do
+    review_case =
+      Ash.get!(BrusselsWtf.Review.Case, review_case_id,
+        authorize?: false,
+        domain: __MODULE__
+      )
+
+    complete_review_retry!(review_case, return_notifications?: true)
+  end
+
   def complete_retry!(review_case_id) do
     review_case =
       Ash.get!(BrusselsWtf.Review.Case, review_case_id,

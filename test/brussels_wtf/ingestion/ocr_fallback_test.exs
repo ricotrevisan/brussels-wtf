@@ -103,7 +103,9 @@ defmodule BrusselsWtf.Ingestion.OcrFallbackTest do
              MapSet.new(["native-text", "ocr-pdf", "ocr-text"])
 
     native_artifact = Enum.find(artifacts, &(&1.output_kind == "native-text"))
+    ocr_pdf = Enum.find(artifacts, &(&1.output_kind == "ocr-pdf"))
     ocr_text = Enum.find(artifacts, &(&1.output_kind == "ocr-text"))
+    assert String.starts_with?(ocr_pdf.object_key, "derived/sha256/")
     assert native_artifact.processing_run_id == native.id
     assert ocr_text.processing_run_id == ocr.id
     assert {:ok, final_text} = BrusselsWtf.Archive.get(ocr_text.object_key)
