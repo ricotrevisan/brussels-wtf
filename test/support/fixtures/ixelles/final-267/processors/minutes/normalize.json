@@ -1,0 +1,34 @@
+{
+  "meeting_identifier": "267",
+  "scheduled_on": "2026-06-11",
+  "agenda": {
+    "kind": "final",
+    "language": "bilingual"
+  },
+  "items": [
+    {
+      "item_number": "2",
+      "authoritative_identifier": "11.06.2026/A/0002",
+      "source_wording": "Procès-verbal de la séance du Conseil communal du 21 mai 2026. Approbation.",
+      "decisions": [
+        {
+          "disposition": "approved",
+          "statement": "Le Conseil approuve.",
+          "evidence": {
+            "excerpt": "Le Conseil approuve.",
+            "location": "Procès-verbal public, page 1/271",
+            "applicable_from": "2026-06-11"
+          },
+          "vote": {
+            "for": 37,
+            "evidence": {
+              "excerpt": "37 votants : 37 votes positifs.",
+              "location": "Procès-verbal public, page 1/271",
+              "applicable_from": "2026-06-11"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

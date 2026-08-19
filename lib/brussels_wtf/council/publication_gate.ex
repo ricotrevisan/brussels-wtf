@@ -19,6 +19,10 @@ defmodule BrusselsWtf.Council.PublicationGate do
           :meeting_page,
           agenda_items: [
             coverage_variants: [:coverage_run],
+            decision: [
+              evidence: [source_version: [:source_record]],
+              source_version: [:source_record]
+            ],
             proposals: [
               source_version: [:source_record],
               evidence: [source_version: [:source_record]]

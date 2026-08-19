@@ -30,6 +30,10 @@ defmodule BrusselsWtf.Ingestion.SourceRecord do
       accept [:council_meeting_id]
     end
 
+    update :link_agenda_item do
+      accept [:agenda_item_id]
+    end
+
     read :by_origin do
       get? true
       argument :commune_id, :uuid, allow_nil?: false
@@ -50,11 +54,21 @@ defmodule BrusselsWtf.Ingestion.SourceRecord do
       constraints one_of: [
                     :index,
                     :agenda,
+                    :complementary_agenda,
                     :project,
+                    :explanatory_note,
+                    :complementary_explanatory_note,
+                    :explanatory_notes,
                     :supplement,
                     :addendum,
                     :minutes,
                     :register,
+                    :motion,
+                    :question,
+                    :interpellation,
+                    :document_listing,
+                    :item_listing,
+                    :supporting_document,
                     :recording
                   ]
     end
@@ -76,6 +90,10 @@ defmodule BrusselsWtf.Ingestion.SourceRecord do
     end
 
     belongs_to :council_meeting, BrusselsWtf.Council.Meeting do
+      public? true
+    end
+
+    belongs_to :agenda_item, BrusselsWtf.Council.AgendaItem do
       public? true
     end
 

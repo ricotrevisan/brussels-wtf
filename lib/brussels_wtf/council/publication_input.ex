@@ -15,16 +15,12 @@ defmodule BrusselsWtf.Council.PublicationInput do
     }
   end
 
-  def validate(%{"items" => []}),
-    do: {:error, {:publication_gate, [error(:missing_item)]}}
+  def validate(%{"items" => []}), do: {:error, {:publication_gate, [error(:missing_item)]}}
 
   def validate(%{"items" => items}) do
     failures =
       Enum.flat_map(items, fn item ->
-        state_failures =
-          if item["procedural_state"] == "proposal" and item["outcome"] == "unknown",
-            do: [],
-            else: [error(:unsupported_publication_state, item["key"])]
+        state_failures = validate_state(item)
 
         claim_failures =
           case item["claims"] do
@@ -42,31 +38,84 @@ defmodule BrusselsWtf.Council.PublicationInput do
     "sha256:" <> BrusselsWtf.Digest.sha256(:erlang.term_to_binary(canonical(value)))
   end
 
+  defp validate_state(%{"procedural_state" => "proposal", "outcome" => "unknown"}), do: []
+
+  defp validate_state(
+         %{"procedural_state" => "decision", "outcome" => outcome, "claims" => claims} = item
+       )
+       when outcome in ["approved", "rejected", "amended", "postponed", "withdrawn", "other"] do
+    if Enum.any?(claims, &(&1["kind"] == "decision")),
+      do: [],
+      else: [
+        error(:unsupported_publication_state, item["key"]),
+        error(:missing_decision_claim, item["key"])
+      ]
+  end
+
+  defp validate_state(item), do: [error(:unsupported_publication_state, item["key"])]
+
   defp item_input(item) do
+    key = item_key(item)
+
+    proposals =
+      item
+      |> current_proposals()
+      |> Enum.sort_by(& &1.source_version.sha256)
+      |> Enum.map(&proposal_input(&1, key))
+
+    decisions = item |> current_decisions() |> Enum.map(&decision_input(&1, key))
+
     %{
-      "key" => item_key(item),
+      "key" => key,
       "item_number" => item.item_number,
       "procedural_state" => to_string(item.procedural_state),
       "outcome" => to_string(item.outcome),
       "source_wording" => item.source_wording,
-      "claims" =>
-        item
-        |> current_proposals()
-        |> Enum.sort_by(&claim_key/1)
-        |> Enum.map(&proposal_input/1)
+      "claims" => proposals ++ decisions
     }
   end
 
-  defp proposal_input(proposal) do
+  defp proposal_input(proposal, item_key) do
     %{
-      "key" => claim_key(proposal),
+      "key" => "proposal:#{item_key}:#{proposal.source_version.sha256}",
       "kind" => "proposal",
       "text" => proposal.text,
       "evidence" =>
-        proposal.evidence
+        proposal.evidence |> Enum.sort_by(&evidence_sort_key/1) |> Enum.map(&evidence_input/1)
+    }
+  end
+
+  defp decision_input(decision, item_key) do
+    %{
+      "key" => "decision:#{item_key}:#{decision.source_version.sha256}",
+      "kind" => "decision",
+      "text" => decision.statement,
+      "disposition" => to_string(decision.disposition),
+      "vote" => vote_input(decision),
+      "evidence" =>
+        decision.evidence
+        |> Enum.filter(&(&1.claim == :decision))
         |> Enum.sort_by(&evidence_sort_key/1)
         |> Enum.map(&evidence_input/1)
     }
+  end
+
+  defp vote_input(decision) do
+    values = %{
+      "for" => decision.votes_for,
+      "against" => decision.votes_against,
+      "abstentions" => decision.abstentions
+    }
+
+    evidence =
+      decision.evidence
+      |> Enum.filter(&(&1.claim == :vote))
+      |> Enum.sort_by(&evidence_sort_key/1)
+      |> Enum.map(&evidence_input/1)
+
+    if Enum.all?(Map.values(values), &is_nil/1) and evidence == [],
+      do: nil,
+      else: Map.put(values, "evidence", evidence)
   end
 
   defp evidence_input(evidence) do
@@ -83,21 +132,31 @@ defmodule BrusselsWtf.Council.PublicationInput do
   end
 
   defp current_proposals(item) do
-    item.proposals
-    |> Enum.reject(& &1.synthetic)
-    |> Enum.group_by(& &1.source_version.source_record_id)
-    |> Enum.map(fn {_source_record_id, proposals} ->
-      Enum.max_by(proposals, fn proposal ->
-        version = proposal.source_version
+    case Enum.reject(item.proposals, & &1.synthetic) do
+      [] ->
+        case loaded_or_nil(Map.get(item, :published_proposal)) do
+          nil -> []
+          proposal -> [proposal]
+        end
 
-        {
-          DateTime.to_unix(version.first_retrieved_at, :microsecond),
-          DateTime.to_unix(version.inserted_at, :microsecond),
-          version.id
-        }
-      end)
-    end)
+      proposals ->
+        [
+          Enum.max_by(
+            proposals,
+            &(Map.get(&1, :source_version_order) || "0:#{&1.source_version.id}")
+          )
+        ]
+    end
   end
+
+  defp loaded_or_nil(%Ash.NotLoaded{}), do: nil
+  defp loaded_or_nil(value), do: value
+
+  defp current_decisions(item) when not is_map_key(item, :decision), do: []
+  defp current_decisions(%{decision: %Ash.NotLoaded{}}), do: []
+  defp current_decisions(%{decision: nil}), do: []
+  defp current_decisions(%{decision: %{synthetic: true}}), do: []
+  defp current_decisions(%{decision: decision}), do: [decision]
 
   defp validate_claim(%{"evidence" => []} = claim, item_key) do
     [error(:missing_evidence, item_key, claim["key"])]
@@ -162,27 +221,21 @@ defmodule BrusselsWtf.Council.PublicationInput do
   defp present?(_value), do: false
   defp item_key(item), do: item.authoritative_identifier || item.continuity_key
   defp item_sort_key(item), do: {item_key(item), item.item_number}
-  defp claim_key(proposal), do: "proposal:#{proposal.source_version.sha256}"
 
-  defp evidence_sort_key(evidence) do
-    {
-      evidence.source_version && evidence.source_version.sha256,
-      evidence.citation_url,
-      evidence.location,
-      evidence.excerpt
-    }
-  end
+  defp evidence_sort_key(evidence),
+    do:
+      {evidence.source_version && evidence.source_version.sha256, evidence.citation_url,
+       evidence.location, evidence.excerpt}
 
-  defp canonical(value) when is_map(value) do
-    value
-    |> Enum.map(fn {key, nested} -> {to_string(key), canonical(nested)} end)
-    |> Enum.sort_by(&elem(&1, 0))
-  end
+  defp canonical(value) when is_map(value),
+    do:
+      value
+      |> Enum.map(fn {key, nested} -> {to_string(key), canonical(nested)} end)
+      |> Enum.sort_by(&elem(&1, 0))
 
   defp canonical(value) when is_list(value), do: Enum.map(value, &canonical/1)
   defp canonical(value), do: value
 
-  defp error(code, item_key \\ nil, claim_key \\ nil, locale \\ nil) do
-    %{code: code, item_key: item_key, claim_key: claim_key, locale: locale}
-  end
+  defp error(code, item_key \\ nil, claim_key \\ nil, locale \\ nil),
+    do: %{code: code, item_key: item_key, claim_key: claim_key, locale: locale}
 end

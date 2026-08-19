@@ -1,0 +1,146 @@
+{
+  "commune": "uccle",
+  "meeting_identifier": "2025-06-26",
+  "index_url": "https://www.uccle.be/fr/ma-commune/le-conseil-communal/archives-du-Conseil-communal",
+  "observed_at": "2026-08-19T10:00:00Z",
+  "index_response": {
+    "headers": {
+      "content-type": [
+        "text/html"
+      ],
+      "etag": [
+        "\"uccle-captured\""
+      ]
+    }
+  },
+  "sources": [
+    {
+      "name": "base_agenda",
+      "url": "https://www.uccle.be/sites/default/files/filemanager/Legal/CC-GR/CC-2025-06-26-ODJ_U1180_fr_nl.pdf",
+      "fixture_path": "sources/base_agenda.extract.txt",
+      "processor_path": "processors/base_agenda",
+      "headers": {
+        "content-type": [
+          "application/pdf"
+        ],
+        "etag": [
+          "\"base_agenda\""
+        ]
+      },
+      "fixture_sha256": "a4aaf09de498dfe544fde6464347a69e796db9c34f3b9d7fa36781e7f2f358a0"
+    },
+    {
+      "name": "complementary_agenda",
+      "url": "https://www.uccle.be/sites/default/files/filemanager/Legal/CC-GR/CC-2025-06-26-ODJC-bis_U1180_fr_nl.pdf",
+      "fixture_path": "sources/complementary_agenda.extract.txt",
+      "processor_path": "processors/complementary_agenda",
+      "headers": {
+        "content-type": [
+          "application/pdf"
+        ],
+        "etag": [
+          "\"complementary_agenda\""
+        ]
+      },
+      "fixture_sha256": "248ee608fcb8ed3b12d0d5823037ba80a42a41dce4fbd33cf5394c02e4c7bc97"
+    },
+    {
+      "name": "explanatory_note",
+      "url": "https://www.uccle.be/sites/default/files/filemanager/Legal/CC-GR/CC-2025-05-22-NE_U1180_fr_nl.pdf",
+      "fixture_path": "sources/explanatory_note.extract.txt",
+      "processor_path": "processors/explanatory_note",
+      "headers": {
+        "content-type": [
+          "application/pdf"
+        ],
+        "etag": [
+          "\"explanatory_note\""
+        ]
+      },
+      "fixture_sha256": "437b136d8108fa1a3b2a998a5ccd512bfb46cf2fe97eec1f7998cf18bd7cf88b"
+    },
+    {
+      "name": "complementary_explanatory_note",
+      "url": "https://www.uccle.be/sites/default/files/filemanager/Legal/CC-GR/CC-2025-06-26-NEC-bis_U1180_fr_nl.pdf",
+      "fixture_path": "sources/complementary_explanatory_note.extract.txt",
+      "processor_path": "processors/complementary_explanatory_note",
+      "headers": {
+        "content-type": [
+          "application/pdf"
+        ],
+        "etag": [
+          "\"complementary_explanatory_note\""
+        ]
+      },
+      "fixture_sha256": "a0ef9018fc7f5a66c75f40290cd63f96660a3b4f88a65465a2ec62d87aba9648"
+    },
+    {
+      "name": "register",
+      "url": "https://www.uccle.be/sites/default/files/filemanager/Legal/CC-GR/CC_2025-06-26_REGISTRE_U1180_fr_nl.pdf",
+      "fixture_path": "sources/register.extract.txt",
+      "processor_path": "processors/register",
+      "headers": {
+        "content-type": [
+          "application/pdf"
+        ],
+        "etag": [
+          "\"register\""
+        ]
+      },
+      "fixture_sha256": "3fb885541577cdbf8e8d3359ab91d0237ba3f7e452a7d3f5986171add8ce1cc1"
+    },
+    {
+      "name": "question",
+      "url": "https://www.uccle.be/sites/default/files/filemanager/Legal/CC-GR/CC-2025-06-26-QO-ASSAL-Exclusion-des-cheques-sports-des-enfants-de-moins-de-6-ans_U1180_fr.pdf",
+      "fixture_path": "sources/question.extract.txt",
+      "processor_path": "processors/question",
+      "headers": {
+        "content-type": [
+          "application/pdf"
+        ],
+        "etag": [
+          "\"question\""
+        ]
+      },
+      "fixture_sha256": "44636c65328e6bbe5e42765c74eb9ed5548d0e209ac238a41cdb19668c0c923d"
+    },
+    {
+      "name": "interpellation",
+      "url": "https://www.uccle.be/sites/default/files/filemanager/Legal/CC-GR/CC-2025-06-26-Interpellation-COOLS-Logements-Airbnb_U1180_fr.pdf",
+      "fixture_path": "sources/interpellation.extract.txt",
+      "processor_path": "processors/interpellation",
+      "headers": {
+        "content-type": [
+          "application/pdf"
+        ],
+        "etag": [
+          "\"interpellation\""
+        ]
+      },
+      "fixture_sha256": "dc57bd6d27ad343980621d75f579327b2a86201100bb40a31d16e0087d12c743"
+    },
+    {
+      "name": "motion",
+      "url": "https://www.uccle.be/sites/default/files/filemanager/Legal/CC-GR/CC-2025-06-26-Motion-Prevention-et-lutte-contre-les-violences-sexistes-et-sexuelles-en-politique_U1180_fr.pdf",
+      "fixture_path": "sources/motion.extract.txt",
+      "processor_path": "processors/motion",
+      "headers": {
+        "content-type": [
+          "application/pdf"
+        ],
+        "etag": [
+          "\"motion\""
+        ]
+      },
+      "fixture_sha256": "cfff040c7ba581d9c8cbbd73b2dc925359050d47608be084e2cd2a64b1c9bd90"
+    }
+  ],
+  "expected": {
+    "path": "/meetings/uccle/2025-06-26",
+    "item_identifier": "26.06.2025/A/0002",
+    "proposal_text": "Approuver le registre du Conseil du 24 avril 2025.",
+    "citation_url": "https://www.uccle.be/sites/default/files/filemanager/Legal/CC-GR/CC_2025-06-26_REGISTRE_U1180_fr_nl.pdf"
+  },
+  "index_fixture_sha256": "21005f2d1bed548e79620fe505d05fb4d7e2f731b232237efc537f7bc535632d",
+  "coverage_fixture_path": "processors/coverage.json"
+}

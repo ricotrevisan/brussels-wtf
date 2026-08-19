@@ -137,14 +137,15 @@ defmodule BrusselsWtf.Ingestion.ScheduledPollingTest do
            end)
   end
 
-  test "fixed cron skips a commune until its explicit adapter is implemented" do
+  test "fixed cron schedules a commune once its explicit adapter is implemented" do
     assert :ok =
              perform_job(BrusselsWtf.Workers.PollCommune, %{
                commune_slug: "uccle",
                kind: "scheduled"
              })
 
-    assert Ingestion.list_poll_runs!() == []
+    assert [%{kind: :scheduled, target_type: :commune, status: :queued}] =
+             Ingestion.list_poll_runs!()
   end
 
   test "previous-year and backfill scopes select distinct index work", %{commune: commune} do

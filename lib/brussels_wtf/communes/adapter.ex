@@ -4,14 +4,15 @@ defmodule BrusselsWtf.Communes.Adapter do
   """
 
   @type locator :: %{
-          url: String.t(),
-          meeting_identifier: String.t(),
-          scheduled_on: Date.t(),
-          role: atom(),
-          language: atom(),
-          observed_label: String.t(),
-          parent_index_url: String.t(),
-          item_identifier: String.t() | nil
+          required(:url) => String.t(),
+          required(:meeting_identifier) => String.t(),
+          required(:scheduled_on) => Date.t(),
+          required(:role) => atom(),
+          required(:language) => atom(),
+          required(:observed_label) => String.t(),
+          required(:parent_index_url) => String.t(),
+          required(:item_identifier) => String.t() | nil,
+          optional(:dossier_identifier) => String.t() | nil
         }
 
   @callback discover(html :: binary(), index_url :: String.t()) ::

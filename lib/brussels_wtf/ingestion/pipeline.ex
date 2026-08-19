@@ -10,6 +10,24 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
   alias BrusselsWtf.Ingestion
   alias BrusselsWtf.Workers
 
+  @listing_roles [:document_listing, :item_listing]
+  @processable_roles [
+    :agenda,
+    :complementary_agenda,
+    :project,
+    :explanatory_note,
+    :complementary_explanatory_note,
+    :explanatory_notes,
+    :supplement,
+    :addendum,
+    :minutes,
+    :register,
+    :motion,
+    :question,
+    :interpellation,
+    :supporting_document
+  ]
+
   @spec discover_and_enqueue(
           Ecto.UUID.t(),
           Ecto.UUID.t(),
@@ -97,6 +115,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
                       language: locator.language,
                       observed_label: locator.observed_label,
                       item_identifier: locator.item_identifier,
+                      dossier_identifier: Map.get(locator, :dossier_identifier),
                       discovered_at: now,
                       next_fetch_at:
                         initial_next_fetch_at(
@@ -207,6 +226,10 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
                 sha256: version.sha256,
                 source_version_id: version.id
               )
+
+              if locator.role in @listing_roles do
+                enqueue_known_children(locator, poll_run_id, check_key)
+              end
 
               :ok
           end
@@ -811,6 +834,13 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     agenda = record_agenda(normalized["agenda"], meeting, version)
 
     Enum.each(List.wrap(normalized["items"]), fn candidate ->
+      version_order =
+        current_version_order(
+          version,
+          get_in(normalized, ["agenda", "kind"]),
+          source_record.role
+        )
+
       item =
         Council.upsert_agenda_item!(%{
           council_meeting_id: meeting.id,
@@ -818,7 +848,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
           authoritative_identifier: candidate["authoritative_identifier"],
           source_wording: candidate["source_wording"],
           current_source_version_id: version.id,
-          current_version_order: current_version_order(version),
+          current_version_order: version_order,
           procedural_state: :unknown,
           outcome: :unknown
         })
@@ -831,11 +861,14 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         source_wording: candidate["source_wording"]
       })
 
-      if List.wrap(candidate["proposals"]) != [] do
+      link_item_scoped_source!(source_record, item, candidate)
+
+      if List.wrap(candidate["proposals"]) != [] and item.procedural_state != :decision do
         Council.mark_agenda_item_proposed!(item)
       end
 
-      record_proposals(candidate["proposals"], item, version, citation_url)
+      record_proposals(candidate["proposals"], item, version, version_order, citation_url)
+      record_decisions(candidate["decisions"], item, version, source_record.role, citation_url)
     end)
 
     Council.upsert_meeting_page!(%{
@@ -912,10 +945,18 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
       end
 
     locators =
-      if is_nil(discovered), do: Enum.reject(locators, &disappeared?/1), else: locators
+      if is_nil(discovered) do
+        index_url = Ingestion.get_commune!(commune_id).index_url
+
+        locators
+        |> Enum.filter(&(&1.parent_index_url == index_url))
+        |> Enum.reject(&disappeared?/1)
+      else
+        locators
+      end
 
     locators
-    |> Enum.filter(&(&1.role in [:agenda, :project, :supplement, :addendum, :minutes, :register]))
+    |> Enum.filter(&(&1.role in (@processable_roles ++ @listing_roles)))
     |> Enum.each(fn locator ->
       %{
         locator_id: locator.id,
@@ -1032,13 +1073,20 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
           source_version_id: version.id
         )
 
-        unless processed?(version) do
-          %{source_version_id: version.id}
-          |> Workers.ExtractSource.new()
-          |> Oban.insert!()
-        end
+        cond do
+          locator.role in @listing_roles ->
+            discover_nested_and_enqueue(locator, poll_run_id, check_key, body, now)
 
-        :ok
+          locator.role in @processable_roles and not processed?(version) ->
+            %{source_version_id: version.id}
+            |> Workers.ExtractSource.new()
+            |> Oban.insert!()
+
+            :ok
+
+          true ->
+            :ok
+        end
 
       {:error, reason} ->
         record_observation(locator, poll_run_id, response, check_key,
@@ -1049,6 +1097,88 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
 
         {:review, :corruption}
     end
+  end
+
+  defp enqueue_known_children(parent, poll_run_id, check_key) do
+    parent.commune_id
+    |> Ingestion.list_document_locators!()
+    |> Enum.filter(&(&1.parent_index_url == parent.url))
+    |> Enum.reject(&disappeared?/1)
+    |> Enum.each(fn child ->
+      %{
+        locator_id: child.id,
+        poll_run_id: poll_run_id,
+        check_key: check_key,
+        attempt: 1
+      }
+      |> Workers.FetchLocator.new()
+      |> Oban.insert!()
+    end)
+  end
+
+  defp discover_nested_and_enqueue(locator, poll_run_id, check_key, body, now) do
+    commune = Ingestion.get_commune!(locator.commune_id)
+
+    with {:ok, adapter} <- BrusselsWtf.Communes.adapter(commune.slug),
+         true <- function_exported?(adapter, :discover_children, 2),
+         {:ok, discovered} <- adapter.discover_children(body, locator) do
+      stored =
+        Enum.map(discovered, fn child ->
+          Ingestion.upsert_locator!(%{
+            commune_id: commune.id,
+            url: child.url,
+            parent_index_url: child.parent_index_url,
+            meeting_identifier: child.meeting_identifier,
+            scheduled_on: child.scheduled_on,
+            role: child.role,
+            language: child.language,
+            observed_label: child.observed_label,
+            item_identifier: child.item_identifier,
+            dossier_identifier: Map.get(child, :dossier_identifier),
+            discovered_at: now,
+            next_fetch_at: now
+          })
+        end)
+
+      mark_nested_disappeared(locator, poll_run_id, check_key, stored, now)
+
+      Enum.each(stored, fn child ->
+        %{
+          locator_id: child.id,
+          poll_run_id: poll_run_id,
+          check_key: check_key,
+          attempt: 1
+        }
+        |> Workers.FetchLocator.new()
+        |> Oban.insert!()
+      end)
+
+      :ok
+    else
+      false -> {:review, :parser_ambiguity}
+      {:error, _reason} -> {:review, :parser_ambiguity}
+    end
+  end
+
+  defp mark_nested_disappeared(parent, poll_run_id, check_key, stored, now) do
+    discovered_ids = MapSet.new(stored, & &1.id)
+
+    parent.commune_id
+    |> Ingestion.list_document_locators!()
+    |> Enum.filter(&(&1.parent_index_url == parent.url))
+    |> Enum.reject(&MapSet.member?(discovered_ids, &1.id))
+    |> Enum.each(fn child ->
+      Ingestion.record_observation!(%{
+        source_locator_id: child.id,
+        poll_run_id: poll_run_id,
+        check_key: "#{check_key}:nested:#{child.id}",
+        observed_at: now,
+        status: :disappeared,
+        final_url: child.url,
+        error_kind: "disappeared_from_parent_listing",
+        error_message: "locator was absent from its authoritative parent listing"
+      })
+    end)
   end
 
   defp record_agenda(nil, _meeting, _version), do: nil
@@ -1062,12 +1192,13 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     })
   end
 
-  defp record_proposals(proposals, item, version, citation_url) do
+  defp record_proposals(proposals, item, version, version_order, citation_url) do
     Enum.each(List.wrap(proposals), fn candidate ->
       proposal =
         Council.record_proposal!(%{
           agenda_item_id: item.id,
           source_version_id: version.id,
+          source_version_order: version_order,
           text: candidate["text"],
           status: :proposed
         })
@@ -1088,11 +1219,92 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     end)
   end
 
+  defp link_item_scoped_source!(source_record, item, candidate) do
+    locator =
+      source_record.commune_id
+      |> Ingestion.list_document_locators!()
+      |> Enum.find(&(&1.url == source_record.origin_url and not is_nil(&1.item_identifier)))
+
+    if locator do
+      normalized_item = candidate["item_number"] |> to_string() |> String.trim_leading("0")
+      locator_item = locator.item_identifier |> to_string() |> String.trim_leading("0")
+
+      if normalized_item != locator_item do
+        raise "normalized item does not match its authoritative item listing"
+      end
+
+      if locator.dossier_identifier &&
+           candidate["authoritative_identifier"] != locator.dossier_identifier do
+        raise "normalized dossier identifier does not match its authoritative listing"
+      end
+
+      Ingestion.link_source_record_to_agenda_item!(source_record, %{agenda_item_id: item.id})
+    end
+  end
+
+  defp record_decisions(decisions, item, version, _source_role, citation_url) do
+    decisions
+    |> List.wrap()
+    |> Enum.each(fn candidate ->
+      decision =
+        Council.record_decision!(%{
+          agenda_item_id: item.id,
+          source_version_id: version.id,
+          disposition: disposition(candidate["disposition"]),
+          statement: candidate["statement"],
+          votes_for: get_in(candidate, ["vote", "for"]),
+          votes_against: get_in(candidate, ["vote", "against"]),
+          abstentions: get_in(candidate, ["vote", "abstentions"])
+        })
+
+      record_decision_evidence(candidate["evidence"], :decision, decision, version, citation_url)
+
+      record_decision_evidence(
+        get_in(candidate, ["vote", "evidence"]),
+        :vote,
+        decision,
+        version,
+        citation_url
+      )
+
+      if item.current_source_version_id == version.id do
+        Council.mark_agenda_item_decided!(item, %{
+          current_decision_id: decision.id,
+          outcome: decision.disposition
+        })
+      end
+    end)
+  end
+
+  defp record_decision_evidence(nil, _claim, _decision, _version, _citation_url), do: :ok
+
+  defp record_decision_evidence(evidence, claim, decision, version, citation_url) do
+    Council.record_decision_evidence!(%{
+      decision_id: decision.id,
+      source_version_id: version.id,
+      claim: claim,
+      excerpt: evidence["excerpt"],
+      location: evidence["location"],
+      citation_url: citation_url,
+      retrieved_at: version.first_retrieved_at,
+      applicable_from: parse_date(evidence["applicable_from"]),
+      applicable_until: parse_date(evidence["applicable_until"])
+    })
+  end
+
+  defp disposition(value)
+       when value in ["approved", "rejected", "amended", "postponed", "withdrawn", "other"],
+       do: String.to_existing_atom(value)
+
+  defp disposition(value), do: raise("unsupported final disposition: #{inspect(value)}")
+
   defp mark_disappeared(commune_id, poll_run_id, check_key, discovered, now, scope) do
     discovered_ids = MapSet.new(Enum.map(discovered, & &1.id))
+    parent_index_url = discovered |> List.first() |> Map.fetch!(:parent_index_url)
 
     commune_id
     |> Ingestion.list_document_locators!()
+    |> Enum.filter(&(&1.parent_index_url == parent_index_url))
     |> scope_discovered(scope, now)
     |> Enum.reject(&MapSet.member?(discovered_ids, &1.id))
     |> Enum.each(fn locator ->
@@ -1410,8 +1622,53 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     })
   end
 
-  defp current_version_order(version) do
-    "#{DateTime.to_iso8601(version.first_retrieved_at)}:#{version.sha256}"
+  defp current_version_order(version, kind, source_role) do
+    rank =
+      case {kind, source_role} do
+        {"final", _} ->
+          60
+
+        {_, role} when role in [:minutes, :register] ->
+          60
+
+        {"corrected", _} ->
+          50
+
+        {"addendum", _} ->
+          40
+
+        {_, role} when role in [:agenda_addendum, :addendum] ->
+          40
+
+        {_, role}
+        when role in [
+               :project,
+               :explanatory_note,
+               :complementary_explanatory_note,
+               :explanatory_notes
+             ] ->
+          30
+
+        {"supplement", _} ->
+          20
+
+        {"complementary", _} ->
+          20
+
+        {_, role} when role in [:complementary_agenda, :supplement] ->
+          20
+
+        {"base", _} ->
+          10
+
+        {_, :agenda} ->
+          10
+
+        _ ->
+          0
+      end
+
+    "#{rank}:#{DateTime.to_iso8601(version.first_retrieved_at)}:#{version.sha256}"
   end
 
   defp parse_date(nil), do: nil

@@ -29,10 +29,46 @@ defmodule BrusselsWtf.Council.Evidence do
         :applicable_until
       ]
 
+      validate present(:proposal_id)
       validate present(:source_version_id)
-
       upsert? true
       upsert_identity :unique_proposal_source_claim
+      upsert_fields []
+    end
+
+    create :record_decision do
+      accept [
+        :decision_id,
+        :source_version_id,
+        :claim,
+        :excerpt,
+        :location,
+        :citation_url,
+        :retrieved_at,
+        :applicable_from,
+        :applicable_until
+      ]
+
+      validate present(:decision_id)
+      validate present(:source_version_id)
+
+      validate fn changeset, _context ->
+        decision_id = Ash.Changeset.get_attribute(changeset, :decision_id)
+        source_version_id = Ash.Changeset.get_attribute(changeset, :source_version_id)
+
+        if is_nil(decision_id) or is_nil(source_version_id) do
+          :ok
+        else
+          decision = BrusselsWtf.Council.get_decision!(decision_id)
+
+          if decision.source_version_id == source_version_id,
+            do: :ok,
+            else: {:error, "decision evidence must use the decision source version"}
+        end
+      end
+
+      upsert? true
+      upsert_identity :unique_decision_source_claim
       upsert_fields []
     end
 
@@ -70,7 +106,7 @@ defmodule BrusselsWtf.Council.Evidence do
     attribute :claim, :atom do
       allow_nil? false
       public? true
-      constraints one_of: [:proposal]
+      constraints one_of: [:proposal, :decision, :vote]
     end
 
     attribute :excerpt, :string, allow_nil?: false, public?: true
@@ -86,12 +122,14 @@ defmodule BrusselsWtf.Council.Evidence do
   end
 
   relationships do
-    belongs_to :proposal, BrusselsWtf.Council.Proposal, allow_nil?: false, public?: true
+    belongs_to :proposal, BrusselsWtf.Council.Proposal, public?: true
+    belongs_to :decision, BrusselsWtf.Council.Decision, public?: true
     belongs_to :source_version, BrusselsWtf.Ingestion.SourceVersion, public?: true
   end
 
   identities do
     identity :unique_proposal_source_claim, [:proposal_id, :source_version_id, :claim]
+    identity :unique_decision_source_claim, [:decision_id, :source_version_id, :claim]
     identity :unique_rendered_reference, [:proposal_id, :render_key]
   end
 end

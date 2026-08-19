@@ -23,7 +23,9 @@ defmodule BrusselsWtfWeb.TimelinePage do
     entries =
       pages
       |> Enum.flat_map(fn page ->
-        Enum.map(page.council_meeting.agenda_items, &entry(page, &1, locale))
+        page.council_meeting.agenda_items
+        |> Enum.filter(& &1.published?)
+        |> Enum.map(&entry(page, &1, locale))
       end)
 
     assign(conn,
@@ -179,7 +181,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       Enum.find(item.coverage_variants, &(&1.locale == locale)) ||
         unavailable_coverage_variant(locale)
 
-    decision = loaded_or_nil(item.decision)
+    decision = loaded_or_nil(item.published_decision)
     state = display_state(item, decision)
 
     %{
@@ -187,13 +189,13 @@ defmodule BrusselsWtfWeb.TimelinePage do
         commune_name(locale, page.council_meeting.commune.slug, page.council_meeting.commune.name),
       commune_slug: page.council_meeting.commune.slug,
       date: page.council_meeting.scheduled_on,
-      item_number: item.item_number,
+      item_number: item.published_item_number || item.item_number,
       title: variant.title,
       summary: localized_summary(variant, state, locale),
       provenance: variant.provenance,
       state: state,
       disposition: decision && decision.disposition,
-      outcome: item.outcome,
+      outcome: item.published_outcome || :unknown,
       evidences: BrusselsWtfWeb.PublicEvidence.for_item(item),
       dossiers: Enum.map(item.dossier_links, & &1.dossier),
       href:
@@ -213,8 +215,8 @@ defmodule BrusselsWtfWeb.TimelinePage do
   end
 
   defp display_state(_item, decision) when not is_nil(decision), do: :decision
-  defp display_state(%{procedural_state: :decision}, nil), do: :unknown
-  defp display_state(item, nil), do: item.procedural_state
+  defp display_state(%{published_procedural_state: :decision}, nil), do: :unknown
+  defp display_state(item, nil), do: item.published_procedural_state || :unknown
 
   defp localized_summary(variant, :decision, locale),
     do: variant.decision_summary || text(locale, :decision_copy_unavailable)

@@ -1,0 +1,47 @@
+{
+  "meeting_identifier": "2026-03-24",
+  "scheduled_on": "2026-03-24",
+  "agenda": {
+    "kind": "final",
+    "language": "bilingual"
+  },
+  "items": [
+    {
+      "item_number": "7",
+      "authoritative_identifier": "Politique de la Ville 2021-2025/Axe 2.1",
+      "source_wording": "Revitalisation des quartiers – Convention d’occupation COMMUNA asbl – Avenant 2 – Approbation.",
+      "decisions": [
+        {
+          "disposition": "approved",
+          "statement": "Le Conseil approuve le projet de délibération.",
+          "evidence": {
+            "excerpt": "Le Conseil approuve le projet de délibération.",
+            "location": "Procès-verbal public, page 20/92"
+          }
+        }
+      ]
+    },
+    {
+      "item_number": "1",
+      "authoritative_identifier": null,
+      "source_wording": "Conseil communal - Démission d’un membre - Vérification des pouvoirs et installation du successeur. (Ajouté en séance)",
+      "decisions": [
+        {
+          "disposition": "approved",
+          "statement": "Les pouvoirs de Monsieur Youssef Lakhloufi sont validés.",
+          "evidence": {
+            "excerpt": "Les pouvoirs de Monsieur Youssef Lakhloufi en qualité de conseiller communal sont validés.",
+            "location": "Procès-verbal public, pages 1-2/92"
+          },
+          "vote": {
+            "for": 32,
+            "evidence": {
+              "excerpt": "32 votants : 32 votes positifs.",
+              "location": "Procès-verbal public, page 2/92"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

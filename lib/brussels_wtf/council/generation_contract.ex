@@ -73,22 +73,25 @@ defmodule BrusselsWtf.Council.GenerationContract do
         do: [],
         else: [error(:unsupported_claim_reference, item["key"], nil, locale)]
 
-    claim_failures ++ validate_variant(generated["variant"], item["key"], locale)
+    claim_failures ++ validate_variant(generated["variant"], item, locale)
   end
 
-  defp validate_variant(
-         %{"title" => title, "summary" => summary, "proposal_summary" => proposal},
-         item_key,
-         locale
-       )
-       when is_binary(title) and is_binary(summary) and is_binary(proposal) do
-    if Enum.all?([title, summary, proposal], &present?/1),
+  defp validate_variant(%{"title" => title, "summary" => summary} = variant, item, locale)
+       when is_binary(title) and is_binary(summary) do
+    kinds = MapSet.new(Enum.map(item["claims"], & &1["kind"]))
+
+    required =
+      [title, summary] ++
+        if(MapSet.member?(kinds, "proposal"), do: [variant["proposal_summary"]], else: []) ++
+        if(MapSet.member?(kinds, "decision"), do: [variant["decision_summary"]], else: [])
+
+    if Enum.all?(required, &present?/1),
       do: [],
-      else: [error(:blank_coverage_variant, item_key, nil, locale)]
+      else: [error(:blank_coverage_variant, item["key"], nil, locale)]
   end
 
-  defp validate_variant(_variant, item_key, locale),
-    do: [error(:missing_coverage_variant, item_key, nil, locale)]
+  defp validate_variant(_variant, item, locale),
+    do: [error(:missing_coverage_variant, item["key"], nil, locale)]
 
   defp validate_item_keys(expected, actual) do
     Enum.map(MapSet.difference(expected, actual), &error(:missing_item_generation, &1)) ++

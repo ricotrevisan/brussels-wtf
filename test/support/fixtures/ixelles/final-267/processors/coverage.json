@@ -1,0 +1,40 @@
+{
+  "page": {
+    "fr": {
+      "title": "Approbation du procès-verbal du 21 mai",
+      "summary": "Le Conseil doit examiner l’approbation du procès-verbal."
+    },
+    "nl": {
+      "title": "Goedkeuring van het proces-verbaal van 21 mei",
+      "summary": "De raad moet de goedkeuring van het proces-verbaal behandelen."
+    },
+    "en": {
+      "title": "Approval of the 21 May minutes",
+      "summary": "The council is due to consider approving the minutes."
+    }
+  },
+  "items": {
+    "11.06.2026/A/0002": {
+      "claim_refs": [
+        "proposal:11.06.2026/A/0002:e910e8aaa0d5a5e9182dcb63611d1d2b869967f6fdec5b3aba42239ff1ebe356"
+      ],
+      "variants": {
+        "fr": {
+          "title": "Approbation du procès-verbal du 21 mai",
+          "summary": "Le Conseil doit examiner l’approbation du procès-verbal.",
+          "proposal_summary": "Le Conseil doit encore se prononcer."
+        },
+        "nl": {
+          "title": "Goedkeuring van het proces-verbaal van 21 mei",
+          "summary": "De raad moet de goedkeuring van het proces-verbaal behandelen.",
+          "proposal_summary": "De raad moet zich nog uitspreken."
+        },
+        "en": {
+          "title": "Approval of the 21 May minutes",
+          "summary": "The council is due to consider approving the minutes.",
+          "proposal_summary": "The council has not yet decided."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "commune": "ixelles",
+  "meeting_identifier": "267",
+  "index_url": "https://www.ixelles.be/site/11-Ordres-du-jour-et-proces-verbaux?langue=fr",
+  "observed_at": "2026-07-01T10:00:00Z",
+  "index_response": {
+    "headers": {
+      "content-type": [
+        "text/html; charset=UTF-8"
+      ],
+      "etag": [
+        "\"ixelles-267-agenda\""
+      ]
+    }
+  },
+  "sources": [
+    {
+      "name": "agenda",
+      "url": "https://www.ixelles.be/uploads/conseil/odj/267.pdf",
+      "fixture_path": "sources/267-agenda.extract.txt",
+      "processor_path": "processors/agenda",
+      "headers": {
+        "content-type": [
+          "application/pdf"
+        ],
+        "etag": [
+          "\"267-agenda\""
+        ]
+      },
+      "fixture_sha256": "e910e8aaa0d5a5e9182dcb63611d1d2b869967f6fdec5b3aba42239ff1ebe356"
+    },
+    {
+      "name": "minutes",
+      "url": "https://www.ixelles.be/uploads/conseil/pv/267.pdf",
+      "fixture_path": "sources/267-minutes.extract.txt",
+      "processor_path": "processors/minutes",
+      "headers": {
+        "content-type": [
+          "application/pdf"
+        ],
+        "etag": [
+          "\"267-minutes\""
+        ]
+      },
+      "fixture_sha256": "852ab600c4b21747c65ffe131a2af64d80311672f51256646a3f4445108a2ac3"
+    }
+  ],
+  "expected": {
+    "path": "/meetings/ixelles/267",
+    "item_identifier": "11.06.2026/A/0002",
+    "proposal_text": "Approuver le procès-verbal de la séance du Conseil communal du 21 mai 2026.",
+    "citation_url": "https://www.ixelles.be/uploads/conseil/pv/267.pdf"
+  },
+  "index_fixture_sha256": "7f7029bceee4432f03b25c3808a6ee0af0f9a674e9375442980a068cf15b06ea",
+  "coverage_fixture_path": "processors/coverage.json",
+  "stages": {
+    "final": {
+      "observed_at": "2026-08-19T12:00:00Z",
+      "index_fixture_path": "index-final.html",
+      "index_fixture_sha256": "091a6c42d026ba5e36674d9a924462b9cd4b4ce26e0984544d24d8ae5cde37ab",
+      "index_response": {
+        "headers": {
+          "content-type": [
+            "text/html; charset=UTF-8"
+          ],
+          "etag": [
+            "\"ixelles-267-final\""
+          ]
+        }
+      },
+      "coverage_fixture_path": "processors/coverage-final.json"
+    }
+  }
+}

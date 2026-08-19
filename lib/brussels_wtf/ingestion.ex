@@ -38,6 +38,7 @@ defmodule BrusselsWtf.Ingestion do
       define :get_source_record_by_origin, action: :by_origin, args: [:commune_id, :origin_url]
       define :upsert_source_record, action: :upsert
       define :link_source_record_to_meeting, action: :link_meeting
+      define :link_source_record_to_agenda_item, action: :link_agenda_item
       define :reclassify_source_record, action: :reclassify
     end
 

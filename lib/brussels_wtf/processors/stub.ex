@@ -44,16 +44,18 @@ defmodule BrusselsWtf.Processors.Stub do
   end
 
   @impl true
-  def generate_fr(%{"meeting_identifier" => meeting_identifier}) do
-    with {:ok, output} <- generation_fixture(meeting_identifier) do
+  def generate_fr(%{"meeting_identifier" => meeting_identifier} = input) do
+    with {:ok, output} <- generation_fixture(meeting_identifier),
+         {:ok, output} <- resolve_fixture_items(output, input) do
       {:ok, locale_bundle(output, meeting_identifier, "fr")}
     end
   end
 
   @impl true
-  def translate(%{"meeting_identifier" => meeting_identifier}, locale)
+  def translate(%{"meeting_identifier" => meeting_identifier} = canonical, locale)
       when locale in ["nl", "en"] do
-    with {:ok, output} <- generation_fixture(meeting_identifier) do
+    with {:ok, output} <- generation_fixture(meeting_identifier),
+         {:ok, output} <- resolve_fixture_items(output, canonical) do
       {:ok, locale_bundle(output, meeting_identifier, locale)}
     end
   end
@@ -85,10 +87,64 @@ defmodule BrusselsWtf.Processors.Stub do
           {item_key,
            %{
              "claim_refs" => item["claim_refs"],
+             "item_number" => item["item_number"],
              "variant" => get_in(item, ["variants", locale])
            }}
         end)
     }
+  end
+
+  defp resolve_fixture_items(output, %{"items" => context_items}) do
+    output["items"]
+    |> Enum.reduce_while({:ok, %{}}, fn {fixture_key, fixture}, {:ok, resolved} ->
+      case resolve_fixture_key(fixture_key, context_items) do
+        {:ok, actual_key, item_number} ->
+          fixture =
+            fixture
+            |> Map.put("item_number", item_number)
+            |> Map.update("claim_refs", [], fn refs ->
+              Enum.map(refs, &String.replace(&1, "@item_key", actual_key))
+            end)
+
+          {:cont, {:ok, Map.put(resolved, actual_key, fixture)}}
+
+        :error ->
+          {:halt, {:error, {:missing_generation_fixture_item, fixture_key}}}
+      end
+    end)
+    |> case do
+      {:ok, items} -> {:ok, Map.put(output, "items", items)}
+      error -> error
+    end
+  end
+
+  defp resolve_fixture_key("@item_number:" <> number, context_items)
+       when is_list(context_items) do
+    case Enum.find(context_items, &(&1["item_number"] == number)) do
+      nil -> :error
+      item -> {:ok, item["key"], number}
+    end
+  end
+
+  defp resolve_fixture_key("@item_number:" <> number, context_items) when is_map(context_items) do
+    case Enum.find(context_items, fn {_key, item} -> item["item_number"] == number end) do
+      nil -> :error
+      {key, _item} -> {:ok, key, number}
+    end
+  end
+
+  defp resolve_fixture_key(key, context_items) when is_list(context_items) do
+    case Enum.find(context_items, &(&1["key"] == key)) do
+      nil -> :error
+      item -> {:ok, key, item["item_number"]}
+    end
+  end
+
+  defp resolve_fixture_key(key, context_items) when is_map(context_items) do
+    case Map.fetch(context_items, key) do
+      {:ok, item} -> {:ok, key, item["item_number"]}
+      :error -> :error
+    end
   end
 
   defp fetch(sha256, key) do

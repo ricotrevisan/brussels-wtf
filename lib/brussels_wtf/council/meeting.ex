@@ -32,6 +32,7 @@ defmodule BrusselsWtf.Council.Meeting do
                   :agendas,
                   agenda_items: [
                     :versions,
+                    decision: [:source_version, evidence: [:source_version]],
                     proposals: [:source_version, evidence: [:source_version]]
                   ]
                 ]

@@ -45,6 +45,8 @@ defmodule BrusselsWtf.Test.Harness do
           locales: read_json(Path.join(processor_dir, "locales.json"))
         }
 
+        outputs = maybe_put_ocr(outputs, processor_dir)
+
         BrusselsWtf.HTTP.Stub.put(source["url"], %{
           body: bytes,
           headers: source["headers"],
@@ -79,6 +81,8 @@ defmodule BrusselsWtf.Test.Harness do
       })
 
     loaded = %{
+      fixture_dir: dir,
+      scenario: scenario,
       commune: commune,
       index_url: scenario["index_url"],
       index_body: index,
@@ -89,6 +93,50 @@ defmodule BrusselsWtf.Test.Harness do
 
     Application.put_env(:brussels_wtf, :loaded_test_scenario, loaded)
     loaded
+  end
+
+  def advance(stage_name) when is_binary(stage_name) do
+    loaded = Application.fetch_env!(:brussels_wtf, :loaded_test_scenario)
+    stage = get_in(loaded.scenario, ["stages", stage_name]) || raise "unknown fixture stage"
+    index = File.read!(Path.join(loaded.fixture_dir, stage["index_fixture_path"]))
+
+    if BrusselsWtf.Digest.sha256(index) != stage["index_fixture_sha256"] do
+      raise "captured stage index hash does not match scenario manifest"
+    end
+
+    {:ok, observed_at, _} = DateTime.from_iso8601(stage["observed_at"])
+    BrusselsWtf.Clock.Controlled.set(observed_at)
+
+    BrusselsWtf.HTTP.Stub.put(loaded.index_url, %{
+      body: index,
+      headers: stage["index_response"]["headers"]
+    })
+
+    coverage =
+      loaded.fixture_dir
+      |> Path.join(stage["coverage_fixture_path"])
+      |> File.read!()
+      |> Jason.decode!()
+
+    BrusselsWtf.Processors.Stub.put_locales(loaded.scenario["meeting_identifier"], coverage)
+
+    Enum.each(List.wrap(stage["source_changes"]), fn change ->
+      name = String.to_existing_atom(change["name"])
+      bytes = File.read!(Path.join(loaded.fixture_dir, change["fixture_path"]))
+      processor_dir = Path.join(loaded.fixture_dir, change["processor_path"])
+
+      outputs = %{
+        extract: read_json(Path.join(processor_dir, "extract.json")),
+        normalize: read_json(Path.join(processor_dir, "normalize.json")),
+        locales: read_json(Path.join(processor_dir, "locales.json"))
+      }
+
+      outputs = maybe_put_ocr(outputs, processor_dir)
+
+      respond_with_changed_source(name, bytes, outputs)
+    end)
+
+    :ok
   end
 
   def respond_with_changed_source(name, bytes, outputs \\ nil) do
@@ -109,17 +157,27 @@ defmodule BrusselsWtf.Test.Harness do
   end
 
   def drain_pipeline(opts \\ []) do
-    queues = Enum.drop_while(@queues, &(&1 != Keyword.get(opts, :from, :poll)))
+    from = Keyword.get(opts, :from, :poll)
+    until_queue = Keyword.get(opts, :until, List.last(@queues))
 
-    Enum.each(queues, fn queue ->
-      result = Oban.drain_queue(queue: queue, with_safety: false)
+    queues =
+      @queues
+      |> Enum.drop_while(&(&1 != from))
+      |> Enum.take_while(&(&1 != until_queue))
+      |> Kernel.++([until_queue])
 
-      if result.failure > 0 or result.discard > 0 do
-        raise "pipeline queue #{queue} failed: #{inspect(result)}"
-      end
-    end)
-
+    Enum.each(queues, &drain_queue!/1)
     :ok
+  end
+
+  defp drain_queue!(queue) do
+    result = Oban.drain_queue(queue: queue, with_safety: false)
+
+    if result.failure > 0 or result.discard > 0 do
+      raise "pipeline queue #{queue} failed: #{inspect(result)}"
+    end
+
+    if result.success > 0, do: drain_queue!(queue), else: :ok
   end
 
   defp source!(name) do
@@ -132,6 +190,11 @@ defmodule BrusselsWtf.Test.Harness do
     BrusselsWtf.HTTP.Stub.reset()
     BrusselsWtf.Archive.Memory.reset()
     BrusselsWtf.Processors.Stub.reset()
+  end
+
+  defp maybe_put_ocr(outputs, processor_dir) do
+    path = Path.join(processor_dir, "ocr.json")
+    if File.exists?(path), do: Map.put(outputs, :ocr, read_json(path)), else: outputs
   end
 
   defp read_json(path), do: path |> File.read!() |> Jason.decode!()

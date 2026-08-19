@@ -3,16 +3,28 @@ defmodule BrusselsWtfWeb.PublicEvidence do
 
   def proposals(%{proposals: %Ash.NotLoaded{}}), do: []
 
-  def proposals(%{proposals: proposals}) do
+  def proposals(%{proposals: proposals} = item) do
     {synthetic, authoritative} = Enum.split_with(proposals, & &1.synthetic)
 
     current_authoritative =
-      authoritative
-      |> Enum.reject(&match?(%Ash.NotLoaded{}, &1.source_version))
-      |> Enum.group_by(& &1.source_version.source_record_id)
-      |> Enum.map(fn {_source_record_id, versions} -> newest(versions, & &1.source_version) end)
+      if Map.has_key?(item, :published_proposal) do
+        case Map.get(item, :published_proposal) do
+          %Ash.NotLoaded{} -> newest_proposal(authoritative)
+          nil -> []
+          proposal -> [proposal]
+        end
+      else
+        newest_proposal(authoritative)
+      end
 
     Enum.sort_by(synthetic ++ current_authoritative, &proposal_sort_key/1)
+  end
+
+  defp newest_proposal(authoritative) do
+    case Enum.reject(authoritative, &match?(%Ash.NotLoaded{}, &1.source_version)) do
+      [] -> []
+      versions -> [newest(versions, & &1.source_version)]
+    end
   end
 
   def source_proposals(item) do
@@ -22,14 +34,24 @@ defmodule BrusselsWtfWeb.PublicEvidence do
   end
 
   def for_item(item) do
-    item
-    |> proposals()
-    |> Enum.flat_map(fn proposal ->
-      proposal.evidence
-      |> loaded_list()
-      |> current_evidence()
-      |> Enum.map(&presentation/1)
-    end)
+    proposal_evidence =
+      item
+      |> proposals()
+      |> Enum.flat_map(fn proposal ->
+        proposal.evidence
+        |> loaded_list()
+        |> current_evidence()
+      end)
+
+    decision_evidence =
+      case loaded_value(Map.get(item, :published_decision)) do
+        nil -> []
+        decision -> decision.evidence |> loaded_list() |> current_evidence()
+      end
+
+    (proposal_evidence ++ decision_evidence)
+    |> Enum.uniq_by(& &1.id)
+    |> Enum.map(&presentation/1)
   end
 
   defp current_evidence(evidence) do

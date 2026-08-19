@@ -155,10 +155,14 @@ defmodule BrusselsWtf.Seeds.PublicTimeline do
       raise "synthetic public timeline seeds are disabled in this environment"
     end
 
-    page
-    |> Map.fetch!(:id)
-    |> Council.get_meeting_page!()
-    |> Ash.Seed.update!(%{publication_status: :published})
+    page =
+      page
+      |> Map.fetch!(:id)
+      |> Council.get_meeting_page!()
+      |> Ash.load!(council_meeting: [agenda_items: [proposals: [:source_version]]])
+
+    Enum.each(page.council_meeting.agenda_items, &Council.publish_agenda_item_state!/1)
+    Ash.Seed.update!(page, %{publication_status: :published})
   end
 
   @spec run!() :: :ok
@@ -201,10 +205,17 @@ defmodule BrusselsWtf.Seeds.PublicTimeline do
       })
 
     if record.disposition do
-      Council.upsert_decision!(%{
-        agenda_item_id: item.id,
-        disposition: record.disposition,
-        statement: record.decision_statement
+      decision =
+        Council.upsert_decision!(%{
+          agenda_item_id: item.id,
+          render_key: "synthetic-seed",
+          disposition: record.disposition,
+          statement: record.decision_statement
+        })
+
+      Council.mark_agenda_item_decided!(item, %{
+        current_decision_id: decision.id,
+        outcome: record.disposition
       })
     end
 
@@ -265,6 +276,8 @@ defmodule BrusselsWtf.Seeds.PublicTimeline do
       })
     end)
 
+    item = item.id |> Council.get_agenda_item!() |> Ash.load!(proposals: [:source_version])
+    Council.publish_agenda_item_state!(item)
     publish_for_seed!(page)
   end
 end

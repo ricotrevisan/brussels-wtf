@@ -20,9 +20,12 @@ defmodule BrusselsWtf.Council do
     end
 
     resource BrusselsWtf.Council.AgendaItem do
+      define :get_agenda_item, action: :read, get_by: [:id]
       define :upsert_agenda_item, action: :upsert
       define :upsert_rendered_agenda_item, action: :upsert_rendered
       define :mark_agenda_item_proposed, action: :mark_proposed
+      define :mark_agenda_item_decided, action: :mark_decided
+      define :publish_agenda_item_state, action: :publish_current_state
     end
 
     resource BrusselsWtf.Council.AgendaItemVersion do
@@ -36,11 +39,14 @@ defmodule BrusselsWtf.Council do
 
     resource BrusselsWtf.Council.Evidence do
       define :record_evidence, action: :record
+      define :record_decision_evidence, action: :record_decision
       define :upsert_evidence, action: :upsert_reference
     end
 
     resource BrusselsWtf.Council.Decision do
-      define :upsert_decision, action: :upsert
+      define :get_decision, action: :read, get_by: [:id]
+      define :record_decision, action: :record
+      define :upsert_decision, action: :upsert_rendered
     end
 
     resource BrusselsWtf.Council.Dossier do

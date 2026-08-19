@@ -1,0 +1,25 @@
+{
+  "meeting_identifier": "267",
+  "scheduled_on": "2026-06-11",
+  "agenda": {
+    "kind": "complementary",
+    "language": "bilingual"
+  },
+  "items": [
+    {
+      "item_number": "2",
+      "authoritative_identifier": "11.06.2026/A/0002",
+      "source_wording": "Procès-verbal de la séance du Conseil communal du 21 mai 2026. Approbation.",
+      "proposals": [
+        {
+          "text": "Approuver le procès-verbal de la séance du Conseil communal du 21 mai 2026.",
+          "evidence": {
+            "excerpt": "Procès-verbal de la séance du Conseil communal du 21 mai 2026. Approbation.",
+            "location": "Ordre du jour complémentaire, page 1/14",
+            "applicable_from": "2026-06-11"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "page": {
+    "fr": {
+      "title": "Approbation du procès-verbal du 21 mai",
+      "summary": "Le Conseil a approuvé le procès-verbal."
+    },
+    "nl": {
+      "title": "Goedkeuring van het proces-verbaal van 21 mei",
+      "summary": "De raad heeft het proces-verbaal goedgekeurd."
+    },
+    "en": {
+      "title": "Approval of the 21 May minutes",
+      "summary": "The council approved the minutes."
+    }
+  },
+  "items": {
+    "11.06.2026/A/0002": {
+      "claim_refs": [
+        "proposal:11.06.2026/A/0002:e910e8aaa0d5a5e9182dcb63611d1d2b869967f6fdec5b3aba42239ff1ebe356",
+        "decision:11.06.2026/A/0002:852ab600c4b21747c65ffe131a2af64d80311672f51256646a3f4445108a2ac3"
+      ],
+      "variants": {
+        "fr": {
+          "title": "Approbation du procès-verbal du 21 mai",
+          "summary": "Le Conseil a approuvé le procès-verbal.",
+          "proposal_summary": "Le Conseil doit encore se prononcer.",
+          "decision_summary": "Le Conseil a approuvé le procès-verbal."
+        },
+        "nl": {
+          "title": "Goedkeuring van het proces-verbaal van 21 mei",
+          "summary": "De raad heeft het proces-verbaal goedgekeurd.",
+          "proposal_summary": "De raad moet zich nog uitspreken.",
+          "decision_summary": "De raad heeft het proces-verbaal goedgekeurd."
+        },
+        "en": {
+          "title": "Approval of the 21 May minutes",
+          "summary": "The council approved the minutes.",
+          "proposal_summary": "The council has not yet decided.",
+          "decision_summary": "The council approved the minutes."
+        }
+      }
+    }
+  }
+}

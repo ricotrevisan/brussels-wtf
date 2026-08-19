@@ -1,0 +1,47 @@
+{
+  "meeting_identifier": "2025-06-26",
+  "scheduled_on": "2025-06-26",
+  "agenda": {
+    "kind": "final",
+    "language": "bilingual"
+  },
+  "items": [
+    {
+      "item_number": "2",
+      "authoritative_identifier": "26.06.2025/A/0002",
+      "source_wording": "Approbation du registre du Conseil du 24 avril 2025.",
+      "decisions": [
+        {
+          "disposition": "approved",
+          "statement": "Le Conseil approuve le point.",
+          "evidence": {
+            "excerpt": "Le Conseil approuve le point.",
+            "location": "Registre public, page 3/229"
+          },
+          "vote": {
+            "for": 35,
+            "evidence": {
+              "excerpt": "35 votants : 35 votes positifs.",
+              "location": "Registre public, page 3/229"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "item_number": "3",
+      "authoritative_identifier": "26.06.2025/A/0003",
+      "source_wording": "Interpellation citoyenne sur la solidarité avec le peuple palestinien. Irrecevabilité. Prise de connaissance.",
+      "decisions": [
+        {
+          "disposition": "other",
+          "statement": "Le Conseil prend connaissance.",
+          "evidence": {
+            "excerpt": "Le Conseil prend connaissance.",
+            "location": "Registre public, page 4/229"
+          }
+        }
+      ]
+    }
+  ]
+}

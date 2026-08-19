@@ -1,0 +1,24 @@
+{
+  "meeting_identifier": "2025-06-26",
+  "scheduled_on": "2025-06-26",
+  "agenda": {
+    "kind": "base",
+    "language": "bilingual"
+  },
+  "items": [
+    {
+      "item_number": "2",
+      "authoritative_identifier": "26.06.2025/A/0002",
+      "source_wording": "Approbation des registres des Conseils du 23 mars et du 24 avril 2025.",
+      "proposals": [
+        {
+          "text": "Approuver les registres des 23 mars et 24 avril 2025.",
+          "evidence": {
+            "excerpt": "Approbation des registres des Conseils du 23 mars et du 24 avril 2025.",
+            "location": "Ordre du jour public, page 1/9"
+          }
+        }
+      ]
+    }
+  ]
+}

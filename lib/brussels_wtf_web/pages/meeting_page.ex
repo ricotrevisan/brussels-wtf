@@ -25,7 +25,10 @@ defmodule BrusselsWtfWeb.MeetingPage do
           commune_name: commune_name(locale, commune, page.council_meeting.commune.name),
           items:
             if(locale_available,
-              do: Enum.sort_by(page.council_meeting.agenda_items, &item_sort_key/1),
+              do:
+                page.council_meeting.agenda_items
+                |> Enum.filter(& &1.published?)
+                |> Enum.sort_by(&item_sort_key/1),
               else: []
             )
         )
@@ -114,7 +117,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
     ~H"""
     <article id={@item.stable_anchor} class="scroll-mt-4 py-7" tabindex="-1">
       <p class="text-sm font-medium text-base-content/70">
-        {text(@locale, :item)} {@item.item_number}
+        {text(@locale, :item)} {public_item_number(@item)}
       </p>
       <h2 class="mt-2 text-2xl font-semibold leading-snug">{@coverage_variant.title}</h2>
 
@@ -130,7 +133,10 @@ defmodule BrusselsWtfWeb.MeetingPage do
           >
             {proposal.text}
           </blockquote>
-          <p :if={@source_proposals != [] and @item.outcome == :unknown} class="mt-2 text-sm">
+          <p
+            :if={@source_proposals != [] and (@item.published_outcome || :unknown) == :unknown}
+            class="mt-2 text-sm"
+          >
             {unknown_outcome_label(@locale)}
           </p>
         </div>
@@ -147,11 +153,14 @@ defmodule BrusselsWtfWeb.MeetingPage do
           <h3 class="font-semibold">
             {text(@locale, :decision)}: {disposition_label(
               @locale,
-              loaded_value(@item.decision, :disposition)
+              loaded_value(@item.published_decision, :disposition)
             )}
           </h3>
           <p class="mt-1 leading-7">
             {@coverage_variant.decision_summary || text(@locale, :decision_copy_unavailable)}
+          </p>
+          <p :if={vote_summary(@item.published_decision, @locale)} class="mt-2 text-sm">
+            {vote_summary(@item.published_decision, @locale)}
           </p>
         </div>
       </div>
@@ -226,16 +235,20 @@ defmodule BrusselsWtfWeb.MeetingPage do
 
   defp display_state(item) do
     cond do
-      loaded?(item.decision) -> :decision
-      item.procedural_state == :decision -> :unknown
-      true -> item.procedural_state
+      loaded?(item.published_decision) -> :decision
+      item.published_procedural_state == :decision -> :unknown
+      true -> item.published_procedural_state || :unknown
     end
   end
 
+  defp public_item_number(item), do: item.published_item_number || item.item_number
+
   defp item_sort_key(item) do
-    case Integer.parse(item.item_number) do
+    item_number = public_item_number(item)
+
+    case Integer.parse(item_number) do
       {number, ""} -> {0, number}
-      _ -> {1, item.item_number}
+      _ -> {1, item_number}
     end
   end
 
@@ -246,6 +259,36 @@ defmodule BrusselsWtfWeb.MeetingPage do
   defp loaded_value(%Ash.NotLoaded{}, _field), do: nil
   defp loaded_value(nil, _field), do: nil
   defp loaded_value(value, field), do: Map.fetch!(value, field)
+
+  defp vote_summary(%Ash.NotLoaded{}, _locale), do: nil
+  defp vote_summary(nil, _locale), do: nil
+
+  defp vote_summary(decision, locale) do
+    values = [decision.votes_for, decision.votes_against, decision.abstentions]
+
+    if Enum.all?(values, &is_nil/1) do
+      nil
+    else
+      [
+        vote_part(locale, :for, decision.votes_for),
+        vote_part(locale, :against, decision.votes_against),
+        vote_part(locale, :abstentions, decision.abstentions)
+      ]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join(", ")
+    end
+  end
+
+  defp vote_part(_locale, _kind, nil), do: nil
+  defp vote_part("fr", :for, value), do: "#{value} pour"
+  defp vote_part("fr", :against, value), do: "#{value} contre"
+  defp vote_part("fr", :abstentions, value), do: "#{value} abstention(s)"
+  defp vote_part("nl", :for, value), do: "#{value} voor"
+  defp vote_part("nl", :against, value), do: "#{value} tegen"
+  defp vote_part("nl", :abstentions, value), do: "#{value} onthouding(en)"
+  defp vote_part(_locale, :for, value), do: "#{value} for"
+  defp vote_part(_locale, :against, value), do: "#{value} against"
+  defp vote_part(_locale, :abstentions, value), do: "#{value} abstention(s)"
 
   defp disposition_label("fr", :approved), do: "approuvée"
   defp disposition_label("fr", :postponed), do: "reportée"

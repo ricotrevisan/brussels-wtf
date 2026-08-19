@@ -74,6 +74,78 @@ defmodule BrusselsWtf.Council.AgendaItem do
       accept []
       change set_attribute(:procedural_state, :proposal)
     end
+
+    update :publish_current_state do
+      require_atomic? false
+      accept []
+
+      change fn changeset, _context ->
+        changeset
+        |> Ash.Changeset.force_change_attribute(
+          :published_procedural_state,
+          changeset.data.procedural_state
+        )
+        |> Ash.Changeset.force_change_attribute(:published_outcome, changeset.data.outcome)
+        |> Ash.Changeset.force_change_attribute(:published?, true)
+        |> Ash.Changeset.force_change_attribute(
+          :published_item_number,
+          changeset.data.item_number
+        )
+        |> Ash.Changeset.force_change_attribute(
+          :published_decision_id,
+          changeset.data.current_decision_id
+        )
+        |> Ash.Changeset.force_change_attribute(
+          :published_proposal_id,
+          current_proposal_id(changeset.data.proposals, changeset.data.published_proposal_id)
+        )
+      end
+    end
+
+    update :mark_decided do
+      require_atomic? false
+      accept [:current_decision_id, :outcome]
+      validate present(:current_decision_id)
+
+      validate fn changeset, _context ->
+        decision_id = Ash.Changeset.get_attribute(changeset, :current_decision_id)
+        outcome = Ash.Changeset.get_attribute(changeset, :outcome)
+
+        if is_nil(decision_id) do
+          :ok
+        else
+          decision = BrusselsWtf.Council.get_decision!(decision_id)
+
+          cond do
+            decision.agenda_item_id != changeset.data.id ->
+              {:error, "current decision must belong to the agenda item"}
+
+            decision.disposition != outcome ->
+              {:error, "agenda item outcome must match the decision disposition"}
+
+            true ->
+              :ok
+          end
+        end
+      end
+
+      change set_attribute(:procedural_state, :decision)
+    end
+  end
+
+  defp current_proposal_id(%Ash.NotLoaded{}, published_id), do: published_id
+
+  defp current_proposal_id(proposals, published_id) do
+    proposals
+    |> Enum.reject(& &1.synthetic)
+    |> case do
+      [] -> published_id
+      candidates -> Enum.max_by(candidates, &proposal_version_order/1).id
+    end
+  end
+
+  defp proposal_version_order(proposal) do
+    proposal.source_version_order || "0:#{proposal.source_version.id}"
   end
 
   attributes do
@@ -87,6 +159,31 @@ defmodule BrusselsWtf.Council.AgendaItem do
       allow_nil? false
       public? true
       default ""
+    end
+
+    attribute :current_decision_id, :uuid, public?: true
+    attribute :published_decision_id, :uuid, public?: true
+    attribute :published_proposal_id, :uuid, public?: true
+    attribute :published?, :boolean, allow_nil?: false, public?: true, default: false
+    attribute :published_item_number, :string, public?: true
+
+    attribute :published_procedural_state, :atom do
+      public? true
+      constraints one_of: [:proposal, :unknown, :decision]
+    end
+
+    attribute :published_outcome, :atom do
+      public? true
+
+      constraints one_of: [
+                    :unknown,
+                    :approved,
+                    :rejected,
+                    :amended,
+                    :postponed,
+                    :withdrawn,
+                    :other
+                  ]
     end
 
     attribute :continuity_key, :string do
@@ -125,7 +222,29 @@ defmodule BrusselsWtf.Council.AgendaItem do
     belongs_to :current_source_version, BrusselsWtf.Ingestion.SourceVersion, public?: true
     has_many :versions, BrusselsWtf.Council.AgendaItemVersion
     has_many :proposals, BrusselsWtf.Council.Proposal
-    has_one :decision, BrusselsWtf.Council.Decision
+
+    belongs_to :decision, BrusselsWtf.Council.Decision do
+      source_attribute :current_decision_id
+      destination_attribute :id
+      define_attribute? false
+      public? true
+    end
+
+    belongs_to :published_proposal, BrusselsWtf.Council.Proposal do
+      source_attribute :published_proposal_id
+      destination_attribute :id
+      define_attribute? false
+      public? true
+    end
+
+    belongs_to :published_decision, BrusselsWtf.Council.Decision do
+      source_attribute :published_decision_id
+      destination_attribute :id
+      define_attribute? false
+      public? true
+    end
+
+    has_many :decisions, BrusselsWtf.Council.Decision
     has_many :coverage_variants, BrusselsWtf.Council.CoverageVariant
     has_many :dossier_links, BrusselsWtf.Council.DossierLink
   end

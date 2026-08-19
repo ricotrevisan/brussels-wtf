@@ -1,0 +1,70 @@
+{
+  "page": {
+    "fr": {
+      "title": "Conseil d’Uccle du 26 juin 2025",
+      "summary": "Le registre public documente les décisions du Conseil."
+    },
+    "nl": {
+      "title": "Gemeenteraad van Ukkel van 26 juni 2025",
+      "summary": "Het openbaar register documenteert de besluiten van de raad."
+    },
+    "en": {
+      "title": "Uccle Council on 26 June 2025",
+      "summary": "The public register documents the council decisions."
+    }
+  },
+  "items": {
+    "26.06.2025/A/0002": {
+      "claim_refs": [
+        "proposal:26.06.2025/A/0002:248ee608fcb8ed3b12d0d5823037ba80a42a41dce4fbd33cf5394c02e4c7bc97",
+        "decision:26.06.2025/A/0002:3fb885541577cdbf8e8d3359ab91d0237ba3f7e452a7d3f5986171add8ce1cc1"
+      ],
+      "variants": {
+        "fr": {
+          "title": "Registre du 24 avril approuvé",
+          "summary": "Le Conseil a approuvé le point.",
+          "proposal_summary": "L’approbation du registre était proposée.",
+          "decision_summary": "Le Conseil a approuvé le registre."
+        },
+        "nl": {
+          "title": "Register van 24 april goedgekeurd",
+          "summary": "De raad keurde het punt goed.",
+          "proposal_summary": "De goedkeuring van het register was voorgesteld.",
+          "decision_summary": "De raad keurde het register goed."
+        },
+        "en": {
+          "title": "24 April register approved",
+          "summary": "The council approved the item.",
+          "proposal_summary": "Approval of the register was proposed.",
+          "decision_summary": "The council approved the register."
+        }
+      }
+    },
+    "26.06.2025/A/0003": {
+      "claim_refs": [
+        "proposal:26.06.2025/A/0003:248ee608fcb8ed3b12d0d5823037ba80a42a41dce4fbd33cf5394c02e4c7bc97",
+        "decision:26.06.2025/A/0003:3fb885541577cdbf8e8d3359ab91d0237ba3f7e452a7d3f5986171add8ce1cc1"
+      ],
+      "variants": {
+        "fr": {
+          "title": "Irrecevabilité de l’interpellation actée",
+          "summary": "Le Conseil a pris connaissance.",
+          "proposal_summary": "Une prise de connaissance était proposée.",
+          "decision_summary": "Le Conseil a pris connaissance."
+        },
+        "nl": {
+          "title": "Onontvankelijkheid van de interpellatie vastgesteld",
+          "summary": "De raad nam kennis.",
+          "proposal_summary": "Een kennisneming was voorgesteld.",
+          "decision_summary": "De raad nam kennis."
+        },
+        "en": {
+          "title": "Interpellation inadmissibility noted",
+          "summary": "The council took note.",
+          "proposal_summary": "The council was asked to take note.",
+          "decision_summary": "The council took note."
+        }
+      }
+    }
+  }
+}

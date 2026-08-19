@@ -1,0 +1,111 @@
+{
+  "commune": "forest",
+  "meeting_identifier": "2026-03-24",
+  "index_url": "https://forest.brussels/fr/publications/conseil-communal-1",
+  "observed_at": "2026-03-23T12:00:00Z",
+  "index_response": {
+    "headers": {
+      "content-type": [
+        "text/html"
+      ],
+      "etag": [
+        "\"forest-pre\""
+      ]
+    }
+  },
+  "sources": [
+    {
+      "name": "agenda",
+      "url": "https://forest.brussels/sites/default/files/publications/ordre-du-jour/2026-03/CC-%2024032026%20-%20agenda%20compl%C3%A9mentaire.pdf",
+      "fixture_path": "sources/agenda.extract.txt",
+      "processor_path": "processors/agenda",
+      "headers": {
+        "content-type": [
+          "application/pdf"
+        ],
+        "etag": [
+          "\"agenda\""
+        ]
+      },
+      "fixture_sha256": "d333306042d9ad2d640b167364d03e70aaa9d6c48635a9cea46e7f4ea85f8a0a"
+    },
+    {
+      "name": "notes",
+      "url": "https://forest.brussels/sites/default/files/publications/notes/2026-03/CC%20-%2024032026%20-%20Notes%20explicatives%20publiques%20compl%C3%A9mentaires.pdf",
+      "fixture_path": "sources/notes.extract.txt",
+      "processor_path": "processors/notes",
+      "headers": {
+        "content-type": [
+          "application/pdf"
+        ],
+        "etag": [
+          "\"notes\""
+        ]
+      },
+      "fixture_sha256": "7dcb78de0335e8f19c776548eb3ccca864d688ba4551af94afeff81bcaf096f2"
+    },
+    {
+      "name": "minutes",
+      "url": "https://forest.brussels/sites/default/files/publications/registre/2026-03/PV%20%20conseil%20communal%20-%20gemeenteraad%2024032026.pdf",
+      "fixture_path": "sources/minutes.extract.txt",
+      "processor_path": "processors/minutes",
+      "headers": {
+        "content-type": [
+          "application/pdf"
+        ],
+        "etag": [
+          "\"minutes\""
+        ]
+      },
+      "fixture_sha256": "900c4ddab81afd5b700f80d66ab67422bf696bacfac308848526a80f4dc5d659"
+    },
+    {
+      "name": "motion",
+      "url": "https://forest.brussels/sites/default/files/publications/pdf/2026-03/Motion%20relative%20%C3%A0%20la%20protection%20des%20personnes%20LGBTQIA%2B.pdf",
+      "fixture_path": "sources/motion.extract.txt",
+      "processor_path": "processors/motion",
+      "headers": {
+        "content-type": [
+          "application/pdf"
+        ],
+        "etag": [
+          "\"motion\""
+        ]
+      },
+      "fixture_sha256": "99f0b3a199ec8d34e7fd1e76c46edb1a758ced491c6052866609f9634541847b"
+    }
+  ],
+  "expected": {
+    "path": "/meetings/forest/2026-03-24",
+    "item_identifier": "Politique de la Ville 2021-2025/Axe 2.1",
+    "proposal_text": "Approuver l’avenant 2 à la convention d’occupation avec COMMUNA asbl.",
+    "citation_url": "https://forest.brussels/sites/default/files/publications/registre/2026-03/PV%20%20conseil%20communal%20-%20gemeenteraad%2024032026.pdf"
+  },
+  "index_fixture_sha256": "d68cf1cfa28625c6acaa63324f0a296452d2053b467468a4c3c13ea1923744fc",
+  "coverage_fixture_path": "processors/coverage.json",
+  "stages": {
+    "final": {
+      "observed_at": "2026-04-20T12:00:00Z",
+      "index_fixture_path": "index-final.html",
+      "index_fixture_sha256": "c5f74bb47529d5e218f0522d66ee99a96521c53e7e69c84704f6bef95d4207b1",
+      "index_response": {
+        "headers": {
+          "content-type": [
+            "text/html"
+          ],
+          "etag": [
+            "\"forest-final\""
+          ]
+        }
+      },
+      "coverage_fixture_path": "processors/coverage-final.json",
+      "source_changes": [
+        {
+          "name": "agenda",
+          "fixture_path": "sources/agenda-changed.extract.txt",
+          "processor_path": "processors/agenda_changed"
+        }
+      ]
+    }
+  }
+}

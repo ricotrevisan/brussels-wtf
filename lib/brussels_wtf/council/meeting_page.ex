@@ -105,8 +105,10 @@ defmodule BrusselsWtf.Council.MeetingPage do
                   council_meeting: [
                     :commune,
                     agenda_items: [
-                      :decision,
                       :coverage_variants,
+                      decision: [:source_version, evidence: [:source_version]],
+                      published_decision: [:source_version, evidence: [:source_version]],
+                      published_proposal: [:source_version, evidence: [:source_version]],
                       proposals: [:source_version, evidence: [:source_version]],
                       dossier_links: [:dossier]
                     ]
@@ -129,8 +131,10 @@ defmodule BrusselsWtf.Council.MeetingPage do
                   council_meeting: [
                     :commune,
                     agenda_items: [
-                      :decision,
                       :coverage_variants,
+                      decision: [:source_version, evidence: [:source_version]],
+                      published_decision: [:source_version, evidence: [:source_version]],
+                      published_proposal: [:source_version, evidence: [:source_version]],
                       proposals: [:source_version, evidence: [:source_version]],
                       dossier_links: [:dossier]
                     ]

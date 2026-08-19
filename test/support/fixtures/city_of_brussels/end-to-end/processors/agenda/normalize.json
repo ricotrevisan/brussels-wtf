@@ -1,0 +1,15 @@
+{
+  "meeting_identifier": "2026-06-29",
+  "scheduled_on": "2026-06-29",
+  "agenda": {
+    "kind": "base",
+    "language": "fr"
+  },
+  "items": [
+    {
+      "item_number": "3",
+      "authoritative_identifier": "2719271",
+      "source_wording": "Sécurité privée Garden of Elements.- Détermination du périmètre et de la durée."
+    }
+  ]
+}

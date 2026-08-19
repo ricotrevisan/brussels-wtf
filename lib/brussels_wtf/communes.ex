@@ -13,7 +13,10 @@ defmodule BrusselsWtf.Communes do
       index_url:
         "https://www.uccle.be/fr/ma-commune/le-conseil-communal/archives-du-Conseil-communal"
     },
-    "forest" => %{name: "Forest", index_url: "https://forest.brussels/fr/publications"},
+    "forest" => %{
+      name: "Forest",
+      index_url: "https://forest.brussels/fr/publications/conseil-communal-1"
+    },
     "city-of-brussels" => %{
       name: "City of Brussels",
       index_url: "https://www.brussels.be/agenda-reports-and-motions-city-council"
@@ -24,6 +27,9 @@ defmodule BrusselsWtf.Communes do
 
   @spec adapter(String.t()) :: {:ok, module()} | {:error, :adapter_not_implemented}
   def adapter("ixelles"), do: {:ok, BrusselsWtf.Communes.Ixelles}
+  def adapter("uccle"), do: {:ok, BrusselsWtf.Communes.Uccle}
+  def adapter("forest"), do: {:ok, BrusselsWtf.Communes.Forest}
+  def adapter("city-of-brussels"), do: {:ok, BrusselsWtf.Communes.CityOfBrussels}
   def adapter(_slug), do: {:error, :adapter_not_implemented}
 
   @spec adapter!(String.t()) :: module()

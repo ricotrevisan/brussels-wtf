@@ -27,6 +27,7 @@ defmodule BrusselsWtf.Ingestion.SourceLocator do
         :language,
         :observed_label,
         :item_identifier,
+        :dossier_identifier,
         :discovered_at,
         :next_fetch_at
       ]
@@ -76,11 +77,21 @@ defmodule BrusselsWtf.Ingestion.SourceLocator do
       constraints one_of: [
                     :index,
                     :agenda,
+                    :complementary_agenda,
                     :project,
+                    :explanatory_note,
+                    :complementary_explanatory_note,
+                    :explanatory_notes,
                     :supplement,
                     :addendum,
                     :minutes,
                     :register,
+                    :motion,
+                    :question,
+                    :interpellation,
+                    :document_listing,
+                    :item_listing,
+                    :supporting_document,
                     :recording
                   ]
     end
@@ -94,6 +105,7 @@ defmodule BrusselsWtf.Ingestion.SourceLocator do
 
     attribute :observed_label, :string, public?: true
     attribute :item_identifier, :string, public?: true
+    attribute :dossier_identifier, :string, public?: true
     attribute :discovered_at, :utc_datetime_usec, allow_nil?: false, public?: true
     attribute :next_fetch_at, :utc_datetime_usec, public?: true
     attribute :last_checked_at, :utc_datetime_usec, public?: true

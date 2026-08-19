@@ -9,7 +9,8 @@ defmodule BrusselsWtf.Ingestion.Changes.SetLocatorDiscoveryKey do
     :role,
     :language,
     :observed_label,
-    :item_identifier
+    :item_identifier,
+    :dossier_identifier
   ]
 
   @impl true
@@ -19,8 +20,13 @@ defmodule BrusselsWtf.Ingestion.Changes.SetLocatorDiscoveryKey do
         {field, normalize(Ash.Changeset.get_attribute(changeset, field))}
       end)
 
+    identity_fields =
+      if is_nil(context.dossier_identifier),
+        do: Enum.reject(@fields, &(&1 == :dossier_identifier)),
+        else: @fields
+
     canonical =
-      @fields
+      identity_fields
       |> Enum.map(fn field -> canonical_part(Map.fetch!(context, field)) end)
       |> Enum.join("|")
 

@@ -1,0 +1,66 @@
+{
+  "page": {
+    "fr": {
+      "title": "Conseil de Forest du 24 mars 2026",
+      "summary": "Le procès-verbal documente les décisions du Conseil."
+    },
+    "nl": {
+      "title": "Gemeenteraad van Vorst van 24 maart 2026",
+      "summary": "Het proces-verbaal documenteert de besluiten van de raad."
+    },
+    "en": {
+      "title": "Forest Council on 24 March 2026",
+      "summary": "The minutes document the council decisions."
+    }
+  },
+  "items": {
+    "Politique de la Ville 2021-2025/Axe 2.1": {
+      "claim_refs": [
+        "proposal:Politique de la Ville 2021-2025/Axe 2.1:01f97571722d99db3d0df3adcdbe1ec2c3d2a832c680423503d704d4087238ad",
+        "decision:Politique de la Ville 2021-2025/Axe 2.1:900c4ddab81afd5b700f80d66ab67422bf696bacfac308848526a80f4dc5d659"
+      ],
+      "variants": {
+        "fr": {
+          "title": "Avenant Communa approuvé",
+          "summary": "Le Conseil a approuvé l’avenant.",
+          "proposal_summary": "L’avenant avec Communa devait être approuvé.",
+          "decision_summary": "Le Conseil a approuvé l’avenant."
+        },
+        "nl": {
+          "title": "Aanhangsel Communa goedgekeurd",
+          "summary": "De raad keurde het aanhangsel goed.",
+          "proposal_summary": "Het aanhangsel met Communa moest worden goedgekeurd.",
+          "decision_summary": "De raad keurde het aanhangsel goed."
+        },
+        "en": {
+          "title": "Communa amendment approved",
+          "summary": "The council approved the amendment.",
+          "proposal_summary": "The amendment with Communa was proposed for approval.",
+          "decision_summary": "The council approved the amendment."
+        }
+      }
+    },
+    "@item_number:1": {
+      "claim_refs": [
+        "decision:@item_key:900c4ddab81afd5b700f80d66ab67422bf696bacfac308848526a80f4dc5d659"
+      ],
+      "variants": {
+        "fr": {
+          "title": "Successeur installé en séance",
+          "summary": "Le Conseil a validé les pouvoirs du successeur.",
+          "decision_summary": "Le Conseil a validé les pouvoirs du successeur."
+        },
+        "nl": {
+          "title": "Opvolger tijdens de zitting geïnstalleerd",
+          "summary": "De raad keurde de geloofsbrieven van de opvolger goed.",
+          "decision_summary": "De raad keurde de geloofsbrieven van de opvolger goed."
+        },
+        "en": {
+          "title": "Successor installed during the meeting",
+          "summary": "The council validated the successor’s credentials.",
+          "decision_summary": "The council validated the successor’s credentials."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "page": {
+    "fr": {
+      "title": "Conseil de la Ville de Bruxelles du 29 juin 2026",
+      "summary": "Deux propositions disposent de documents justificatifs."
+    },
+    "nl": {
+      "title": "Gemeenteraad van de Stad Brussel van 29 juni 2026",
+      "summary": "Twee voorstellen hebben bewijsstukken."
+    },
+    "en": {
+      "title": "City of Brussels Council on 29 June 2026",
+      "summary": "Two proposals have supporting documents."
+    }
+  },
+  "items": {
+    "2719271": {
+      "claim_refs": [
+        "proposal:2719271:6fa04c6314ee1a5e59da016dc79386d77d982e2503e1717a826aab33d41f412e"
+      ],
+      "variants": {
+        "fr": {
+          "title": "Périmètre de sécurité pour Garden of Elements",
+          "summary": "Le Conseil doit examiner le règlement de police proposé.",
+          "proposal_summary": "Le Conseil doit examiner le règlement de police proposé."
+        },
+        "nl": {
+          "title": "Veiligheidsperimeter voor Garden of Elements",
+          "summary": "De raad moet het voorgestelde politiereglement behandelen.",
+          "proposal_summary": "De raad moet het voorgestelde politiereglement behandelen."
+        },
+        "en": {
+          "title": "Security perimeter for Garden of Elements",
+          "summary": "The council is due to consider the proposed police regulation.",
+          "proposal_summary": "The council is due to consider the proposed police regulation."
+        }
+      }
+    },
+    "CITY-2026-06-29-SUPP-084": {
+      "claim_refs": [
+        "proposal:CITY-2026-06-29-SUPP-084:c10bd22966460a6a66921b8fc61b8a481c74d6b9fd3b711554caafa1abb0b304"
+      ],
+      "variants": {
+        "fr": {
+          "title": "Mesure ajoutée au supplément",
+          "summary": "Le point 84 reste une proposition.",
+          "proposal_summary": "Le point 84 reste une proposition."
+        },
+        "nl": {
+          "title": "Maatregel toegevoegd aan het supplement",
+          "summary": "Punt 84 blijft een voorstel.",
+          "proposal_summary": "Punt 84 blijft een voorstel."
+        },
+        "en": {
+          "title": "Measure added in the supplement",
+          "summary": "Item 84 remains a proposal.",
+          "proposal_summary": "Item 84 remains a proposal."
+        }
+      }
+    }
+  }
+}

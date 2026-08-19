@@ -118,7 +118,7 @@ defmodule BrusselsWtf.Council.PublicationTest do
              ]
            } = Council.publication_readiness!(page.id)
 
-    assert claim_key == "proposal:#{scenario.sources.projects.sha256}"
+    assert claim_key == "proposal:4:#{scenario.sources.projects.sha256}"
   end
 
   test "generated copy cannot introduce a claim absent from normalized state" do

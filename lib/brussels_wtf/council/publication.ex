@@ -67,6 +67,14 @@ defmodule BrusselsWtf.Council.Publication do
           %{ready?: true} ->
             now = BrusselsWtf.Clock.utc_now()
 
+            item_state_notifications =
+              Enum.flat_map(fresh_meeting.agenda_items, fn item ->
+                {_item, notifications} =
+                  Council.publish_agenda_item_state!(item, return_notifications?: true)
+
+                notifications
+              end)
+
             {revision, revision_notifications} =
               Council.record_publication_revision!(
                 %{
@@ -97,6 +105,7 @@ defmodule BrusselsWtf.Council.Publication do
 
             stage_notifications ++
               variant_notifications ++
+              item_state_notifications ++
               revision_notifications ++
               publish_notifications
 
@@ -164,6 +173,7 @@ defmodule BrusselsWtf.Council.Publication do
                 title: variant["title"],
                 summary: variant["summary"],
                 proposal_summary: variant["proposal_summary"],
+                decision_summary: variant["decision_summary"],
                 provenance: Provenance.labels(run, canonical)
               },
               return_notifications?: true
@@ -273,6 +283,14 @@ defmodule BrusselsWtf.Council.Publication do
         proposals: [
           source_version: [:source_record],
           evidence: [source_version: [:source_record]]
+        ],
+        published_proposal: [
+          source_version: [:source_record],
+          evidence: [source_version: [:source_record]]
+        ],
+        decision: [
+          evidence: [source_version: [:source_record]],
+          source_version: [:source_record]
         ]
       ]
     ])

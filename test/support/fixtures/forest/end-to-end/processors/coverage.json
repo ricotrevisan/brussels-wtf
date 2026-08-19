@@ -1,0 +1,40 @@
+{
+  "page": {
+    "fr": {
+      "title": "Conseil de Forest du 24 mars 2026",
+      "summary": "Un avenant est proposé."
+    },
+    "nl": {
+      "title": "Gemeenteraad van Vorst van 24 maart 2026",
+      "summary": "Een aanhangsel wordt voorgesteld."
+    },
+    "en": {
+      "title": "Forest Council on 24 March 2026",
+      "summary": "An amendment is proposed."
+    }
+  },
+  "items": {
+    "Politique de la Ville 2021-2025/Axe 2.1": {
+      "claim_refs": [
+        "proposal:Politique de la Ville 2021-2025/Axe 2.1:d333306042d9ad2d640b167364d03e70aaa9d6c48635a9cea46e7f4ea85f8a0a"
+      ],
+      "variants": {
+        "fr": {
+          "title": "Avenant Communa proposé",
+          "summary": "L’avenant avec Communa devait être approuvé.",
+          "proposal_summary": "L’avenant avec Communa devait être approuvé."
+        },
+        "nl": {
+          "title": "Aanhangsel Communa voorgesteld",
+          "summary": "Het aanhangsel met Communa moest worden goedgekeurd.",
+          "proposal_summary": "Het aanhangsel met Communa moest worden goedgekeurd."
+        },
+        "en": {
+          "title": "Communa amendment proposed",
+          "summary": "The amendment with Communa was proposed for approval.",
+          "proposal_summary": "The amendment with Communa was proposed for approval."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,176 @@
+{
+  "commune": "city-of-brussels",
+  "meeting_identifier": "2026-06-29",
+  "index_url": "https://www.brussels.be/agenda-reports-and-motions-city-council",
+  "observed_at": "2026-06-20T12:00:00Z",
+  "index_response": {
+    "headers": {
+      "content-type": [
+        "text/html"
+      ],
+      "etag": [
+        "\"city-index\""
+      ]
+    }
+  },
+  "sources": [
+    {
+      "name": "base_listing",
+      "url": "https://www.brussels.be/show_documents/29-06-2026",
+      "fixture_path": "sources/base_listing.extract.txt",
+      "processor_path": "processors/base_listing",
+      "headers": {
+        "content-type": [
+          "text/html"
+        ],
+        "etag": [
+          "\"base_listing\""
+        ]
+      },
+      "fixture_sha256": "8887785fdeb09dabf06f3233db48fa7c079992fabbdc79ce4c84a5de1a3af313"
+    },
+    {
+      "name": "supplement_listing",
+      "url": "https://www.brussels.be/show_documents/29-06-2026s",
+      "fixture_path": "sources/supplement_listing.extract.txt",
+      "processor_path": "processors/supplement_listing",
+      "headers": {
+        "content-type": [
+          "text/html"
+        ],
+        "etag": [
+          "\"supplement_listing\""
+        ]
+      },
+      "fixture_sha256": "2743acda5d2eb96902a750baeb53092781841a0dcfad03f7071125e57325bca5"
+    },
+    {
+      "name": "item_003_listing",
+      "url": "https://www.brussels.be/show_documents/29-06-2026/29%2006%202026%20OJ%20point_punt%20(003)",
+      "fixture_path": "sources/item_003_listing.extract.txt",
+      "processor_path": "processors/item_003_listing",
+      "headers": {
+        "content-type": [
+          "text/html"
+        ],
+        "etag": [
+          "\"item_003_listing\""
+        ]
+      },
+      "fixture_sha256": "5c3e3071e576fce0dae8ff6bd7fa87b0d5d8cbd0e120d5fc2406d90226ab4256"
+    },
+    {
+      "name": "item_084_listing",
+      "url": "https://www.brussels.be/show_documents/29-06-2026s/29%2006%202026%20OJsupp%20point_punt%20(084)",
+      "fixture_path": "sources/item_084_listing.extract.txt",
+      "processor_path": "processors/item_084_listing",
+      "headers": {
+        "content-type": [
+          "text/html"
+        ],
+        "etag": [
+          "\"item_084_listing\""
+        ]
+      },
+      "fixture_sha256": "1529cebf0f1a3eec719c08a6298d746adae372e15009264fdbb0bace67c30a87"
+    },
+    {
+      "name": "agenda",
+      "url": "https://www.brussels.be/sites/default/files/OJ29062026.pdf",
+      "fixture_path": "sources/agenda.extract.txt",
+      "processor_path": "processors/agenda",
+      "headers": {
+        "content-type": [
+          "application/pdf"
+        ],
+        "etag": [
+          "\"agenda\""
+        ]
+      },
+      "fixture_sha256": "f15260164d7dc51432aed33b6cb6701dd2be65f509b7f28514d8e81f86f5003e"
+    },
+    {
+      "name": "supplement",
+      "url": "https://www.brussels.be/sites/default/files/OJsupp29062026.pdf",
+      "fixture_path": "sources/supplement.extract.txt",
+      "processor_path": "processors/supplement",
+      "headers": {
+        "content-type": [
+          "application/pdf"
+        ],
+        "etag": [
+          "\"supplement\""
+        ]
+      },
+      "fixture_sha256": "8135681fdb1a24cdb34de22cc4546823f2a51e61e01265341db1baaeaf96d811"
+    },
+    {
+      "name": "item_003_fr",
+      "url": "https://www.brussels.be/sites/default/files/bxl/workflow/29-06-2026/29%2006%202026%20OJ%20point_punt%20(003)/003_Arr%C3%AAt%C3%A9%20Conseil.pdf",
+      "fixture_path": "sources/item_003_fr.extract.txt",
+      "processor_path": "processors/item_003_fr",
+      "headers": {
+        "content-type": [
+          "application/pdf"
+        ],
+        "etag": [
+          "\"item_003_fr\""
+        ]
+      },
+      "fixture_sha256": "6fa04c6314ee1a5e59da016dc79386d77d982e2503e1717a826aab33d41f412e"
+    },
+    {
+      "name": "item_003_nl",
+      "url": "https://www.brussels.be/sites/default/files/bxl/workflow/29-06-2026/29%2006%202026%20OJ%20point_punt%20(003)/003_Raadsbesluit.pdf",
+      "fixture_path": "sources/item_003_nl.extract.txt",
+      "processor_path": "processors/item_003_nl",
+      "headers": {
+        "content-type": [
+          "application/pdf"
+        ],
+        "etag": [
+          "\"item_003_nl\""
+        ]
+      },
+      "fixture_sha256": "11695f869cadde9b0c7fc952f3a1e0b40b8a1dc323842ad3159aad2c36440e84"
+    },
+    {
+      "name": "item_084_fr",
+      "url": "https://www.brussels.be/sites/default/files/bxl/workflow/29-06-2026/29%2006%202026%20OJsupp%20point_punt%20(084)/084_Arr%C3%AAt%C3%A9%20Conseil.pdf",
+      "fixture_path": "sources/item_084_fr.extract.txt",
+      "processor_path": "processors/item_084_fr",
+      "headers": {
+        "content-type": [
+          "application/pdf"
+        ],
+        "etag": [
+          "\"item_084_fr\""
+        ]
+      },
+      "fixture_sha256": "c10bd22966460a6a66921b8fc61b8a481c74d6b9fd3b711554caafa1abb0b304"
+    },
+    {
+      "name": "item_084_nl",
+      "url": "https://www.brussels.be/sites/default/files/bxl/workflow/29-06-2026/29%2006%202026%20OJsupp%20point_punt%20(084)/084_Raadsbesluit.pdf",
+      "fixture_path": "sources/item_084_nl.extract.txt",
+      "processor_path": "processors/item_084_nl",
+      "headers": {
+        "content-type": [
+          "application/pdf"
+        ],
+        "etag": [
+          "\"item_084_nl\""
+        ]
+      },
+      "fixture_sha256": "dc1fb437e5c58fd06d5c5107d90e0ff3feec608bbc16194f596f93ccffc123d1"
+    }
+  ],
+  "expected": {
+    "path": "/meetings/city-of-brussels/2026-06-29",
+    "item_identifier": "2719271",
+    "proposal_text": "Adopter le règlement de police applicable à Garden of Elements du 19 au 28 juillet 2026.",
+    "citation_url": "https://www.brussels.be/sites/default/files/bxl/workflow/29-06-2026/29%2006%202026%20OJ%20point_punt%20(003)/003_Arr%C3%AAt%C3%A9%20Conseil.pdf"
+  },
+  "index_fixture_sha256": "fc3a41bcb1af33239308487703b6acf0e7e765fabf86d001ab298cdda217ec45",
+  "coverage_fixture_path": "processors/coverage.json"
+}
