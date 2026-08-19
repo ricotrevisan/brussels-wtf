@@ -16,6 +16,11 @@ defmodule BrusselsWtf.Ingestion.ProcessingRun do
   actions do
     defaults [:read]
 
+    update :complete do
+      require_atomic? false
+      accept [:status, :output]
+    end
+
     create :upsert do
       primary? true
 

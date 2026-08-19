@@ -1,5 +1,6 @@
 defmodule BrusselsWtf.ReviewInboxAndActionsTest do
   use BrusselsWtf.DataCase, async: false
+  use Oban.Testing, repo: BrusselsWtf.Repo
 
   alias BrusselsWtf.Ingestion
   alias BrusselsWtf.Review
@@ -7,6 +8,7 @@ defmodule BrusselsWtf.ReviewInboxAndActionsTest do
 
   setup do
     BrusselsWtf.Archive.Memory.reset()
+    BrusselsWtf.Processors.Stub.reset()
     BrusselsWtf.Clock.Controlled.set(~U[2026-08-20 12:00:00Z])
     {:ok, actor: %Actor{id: "rico", role: :reviewer}}
   end
@@ -68,8 +70,28 @@ defmodule BrusselsWtf.ReviewInboxAndActionsTest do
              }
            ] = detail.actions
 
-    assert [%{processor_name: "review-retry", status: :queued}] =
+    assert [%{id: retry_run_id, processor_name: "review-retry", status: :queued}] =
              detail.source_version.processing_runs
+
+    assert_enqueued(
+      worker: BrusselsWtf.Workers.ExtractSource,
+      args: %{source_version_id: context.version.id, processing_run_id: retry_run_id}
+    )
+
+    BrusselsWtf.Processors.Stub.put(context.version.sha256, %{
+      extract: %{"text" => "corrected extraction"}
+    })
+
+    assert :ok =
+             perform_job(BrusselsWtf.Workers.ExtractSource, %{
+               source_version_id: context.version.id,
+               processing_run_id: retry_run_id
+             })
+
+    completed = Review.get_review_case!(updated.id, actor: actor)
+
+    assert [%{status: :succeeded, output: %{"text" => "corrected extraction"}}] =
+             completed.source_version.processing_runs
 
     unchanged_version = Ingestion.get_source_version!(context.version.id)
     assert unchanged_version.sha256 == original_version.sha256

@@ -35,14 +35,19 @@ defmodule BrusselsWtf.Review.Changes.AuditAction do
 
   defp append_effect!(%{source_version_id: version_id}, audit, :retry, note, details, _actor)
        when is_binary(version_id) do
-    BrusselsWtf.Ingestion.record_processing_run!(%{
-      source_version_id: version_id,
-      processor_name: "review-retry",
-      processor_version: Map.get(details, "processor", "review-action-1"),
-      config_hash: BrusselsWtf.Digest.sha256(audit.id),
-      status: :queued,
-      output: %{"review_action_id" => audit.id, "note" => note}
-    })
+    run =
+      BrusselsWtf.Ingestion.record_processing_run!(%{
+        source_version_id: version_id,
+        processor_name: "review-retry",
+        processor_version: Map.get(details, "processor", "review-action-1"),
+        config_hash: BrusselsWtf.Digest.sha256(audit.id),
+        status: :queued,
+        output: %{"review_action_id" => audit.id, "note" => note}
+      })
+
+    %{source_version_id: version_id, processing_run_id: run.id}
+    |> BrusselsWtf.Workers.ExtractSource.new()
+    |> Oban.insert!()
   end
 
   defp append_effect!(_review_case, _audit, :retry, _note, _details, _actor), do: :ok

@@ -194,6 +194,56 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     end
   end
 
+  @spec retry_extraction(Ecto.UUID.t()) :: :ok | {:error, term()}
+  def retry_extraction(processing_run_id) do
+    run =
+      Ash.load!(Ingestion.get_processing_run!(processing_run_id),
+        source_version: [:source_record]
+      )
+
+    version = run.source_version
+
+    result =
+      with {:ok, bytes} <- BrusselsWtf.Archive.get(version.object_key),
+           actual when actual == version.sha256 <- BrusselsWtf.Digest.sha256(bytes),
+           {:ok, extracted} <-
+             BrusselsWtf.Processors.extract(%{sha256: version.sha256}, bytes) do
+        completed =
+          Ingestion.complete_processing_run!(run, %{
+            status: :succeeded,
+            output: Map.put(extracted, "sha256", version.sha256)
+          })
+
+        %{
+          processing_run_id: completed.id,
+          locator_url: version.source_record.origin_url
+        }
+        |> Workers.NormalizeSource.new()
+        |> Oban.insert!()
+
+        :ok
+      else
+        actual when is_binary(actual) ->
+          {:error, {:archived_hash_mismatch, version.sha256, actual}}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+
+    case result do
+      :ok ->
+        :ok
+
+      {:error, reason} = error ->
+        Ingestion.complete_processing_run!(run, %{
+          status: :failed,
+          output: %{"error" => safe_error(reason)}
+        })
+
+        error
+    end
+  end
+
   @spec normalize(Ecto.UUID.t(), String.t()) :: :ok
   def normalize(processing_run_id, citation_url) do
     run =
