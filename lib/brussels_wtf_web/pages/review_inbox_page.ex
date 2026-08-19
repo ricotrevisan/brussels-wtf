@@ -41,6 +41,46 @@ defmodule BrusselsWtfWeb.ReviewInboxPage do
         Actionable domain cases, separate from worker transport state.
       </p>
 
+      <section class="mt-7 border-y border-base-300 py-4">
+        <h2 class="text-lg font-semibold">Operational polling</h2>
+        <p class="mt-1 text-sm text-base-content/70">
+          Poll-now preserves the standing schedule. Backfill is always an explicit operation.
+        </p>
+        <form method="post" action="/review/polls" class="mt-3 grid gap-3 md:grid-cols-4">
+          <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+          <label>
+            Operation
+            <select name="operation" class="select select-bordered w-full">
+              <option value="poll-now">Poll now</option>
+              <option value="backfill">Explicit backfill</option>
+            </select>
+          </label>
+          <label>
+            Target type
+            <select name="target_type" class="select select-bordered w-full">
+              <option value="commune">Commune</option>
+              <option value="index">Index</option>
+              <option value="meeting">Meeting</option>
+              <option value="locator">Locator</option>
+            </select>
+          </label>
+          <label>
+            Target ID
+            <input
+              name="target_id"
+              list="poll-target-communes"
+              required
+              class="input input-bordered w-full"
+              placeholder="Select a commune or paste an ID"
+            />
+            <datalist id="poll-target-communes">
+              <option :for={commune <- @communes} value={commune.id}>{commune.name}</option>
+            </datalist>
+          </label>
+          <button type="submit" class="btn self-end">Queue operation</button>
+        </form>
+      </section>
+
       <form
         method="get"
         action="/review"

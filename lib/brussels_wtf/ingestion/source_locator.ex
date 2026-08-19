@@ -27,7 +27,8 @@ defmodule BrusselsWtf.Ingestion.SourceLocator do
         :language,
         :observed_label,
         :item_identifier,
-        :discovered_at
+        :discovered_at,
+        :next_fetch_at
       ]
 
       change BrusselsWtf.Ingestion.Changes.SetLocatorDiscoveryKey
@@ -46,6 +47,17 @@ defmodule BrusselsWtf.Ingestion.SourceLocator do
     read :for_commune do
       argument :commune_id, :uuid, allow_nil?: false
       filter expr(commune_id == ^arg(:commune_id))
+    end
+
+    read :due_for_fetch do
+      argument :now, :utc_datetime_usec, allow_nil?: false
+      filter expr(not is_nil(next_fetch_at) and next_fetch_at <= ^arg(:now))
+      prepare build(sort: [next_fetch_at: :asc, id: :asc])
+    end
+
+    update :schedule_fetch do
+      primary? true
+      accept [:next_fetch_at, :last_checked_at, :last_changed_at]
     end
   end
 
@@ -83,6 +95,9 @@ defmodule BrusselsWtf.Ingestion.SourceLocator do
     attribute :observed_label, :string, public?: true
     attribute :item_identifier, :string, public?: true
     attribute :discovered_at, :utc_datetime_usec, allow_nil?: false, public?: true
+    attribute :next_fetch_at, :utc_datetime_usec, public?: true
+    attribute :last_checked_at, :utc_datetime_usec, public?: true
+    attribute :last_changed_at, :utc_datetime_usec, public?: true
     timestamps()
   end
 

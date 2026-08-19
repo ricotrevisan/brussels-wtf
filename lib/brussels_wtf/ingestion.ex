@@ -8,12 +8,19 @@ defmodule BrusselsWtf.Ingestion do
   resources do
     resource BrusselsWtf.Ingestion.Commune do
       define :create_commune, action: :create
+      define :list_communes, action: :read
       define :get_commune, action: :read, get_by: [:id]
       define :get_commune_by_slug, action: :read, get_by: [:slug]
     end
 
     resource BrusselsWtf.Ingestion.PollRun do
       define :start_poll_run, action: :create
+      define :get_poll_run, action: :read, get_by: [:id]
+      define :list_poll_runs, action: :read
+      define :mark_poll_run_running, action: :mark_running
+      define :mark_poll_run_retrying, action: :mark_retrying
+      define :complete_poll_run, action: :complete
+      define :fail_poll_run, action: :fail
     end
 
     resource BrusselsWtf.Ingestion.SourceLocator do
@@ -21,6 +28,8 @@ defmodule BrusselsWtf.Ingestion do
       define :upsert_locator, action: :upsert
       define :list_document_locators, action: :documents_for_commune, args: [:commune_id]
       define :list_locators, action: :for_commune, args: [:commune_id]
+      define :list_due_locators, action: :due_for_fetch, args: [:now]
+      define :schedule_locator_fetch, action: :schedule_fetch
     end
 
     resource BrusselsWtf.Ingestion.SourceRecord do
@@ -54,17 +63,176 @@ defmodule BrusselsWtf.Ingestion do
     end
   end
 
+  @type poll_target :: %{
+          required(:type) => :commune | :meeting | :index | :locator,
+          required(:id) => String.t()
+        }
+
+  @doc "Persists and enqueues an authenticated poll-now request."
+  @spec request_poll_now!(poll_target(), actor: BrusselsWtf.Review.Actor.t()) ::
+          BrusselsWtf.Ingestion.PollRun.t()
+  def request_poll_now!(target, opts) when is_map(target) and is_list(opts) do
+    actor = Keyword.fetch!(opts, :actor)
+    request_poll!(target, :poll_now, actor)
+  end
+
+  @doc "Persists and enqueues an explicit authenticated historical backfill."
+  @spec request_backfill!(poll_target(), actor: BrusselsWtf.Review.Actor.t()) ::
+          BrusselsWtf.Ingestion.PollRun.t()
+  def request_backfill!(target, opts) when is_map(target) and is_list(opts) do
+    actor = Keyword.fetch!(opts, :actor)
+    request_poll!(target, :backfill, actor)
+  end
+
+  @doc "Enqueues one fixed scheduled commune poll from cron."
+  def request_scheduled_poll!(commune_slug, scope \\ :current) when is_binary(commune_slug) do
+    commune = ensure_configured_commune!(commune_slug)
+    target_type = if scope == :previous_year, do: :index, else: :commune
+
+    request_poll!(%{type: target_type, id: commune.id}, :scheduled, %{id: "system", role: :system})
+  end
+
+  @doc false
   @spec poll_now(String.t()) :: :ok | {:error, term()}
   def poll_now(commune_slug) when is_binary(commune_slug) do
-    commune = get_commune_by_slug!(commune_slug)
+    if Application.get_env(:brussels_wtf, :allow_synthetic_seeds, false) do
+      commune = get_commune_by_slug!(commune_slug)
 
-    %{commune_id: commune.id, check_key: "poll-now:#{Ecto.UUID.generate()}"}
-    |> BrusselsWtf.Workers.PollCommune.new()
-    |> Oban.insert()
-    |> case do
-      {:ok, _job} -> :ok
-      {:error, reason} -> {:error, reason}
+      request_poll_now!(%{type: :commune, id: commune.id},
+        actor: %BrusselsWtf.Review.Actor{id: "test-harness", role: :reviewer}
+      )
+
+      :ok
+    else
+      {:error, :reviewer_required}
     end
+  end
+
+  defp request_poll!(target, kind, actor) do
+    authorize_poll_request!(kind, actor)
+    {target_type, target_id, commune, jobs} = resolve_poll_target!(target)
+    check_key = "poll:#{Ecto.UUID.generate()}"
+    now = BrusselsWtf.Clock.utc_now()
+
+    poll_run =
+      start_poll_run!(%{
+        commune_id: commune.id,
+        started_at: now,
+        kind: kind,
+        requester_id: actor.id,
+        target_type: target_type,
+        target_id: target_id,
+        check_key: check_key,
+        status: :queued
+      })
+
+    try do
+      Enum.each(jobs, fn
+        {:commune, commune_id} ->
+          %{
+            commune_id: commune_id,
+            poll_run_id: poll_run.id,
+            check_key: check_key,
+            attempt: 1
+          }
+          |> BrusselsWtf.Workers.PollCommune.new()
+          |> Oban.insert!()
+
+        {:locator, locator_id} ->
+          %{
+            locator_id: locator_id,
+            poll_run_id: poll_run.id,
+            check_key: check_key,
+            attempt: 1
+          }
+          |> BrusselsWtf.Workers.FetchLocator.new()
+          |> Oban.insert!()
+      end)
+
+      poll_run
+    rescue
+      error ->
+        fail_poll_run!(poll_run, %{
+          completed_at: BrusselsWtf.Clock.utc_now(),
+          error_summary: "poll queue insertion failed"
+        })
+
+        reraise error, __STACKTRACE__
+    end
+  end
+
+  defp resolve_poll_target!(%{type: type, id: id}) when type in [:commune, :index] do
+    commune = get_commune!(id)
+    {type, id, commune, [{:commune, commune.id}]}
+  end
+
+  defp resolve_poll_target!(%{type: :locator, id: id}) do
+    locator = get_locator!(id)
+    commune = get_commune!(locator.commune_id)
+    {:locator, id, commune, [{:locator, locator.id}]}
+  end
+
+  defp resolve_poll_target!(%{type: :meeting, id: id}) do
+    meeting = BrusselsWtf.Council.get_meeting!(id)
+    commune = get_commune!(meeting.commune_id)
+
+    jobs =
+      commune.id
+      |> list_document_locators!()
+      |> Enum.filter(&(&1.meeting_identifier == meeting.municipal_identifier))
+      |> Enum.map(&{:locator, &1.id})
+
+    {:meeting, id, commune, jobs}
+  end
+
+  defp ensure_configured_commune!(slug) do
+    case get_commune_by_slug(slug) do
+      {:ok, commune} ->
+        commune
+
+      _not_found ->
+        configuration = BrusselsWtf.Communes.configuration!(slug)
+
+        create_commune!(%{
+          slug: slug,
+          name: configuration.name,
+          index_url: configuration.index_url
+        })
+    end
+  end
+
+  defp authorize_poll_request!(:scheduled, %{role: :system}), do: :ok
+  defp authorize_poll_request!(_kind, %{role: :reviewer, id: id}) when is_binary(id), do: :ok
+  defp authorize_poll_request!(_kind, _actor), do: raise(Ash.Error.Forbidden, errors: [])
+
+  @doc "Returns actionable poll freshness and repeated-failure indicators."
+  def poll_health(now \\ BrusselsWtf.Clock.utc_now()) do
+    stale_after = Application.get_env(:brussels_wtf, :poll_stale_after_seconds, 12 * 60 * 60)
+    recent_failure_window = 24 * 60 * 60
+    runs = list_poll_runs!()
+
+    stale_commune_ids =
+      list_communes!()
+      |> Enum.reject(fn commune ->
+        Enum.any?(runs, fn run ->
+          run.commune_id == commune.id and run.kind == :scheduled and run.status == :completed and
+            match?(%DateTime{}, run.completed_at) and
+            DateTime.diff(now, run.completed_at, :second) <= stale_after
+        end)
+      end)
+      |> Enum.map(& &1.id)
+
+    repeated_failures =
+      Enum.count(runs, fn run ->
+        run.status == :failed and match?(%DateTime{}, run.completed_at) and
+          DateTime.diff(now, run.completed_at, :second) <= recent_failure_window
+      end)
+
+    %{
+      stale_commune_count: length(stale_commune_ids),
+      stale_commune_ids: stale_commune_ids,
+      repeated_failure_count: repeated_failures
+    }
   end
 
   @doc "Runs one locator check through the public ingestion boundary."

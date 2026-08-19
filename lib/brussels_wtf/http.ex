@@ -1,7 +1,9 @@
 defmodule BrusselsWtf.HTTP do
   @moduledoc "Retrieval adapter for municipal indexes and source locators."
 
-  @type request_options :: [headers: map()]
+  @type request_options :: [
+          {:headers, map()} | {:max_body_bytes, pos_integer()} | {:receive_timeout, pos_integer()}
+        ]
 
   @type response :: %{
           status: pos_integer(),

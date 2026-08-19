@@ -75,6 +75,18 @@ defmodule BrusselsWtfWeb.Telemetry do
           "The time the connection spent waiting before being checked out for the query"
       ),
 
+      # Ingestion Metrics
+      sum("brussels_wtf.ingestion.retrieval.stop.count", tags: [:status]),
+      sum("brussels_wtf.ingestion.retrieval.stop.changed"),
+      sum("brussels_wtf.ingestion.archive.stored.bytes"),
+      sum("brussels_wtf.ingestion.retry.scheduled.count", tags: [:attempt]),
+      last_value("brussels_wtf.ingestion.retry.scheduled.delay_seconds", tags: [:attempt]),
+      sum("brussels_wtf.ingestion.review_case.created.count", tags: [:classification]),
+      summary("brussels_wtf.ingestion.poll.stop.duration", unit: {:native, :millisecond}),
+      summary("brussels_wtf.ingestion.poll.stop.queue_age", unit: :millisecond),
+      last_value("brussels_wtf.ingestion.health.stale_communes"),
+      last_value("brussels_wtf.ingestion.health.repeated_failures"),
+
       # VM Metrics
       summary("vm.memory.total", unit: {:byte, :kilobyte}),
       summary("vm.total_run_queue_lengths.total"),
@@ -85,9 +97,7 @@ defmodule BrusselsWtfWeb.Telemetry do
 
   defp periodic_measurements do
     [
-      # A module, function and arguments to be invoked periodically.
-      # This function must call :telemetry.execute/3 and a metric must be added above.
-      # {BrusselsWtfWeb, :count_users, []}
+      {BrusselsWtf.Ingestion.Observability, :measure_health, []}
     ]
   end
 end

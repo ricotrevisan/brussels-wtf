@@ -4,11 +4,21 @@ defmodule BrusselsWtf.HTTP.Req do
 
   @redirect_statuses [301, 302, 303, 307, 308]
   @max_redirects 10
+  @default_max_body_bytes 25 * 1_024 * 1_024
+  @default_receive_timeout 30_000
 
   @impl true
-  def get(url, opts), do: follow(url, [], @max_redirects, request_headers(opts))
+  def get(url, opts) do
+    request = %{
+      headers: request_headers(opts),
+      max_body_bytes: Keyword.get(opts, :max_body_bytes, configured_max_body_bytes()),
+      receive_timeout: Keyword.get(opts, :receive_timeout, @default_receive_timeout)
+    }
 
-  defp follow(url, chain, 0, _headers) do
+    follow(url, [], @max_redirects, request)
+  end
+
+  defp follow(url, chain, 0, _request) do
     {:error,
      %{
        reason: :too_many_redirects,
@@ -18,13 +28,13 @@ defmodule BrusselsWtf.HTTP.Req do
      }}
   end
 
-  defp follow(url, chain, remaining, request_headers) do
-    case Req.get(url, redirect: false, decode_body: false, headers: request_headers) do
+  defp follow(url, chain, remaining, request) do
+    case request(url, request) do
       {:ok, %Req.Response{status: status, headers: headers} = response}
       when status in @redirect_statuses ->
         case first_header(headers, "location") do
           nil ->
-            response(response, url, chain)
+            response(response, url, chain, request.max_body_bytes)
 
           location ->
             next_url = url |> URI.merge(location) |> URI.to_string()
@@ -36,11 +46,11 @@ defmodule BrusselsWtf.HTTP.Req do
               "headers" => normalize_headers(headers)
             }
 
-            follow(next_url, chain ++ [redirect], remaining - 1, request_headers)
+            follow(next_url, chain ++ [redirect], remaining - 1, request)
         end
 
       {:ok, %Req.Response{} = response} ->
-        response(response, url, chain)
+        response(response, url, chain, request.max_body_bytes)
 
       {:error, reason} ->
         {:error,
@@ -53,15 +63,61 @@ defmodule BrusselsWtf.HTTP.Req do
     end
   end
 
-  defp response(response, final_url, chain) do
-    {:ok,
+  defp request(url, request) do
+    Req.get(url,
+      redirect: false,
+      retry: false,
+      decode_body: false,
+      headers: request.headers,
+      receive_timeout: request.receive_timeout,
+      into: bounded_body(request.max_body_bytes)
+    )
+  end
+
+  defp bounded_body(max_body_bytes) do
+    fn {:data, data}, {request, response} ->
+      body = response.body || ""
+      size = iodata_size(body) + byte_size(data)
+
+      if size > max_body_bytes do
+        {:halt, {request, %{response | body: {:body_too_large, max_body_bytes}}}}
+      else
+        {:cont, {request, %{response | body: [body, data]}}}
+      end
+    end
+  end
+
+  defp response(%Req.Response{body: {:body_too_large, limit}} = response, final_url, chain, _max) do
+    {:error,
      %{
-       status: response.status,
-       headers: normalize_headers(response.headers),
-       body: IO.iodata_to_binary(response.body || ""),
+       reason: {:body_too_large, limit},
        final_url: final_url,
+       response_headers: normalize_headers(response.headers),
        redirect_chain: chain
      }}
+  end
+
+  defp response(response, final_url, chain, max_body_bytes) do
+    body = IO.iodata_to_binary(response.body || "")
+
+    if byte_size(body) > max_body_bytes do
+      {:error,
+       %{
+         reason: {:body_too_large, max_body_bytes},
+         final_url: final_url,
+         response_headers: normalize_headers(response.headers),
+         redirect_chain: chain
+       }}
+    else
+      {:ok,
+       %{
+         status: response.status,
+         headers: normalize_headers(response.headers),
+         body: body,
+         final_url: final_url,
+         redirect_chain: chain
+       }}
+    end
   end
 
   defp request_headers(opts) do
@@ -85,5 +141,15 @@ defmodule BrusselsWtf.HTTP.Req do
     Enum.reduce(headers, %{}, fn {key, value}, result ->
       Map.update(result, String.downcase(to_string(key)), [value], &(&1 ++ [value]))
     end)
+  end
+
+  defp iodata_size(data) do
+    IO.iodata_length(data)
+  rescue
+    _ -> 0
+  end
+
+  defp configured_max_body_bytes do
+    Application.get_env(:brussels_wtf, :http_max_body_bytes, @default_max_body_bytes)
   end
 end

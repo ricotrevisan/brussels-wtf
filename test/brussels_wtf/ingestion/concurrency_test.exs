@@ -22,7 +22,11 @@ defmodule BrusselsWtf.Ingestion.ConcurrencyTest do
       BrusselsWtf.Ingestion.start_poll_run!(%{
         commune_id: scenario.commune.id,
         started_at: BrusselsWtf.Clock.utc_now(),
-        kind: :poll_now
+        kind: :poll_now,
+        requester_id: "test-harness",
+        target_type: :locator,
+        target_id: locator.id,
+        check_key: "concurrency:#{Ecto.UUID.generate()}"
       })
 
     1..8
@@ -100,7 +104,11 @@ defmodule BrusselsWtf.Ingestion.ConcurrencyTest do
       BrusselsWtf.Ingestion.start_poll_run!(%{
         commune_id: scenario.commune.id,
         started_at: now,
-        kind: :poll_now
+        kind: :poll_now,
+        requester_id: "test-harness",
+        target_type: :locator,
+        target_id: original.id,
+        check_key: "context:#{Ecto.UUID.generate()}"
       })
 
     assert :ok =
@@ -143,7 +151,11 @@ defmodule BrusselsWtf.Ingestion.ConcurrencyTest do
       BrusselsWtf.Ingestion.start_poll_run!(%{
         commune_id: other_commune.id,
         started_at: BrusselsWtf.Clock.utc_now(),
-        kind: :poll_now
+        kind: :poll_now,
+        requester_id: "test-harness",
+        target_type: :locator,
+        target_id: other_locator.id,
+        check_key: "other-commune:#{Ecto.UUID.generate()}"
       })
 
     assert :ok = BrusselsWtf.Ingestion.check_locator(other_locator.id, other_poll.id)
@@ -164,7 +176,11 @@ defmodule BrusselsWtf.Ingestion.ConcurrencyTest do
       BrusselsWtf.Ingestion.start_poll_run!(%{
         commune_id: scenario.commune.id,
         started_at: BrusselsWtf.Clock.utc_now(),
-        kind: :poll_now
+        kind: :poll_now,
+        requester_id: "test-harness",
+        target_type: :locator,
+        target_id: ixelles_locator.id,
+        check_key: "ixelles:#{Ecto.UUID.generate()}"
       })
 
     assert :ok = BrusselsWtf.Ingestion.check_locator(ixelles_locator.id, ixelles_poll.id)

@@ -28,6 +28,7 @@ defmodule BrusselsWtf.Processors.Stub do
   defp fetch(sha256, key) do
     case Agent.get(__MODULE__, &get_in(&1, [sha256, key])) do
       nil -> {:error, {:missing_processor_fixture, sha256, key}}
+      {:error, reason} -> {:error, reason}
       value -> {:ok, value}
     end
   end

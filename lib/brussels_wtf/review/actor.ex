@@ -3,4 +3,6 @@ defmodule BrusselsWtf.Review.Actor do
 
   @enforce_keys [:id, :role]
   defstruct [:id, :role]
+
+  @type t :: %__MODULE__{id: String.t(), role: :reviewer}
 end

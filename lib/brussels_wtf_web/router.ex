@@ -43,6 +43,7 @@ defmodule BrusselsWtfWeb.Router do
     pipe_through [:browser, :reviewer]
 
     dstar("/", ReviewInboxPage)
+    post "/polls", PollController, :create
     dstar("/cases/:id", ReviewCasePage)
     post "/cases/:case_id/actions/:action", ReviewActionController, :create
     post "/cases/:case_id/notes", ReviewNoteController, :create

@@ -58,6 +58,8 @@ config :brussels_wtf,
   ash_domains: [BrusselsWtf.Ingestion, BrusselsWtf.Council, BrusselsWtf.Review],
   clock: BrusselsWtf.Clock.System,
   http: BrusselsWtf.HTTP.Req,
+  http_max_body_bytes: 25 * 1_024 * 1_024,
+  poll_stale_after_seconds: 12 * 60 * 60,
   archive: BrusselsWtf.Archive.Unconfigured,
   readiness: BrusselsWtf.Readiness.Monitor,
   processors: BrusselsWtf.Processors.Unimplemented,
@@ -74,6 +76,31 @@ config :brussels_wtf, Oban,
   repo: BrusselsWtf.Repo,
   notifier: Oban.Notifiers.Postgres,
   peer: Oban.Peers.Database,
+  plugins: [
+    {Oban.Plugins.Cron,
+     crontab: [
+       {"0 */6 * * *", BrusselsWtf.Workers.PollCommune,
+        args: %{commune_slug: "ixelles", kind: "scheduled"}},
+       {"15 */6 * * *", BrusselsWtf.Workers.PollCommune,
+        args: %{commune_slug: "uccle", kind: "scheduled"}},
+       {"30 */6 * * *", BrusselsWtf.Workers.PollCommune,
+        args: %{commune_slug: "forest", kind: "scheduled"}},
+       {"45 */6 * * *", BrusselsWtf.Workers.PollCommune,
+        args: %{commune_slug: "city-of-brussels", kind: "scheduled"}},
+       {"5 1 * * *", BrusselsWtf.Workers.PollCommune,
+        args: %{commune_slug: "ixelles", kind: "scheduled", scope: "previous-year"}},
+       {"20 1 * * *", BrusselsWtf.Workers.PollCommune,
+        args: %{commune_slug: "uccle", kind: "scheduled", scope: "previous-year"}},
+       {"35 1 * * *", BrusselsWtf.Workers.PollCommune,
+        args: %{commune_slug: "forest", kind: "scheduled", scope: "previous-year"}},
+       {"50 1 * * *", BrusselsWtf.Workers.PollCommune,
+        args: %{
+          commune_slug: "city-of-brussels",
+          kind: "scheduled",
+          scope: "previous-year"
+        }}
+     ]}
+  ],
   queues: [
     poll: 1,
     fetch: 2,
@@ -123,7 +150,19 @@ config :tailwind,
 # Configure Elixir's Logger
 config :logger, :default_formatter,
   format: "$time $metadata[$level] $message\n",
-  metadata: [:request_id]
+  metadata: [
+    :request_id,
+    :poll_run_id,
+    :retrieval_observation_id,
+    :source_locator_id,
+    :source_version_id,
+    :review_case_id,
+    :commune_id,
+    :status,
+    :classification,
+    :attempt,
+    :sha256
+  ]
 
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason

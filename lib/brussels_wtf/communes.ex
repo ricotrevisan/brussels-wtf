@@ -22,10 +22,18 @@ defmodule BrusselsWtf.Communes do
 
   def configuration!(slug), do: Map.fetch!(@municipalities, slug)
 
-  @spec adapter!(String.t()) :: module()
-  def adapter!("ixelles"), do: BrusselsWtf.Communes.Ixelles
+  @spec adapter(String.t()) :: {:ok, module()} | {:error, :adapter_not_implemented}
+  def adapter("ixelles"), do: {:ok, BrusselsWtf.Communes.Ixelles}
+  def adapter(_slug), do: {:error, :adapter_not_implemented}
 
+  @spec adapter!(String.t()) :: module()
   def adapter!(slug) do
-    raise ArgumentError, "no commune adapter for #{inspect(slug)}"
+    case adapter(slug) do
+      {:ok, adapter} ->
+        adapter
+
+      {:error, :adapter_not_implemented} ->
+        raise ArgumentError, "no commune adapter for #{inspect(slug)}"
+    end
   end
 end

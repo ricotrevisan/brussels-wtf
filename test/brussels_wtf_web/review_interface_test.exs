@@ -156,7 +156,16 @@ defmodule BrusselsWtfWeb.ReviewInterfaceTest do
         discovered_at: now
       })
 
-    poll = Ingestion.start_poll_run!(%{commune_id: commune.id, started_at: now, kind: :poll_now})
+    poll =
+      Ingestion.start_poll_run!(%{
+        commune_id: commune.id,
+        started_at: now,
+        kind: :poll_now,
+        requester_id: "test-harness",
+        target_type: :locator,
+        target_id: locator.id,
+        check_key: "review-fixture:#{Ecto.UUID.generate()}"
+      })
 
     record =
       Ingestion.upsert_source_record!(%{
