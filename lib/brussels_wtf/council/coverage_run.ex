@@ -29,6 +29,7 @@ defmodule BrusselsWtf.Council.CoverageRun do
         :config_hash,
         :provider_category,
         :model,
+        :method,
         :status,
         :input,
         :output,
@@ -36,11 +37,6 @@ defmodule BrusselsWtf.Council.CoverageRun do
         :duration_ms,
         :failure_details
       ]
-
-      upsert? true
-      upsert_identity :unique_generation
-      upsert_fields []
-      return_skipped_upsert? true
     end
 
     read :for_page do
@@ -73,6 +69,12 @@ defmodule BrusselsWtf.Council.CoverageRun do
     attribute :provider_category, :string, allow_nil?: false, public?: true
     attribute :model, :string, public?: true
 
+    attribute :method, :atom do
+      allow_nil? false
+      public? true
+      constraints one_of: [:ai_generation, :machine_translation, :deterministic]
+    end
+
     attribute :status, :atom do
       allow_nil? false
       public? true
@@ -94,18 +96,5 @@ defmodule BrusselsWtf.Council.CoverageRun do
 
     belongs_to :parent_run, __MODULE__, public?: true
     has_many :translations, __MODULE__, destination_attribute: :parent_run_id
-  end
-
-  identities do
-    identity :unique_generation, [
-      :meeting_page_id,
-      :operation,
-      :locale,
-      :input_hash,
-      :output_hash,
-      :processor_name,
-      :processor_version,
-      :config_hash
-    ]
   end
 end

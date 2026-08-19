@@ -16,6 +16,36 @@ defmodule BrusselsWtf.Council.MeetingPage do
   actions do
     defaults [:read]
 
+    action :generate_coverage, :atom do
+      argument :meeting_id, :uuid, allow_nil?: false
+      argument :attempt, :integer, allow_nil?: false
+      argument :max_attempts, :integer, allow_nil?: false
+
+      run fn input, _context ->
+        case BrusselsWtf.Council.Publication.generate_and_publish(
+               input.arguments.meeting_id,
+               input.arguments.attempt,
+               input.arguments.max_attempts
+             ) do
+          :ok -> {:ok, :ok}
+          {:error, _reason} = error -> error
+        end
+      end
+    end
+
+    action :evaluate_publication_gate, :map do
+      argument :meeting_page_id, :uuid, allow_nil?: false
+      argument :expected_input_hash, :string, allow_nil?: false
+
+      run fn input, _context ->
+        {:ok,
+         BrusselsWtf.Council.PublicationGate.evaluate(
+           input.arguments.meeting_page_id,
+           input.arguments.expected_input_hash
+         )}
+      end
+    end
+
     create :upsert do
       primary? true
       accept [:council_meeting_id, :citation_url, :procedural_state, :revision_published_at]

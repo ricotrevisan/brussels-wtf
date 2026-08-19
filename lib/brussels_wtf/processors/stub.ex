@@ -1,6 +1,7 @@
 defmodule BrusselsWtf.Processors.Stub do
   @moduledoc false
   @behaviour BrusselsWtf.Processors
+  @behaviour BrusselsWtf.Processors.Coverage
 
   use Agent
 
@@ -27,13 +28,15 @@ defmodule BrusselsWtf.Processors.Stub do
   def normalize(%{sha256: sha256}), do: fetch(sha256, :normalize)
 
   @impl true
-  def coverage_metadata do
+  def metadata do
     %{
       processor_name: "recorded-coverage-generator",
       processor_version: "fixture-contract-1",
       config_hash: "sha256:fixture-coverage-contract-1",
       provider_category: "recorded_fixture",
       model: "recorded-ixelles-proposal",
+      canonical_method: :ai_generation,
+      translation_method: :machine_translation,
       usage: %{"fixture" => true}
     }
   end

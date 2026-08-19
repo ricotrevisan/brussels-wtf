@@ -10,6 +10,7 @@ defmodule BrusselsWtf.Review do
   resources do
     resource BrusselsWtf.Review.Case do
       define :open_review_case, action: :open
+
       define :retry_review_case, action: :retry
       define :complete_review_retry, action: :complete_retry
       define :reclassify_review_case, action: :reclassify
@@ -43,6 +44,28 @@ defmodule BrusselsWtf.Review do
       )
 
     complete_review_retry!(review_case)
+  end
+
+  def list_blocking_publication_cases!(meeting_id) do
+    BrusselsWtf.Review.Case
+    |> Ash.Query.filter(
+      status == :open and kind in [:normalization, :evidence] and
+        source_record.council_meeting_id == ^meeting_id
+    )
+    |> Ash.Query.sort(inserted_at: :asc, id: :asc)
+    |> Ash.read!(authorize?: false, domain: __MODULE__)
+  end
+
+  def resolve_publication_case!(meeting_page_id, generation) do
+    BrusselsWtf.Review.Case
+    |> Ash.Query.filter(
+      kind == :publication and affected_record_id == ^meeting_page_id and
+        processing_generation == ^generation and status == :open
+    )
+    |> Ash.read!(authorize?: false, domain: __MODULE__)
+    |> Enum.each(&complete_review_retry!/1)
+
+    :ok
   end
 
   def list_review_cases!(filters \\ %{}, opts \\ []) do

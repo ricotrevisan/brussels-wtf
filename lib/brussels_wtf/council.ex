@@ -62,6 +62,14 @@ defmodule BrusselsWtf.Council do
     end
 
     resource BrusselsWtf.Council.MeetingPage do
+      define :generate_meeting_coverage,
+        action: :generate_coverage,
+        args: [:meeting_id, :attempt, :max_attempts]
+
+      define :evaluate_publication_gate,
+        action: :evaluate_publication_gate,
+        args: [:meeting_page_id, :expected_input_hash]
+
       define :get_meeting_page, action: :read, get_by: [:id]
       define :upsert_meeting_page, action: :upsert
       define :record_publication_gate_failure, action: :record_gate_failure

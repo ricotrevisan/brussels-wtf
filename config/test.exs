@@ -27,7 +27,8 @@ config :brussels_wtf,
   clock: BrusselsWtf.Clock.Controlled,
   http: BrusselsWtf.HTTP.Stub,
   archive: BrusselsWtf.Archive.Memory,
-  processors: BrusselsWtf.Processors.Stub
+  processors: BrusselsWtf.Processors.Stub,
+  coverage_processor: BrusselsWtf.Processors.Stub
 
 config :brussels_wtf, Oban, testing: :manual, queues: false
 

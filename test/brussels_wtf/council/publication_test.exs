@@ -5,6 +5,31 @@ defmodule BrusselsWtf.Council.PublicationTest do
   alias BrusselsWtf.Review
   alias BrusselsWtf.Review.Actor
 
+  defmodule FailingCoverageProcessor do
+    @behaviour BrusselsWtf.Processors.Coverage
+
+    @impl true
+    def generate_fr(_input),
+      do: {:error, :provider_unavailable, %{"request_units" => 1}}
+
+    @impl true
+    def translate(_canonical, _locale), do: {:error, :should_not_run}
+
+    @impl true
+    def metadata do
+      %{
+        processor_name: "failing-coverage-processor",
+        processor_version: "1",
+        config_hash: "sha256:failing-coverage-processor",
+        provider_category: "test_failure",
+        model: nil,
+        canonical_method: :ai_generation,
+        translation_method: :machine_translation,
+        usage: %{}
+      }
+    end
+  end
+
   test "a missing item locale keeps all locales private and reports the exact gate failure", %{
     conn: conn
   } do
@@ -122,33 +147,131 @@ defmodule BrusselsWtf.Council.PublicationTest do
     })
 
     assert %{ready?: false, failures: failures} =
-             BrusselsWtf.Council.PublicationGate.evaluate(page.id, page.publication_input_hash)
+             Council.evaluate_publication_gate!(page.id, page.publication_input_hash)
 
     assert Enum.any?(failures, &(&1.code == :missing_provenance and &1.locale == "en"))
   end
 
-  test "a completed initial publication cannot leak a later partial generated revision", %{
+  test "a complete later generation replaces all published locale variants atomically", %{
     conn: conn
   } do
     scenario = BrusselsWtf.Test.Harness.load("ixelles/proposal")
     page = poll_and_page!()
     meeting = Council.get_ingested_meeting!("ixelles", "268")
+    before_run_ids = Council.list_locale_variants!(page.id) |> MapSet.new(& &1.coverage_run_id)
 
     revised =
       put_in(
         scenario.coverage,
         ["items", "4", "variants", "en", "title"],
-        "UNPUBLISHED-REVISION-SENTINEL"
+        "PUBLISHED-REVISION-SENTINEL"
       )
 
     BrusselsWtf.Processors.Stub.put_locales("268", revised)
-    assert :ok = BrusselsWtf.Council.Publication.generate_and_publish(meeting.id)
+    assert :ok = Council.generate_meeting_coverage!(meeting.id, 1, 3)
 
     html = conn |> get("/meetings/ixelles/268?lang=en") |> html_response(200)
-    refute html =~ "UNPUBLISHED-REVISION-SENTINEL"
+    assert html =~ "PUBLISHED-REVISION-SENTINEL"
 
-    assert Council.get_meeting_page!(page.id).publication_input_hash ==
-             page.publication_input_hash
+    after_run_ids = Council.list_locale_variants!(page.id) |> MapSet.new(& &1.coverage_run_id)
+    assert MapSet.disjoint?(before_run_ids, after_run_ids)
+    assert MapSet.size(after_run_ids) == 3
+  end
+
+  test "processor failures retain every execution and become actionable after bounded retry" do
+    BrusselsWtf.Test.Harness.load("ixelles/proposal")
+    previous = Application.fetch_env!(:brussels_wtf, :coverage_processor)
+    Application.put_env(:brussels_wtf, :coverage_processor, FailingCoverageProcessor)
+    on_exit(fn -> Application.put_env(:brussels_wtf, :coverage_processor, previous) end)
+
+    assert :ok = BrusselsWtf.Ingestion.poll_now("ixelles")
+
+    for queue <- [:poll, :fetch, :extract, :normalize] do
+      assert %{failure: 0, discard: 0} = Oban.drain_queue(queue: queue, with_safety: false)
+    end
+
+    meeting = Council.get_ingested_meeting!("ixelles", "268")
+    page = meeting |> Ash.load!(:meeting_page) |> Map.fetch!(:meeting_page)
+    job = %Oban.Job{args: %{"meeting_id" => meeting.id}, attempt: 1, max_attempts: 3}
+
+    assert {:error, :coverage_generation_failed} =
+             BrusselsWtf.Workers.PublishMeeting.perform(job)
+
+    assert :ok =
+             BrusselsWtf.Workers.PublishMeeting.perform(%{job | attempt: 3})
+
+    assert page.id
+           |> Council.list_coverage_runs!()
+           |> Enum.map(&{&1.status, &1.failure_details, &1.usage}) == [
+             {:failed, %{"classification" => "provider_unavailable"}, %{"request_units" => 1}},
+             {:failed, %{"classification" => "provider_unavailable"}, %{"request_units" => 1}}
+           ]
+
+    assert Council.get_meeting_page!(page.id).publication_status == :draft
+
+    actor = %Actor{id: "rico", role: :reviewer}
+    assert [review_case] = Review.list_review_cases!(%{kind: :publication}, actor: actor)
+    assert review_case.summary =~ "bounded retries"
+    assert review_case.diagnostics["classification"] == "provider_unavailable"
+    assert review_case.diagnostics["attempt"] == 3
+  end
+
+  test "an open normalization case blocks the current generation" do
+    scenario = BrusselsWtf.Test.Harness.load("ixelles/proposal")
+    assert :ok = BrusselsWtf.Ingestion.poll_now("ixelles")
+
+    for queue <- [:poll, :fetch, :extract, :normalize] do
+      assert %{failure: 0, discard: 0} = Oban.drain_queue(queue: queue, with_safety: false)
+    end
+
+    meeting = Council.get_ingested_meeting!("ixelles", "268")
+
+    history =
+      BrusselsWtf.Ingestion.source_history!(scenario.commune.id, scenario.sources.projects.url)
+
+    [version] = history.versions
+
+    Review.open_review_case!(%{
+      kind: :normalization,
+      commune_id: scenario.commune.id,
+      affected_record_id: version.id,
+      affected_record_type: "source_version",
+      source_record_id: history.source_record.id,
+      source_version_id: version.id,
+      processing_generation: "blocking-normalization",
+      urgency: :high,
+      summary: "Normalization requires review"
+    })
+
+    assert :ok =
+             BrusselsWtf.Workers.PublishMeeting.perform(%Oban.Job{
+               args: %{"meeting_id" => meeting.id},
+               attempt: 1,
+               max_attempts: 3
+             })
+
+    page = meeting |> Ash.load!(:meeting_page) |> Map.fetch!(:meeting_page)
+    assert Council.get_meeting_page!(page.id).publication_status == :draft
+
+    assert %{ready?: false, failures: [%{code: :blocking_review_case}]} =
+             Council.publication_readiness!(page.id)
+  end
+
+  test "repairing the same generation resolves its publication gate case" do
+    scenario = BrusselsWtf.Test.Harness.load("ixelles/proposal")
+    incomplete = pop_in(scenario.coverage, ["items", "4", "variants", "nl"]) |> elem(1)
+    BrusselsWtf.Processors.Stub.put_locales("268", incomplete)
+    page = poll_and_page!()
+
+    actor = %Actor{id: "rico", role: :reviewer}
+    assert [%{status: :open}] = Review.list_review_cases!(%{kind: :publication}, actor: actor)
+
+    BrusselsWtf.Processors.Stub.put_locales("268", scenario.coverage)
+    meeting = Council.get_ingested_meeting!("ixelles", "268")
+    assert :ok = Council.generate_meeting_coverage!(meeting.id, 1, 3)
+
+    assert Council.get_meeting_page!(page.id).publication_status == :published
+    assert [%{status: :resolved}] = Review.list_review_cases!(%{kind: :publication}, actor: actor)
   end
 
   defp poll_and_page! do

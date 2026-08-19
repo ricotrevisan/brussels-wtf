@@ -16,14 +16,34 @@ defmodule BrusselsWtf.Council.PublicationGate do
       ])
 
     canonical =
-      Enum.find(page.coverage_runs, fn run ->
-        run.operation == :canonical_generation and run.locale == "fr" and
-          run.input_hash == expected_input_hash and run.status == :succeeded
+      case Enum.find(page.locale_variants, &(&1.locale == "fr")) do
+        %{coverage_run: run}
+        when not is_struct(run, Ash.NotLoaded) and run.operation == :canonical_generation and
+               run.locale == "fr" and run.input_hash == expected_input_hash and
+               run.status == :succeeded ->
+          run
+
+        _variant ->
+          nil
+      end
+
+    blocking_failures =
+      page.council_meeting.id
+      |> BrusselsWtf.Review.list_blocking_publication_cases!()
+      |> Enum.map(fn review_case ->
+        %{
+          code: :blocking_review_case,
+          item_key: nil,
+          claim_key: nil,
+          locale: nil,
+          review_case_id: review_case.id
+        }
       end)
 
     failures =
       page_failures(page, canonical) ++
-        Enum.flat_map(page.council_meeting.agenda_items, &item_failures(&1, canonical))
+        Enum.flat_map(page.council_meeting.agenda_items, &item_failures(&1, canonical)) ++
+        blocking_failures
 
     %{ready?: failures == [], failures: failures, input_hash: expected_input_hash}
   end
@@ -45,7 +65,7 @@ defmodule BrusselsWtf.Council.PublicationGate do
 
   defp variant_failures(variant, canonical, item_key) do
     provenance_errors =
-      if required_provenance?(variant.locale, variant.provenance),
+      if required_provenance?(variant.coverage_run, canonical, variant.provenance),
         do: [],
         else: [error(:missing_provenance, item_key, variant.locale)]
 
@@ -70,10 +90,19 @@ defmodule BrusselsWtf.Council.PublicationGate do
       run.input["canonical_output_hash"] == canonical.output_hash
   end
 
-  defp required_provenance?("fr", provenance), do: :ai_generated in provenance
+  defp required_provenance?(%Ash.NotLoaded{}, _canonical, _provenance), do: false
+  defp required_provenance?(nil, _canonical, _provenance), do: false
 
-  defp required_provenance?(locale, provenance) when locale in ["nl", "en"],
-    do: :ai_generated in provenance and :machine_translated in provenance
+  defp required_provenance?(run, canonical, provenance) do
+    expected = expected_provenance(run, canonical)
+    Enum.all?(expected, &(&1 in provenance))
+  end
+
+  defp expected_provenance(%{method: :ai_generation}, _canonical), do: [:ai_generated]
+  defp expected_provenance(%{method: :deterministic}, _canonical), do: []
+
+  defp expected_provenance(%{method: :machine_translation}, canonical),
+    do: Enum.uniq(expected_provenance(canonical, canonical) ++ [:machine_translated])
 
   defp missing_locales(variants) do
     present = MapSet.new(Enum.map(variants, & &1.locale))

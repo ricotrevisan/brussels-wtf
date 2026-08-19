@@ -64,6 +64,7 @@ config :brussels_wtf,
   archive: BrusselsWtf.Archive.Unconfigured,
   readiness: BrusselsWtf.Readiness.Monitor,
   processors: BrusselsWtf.Processors.Unimplemented,
+  coverage_processor: BrusselsWtf.Processors.RecordedCoverage,
   allow_synthetic_seeds: false,
   session_cookie_secure: false,
   review_auth: [
