@@ -64,8 +64,26 @@ config :brussels_wtf,
   archive: BrusselsWtf.Archive.Unconfigured,
   readiness: BrusselsWtf.Readiness.Monitor,
   processors: BrusselsWtf.Processors.Unimplemented,
+  pdf_processor: BrusselsWtf.PDF.PopplerOcr,
+  pdf_quality_thresholds: %{
+    min_characters: 40,
+    min_words: 6,
+    min_alphanumeric_ratio: 0.5,
+    max_control_ratio: 0.01,
+    max_replacement_ratio: 0.005
+  },
+  pdf_limits: %{
+    max_input_bytes: 25 * 1_024 * 1_024,
+    max_pages: 500,
+    ocr_wall_time_ms: 120_000,
+    ocr_cpu_seconds: 90,
+    ocr_memory_bytes: 1_073_741_824,
+    ocr_jobs: 1,
+    ocr_languages: "fra+nld"
+  },
   coverage_processor: BrusselsWtf.Processors.RecordedCoverage,
   allow_synthetic_seeds: false,
+  automatic_transcription: false,
   session_cookie_secure: false,
   review_auth: [
     actor_id: "rico",

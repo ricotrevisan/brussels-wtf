@@ -41,6 +41,33 @@ if config_env() == :dev do
 end
 
 if config_env() == :prod do
+  process_role = System.get_env("PROCESS_ROLE", "app")
+
+  role =
+    case process_role do
+      "app" -> :app
+      "ocr" -> :ocr
+      _ -> raise "PROCESS_ROLE must be app or ocr"
+    end
+
+  config :brussels_wtf, Oban, BrusselsWtf.ProcessRole.oban(role)
+
+  if role == :ocr do
+    config :brussels_wtf, BrusselsWtfWeb.Endpoint, server: false
+  end
+
+  config :brussels_wtf, :process_role, role
+
+  config :brussels_wtf, :pdf_limits, %{
+    max_input_bytes: String.to_integer(System.get_env("PDF_MAX_INPUT_BYTES", "26214400")),
+    max_pages: String.to_integer(System.get_env("PDF_MAX_PAGES", "500")),
+    ocr_wall_time_ms: String.to_integer(System.get_env("PDF_OCR_WALL_TIME_MS", "120000")),
+    ocr_cpu_seconds: String.to_integer(System.get_env("PDF_OCR_CPU_SECONDS", "90")),
+    ocr_memory_bytes: String.to_integer(System.get_env("PDF_OCR_MEMORY_BYTES", "1073741824")),
+    ocr_jobs: 1,
+    ocr_languages: "fra+nld"
+  }
+
   review_username =
     System.get_env("REVIEW_USERNAME") ||
       raise "environment variable REVIEW_USERNAME is missing"

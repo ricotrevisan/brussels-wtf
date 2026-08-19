@@ -7,17 +7,20 @@ defmodule BrusselsWtf.Ingestion.Observability do
   """
 
   require Logger
+  import Ecto.Query
 
   @safe_metadata [
     :poll_run_id,
     :retrieval_observation_id,
     :source_locator_id,
     :source_version_id,
+    :processing_run_id,
     :review_case_id,
     :commune_id,
     :commune_slug,
     :status,
     :classification,
+    :processor_role,
     :attempt,
     :sha256
   ]
@@ -73,6 +76,33 @@ defmodule BrusselsWtf.Ingestion.Observability do
     )
   end
 
+  def extraction_completed(metadata, duration_ms, rejected_pages) do
+    emit(
+      [:brussels_wtf, :ingestion, :extraction, :stop],
+      %{count: 1, duration_ms: duration_ms, rejected_pages: length(rejected_pages)},
+      metadata,
+      "ingestion_extraction_completed"
+    )
+  end
+
+  def ocr_routed(metadata, page_count) do
+    emit(
+      [:brussels_wtf, :ingestion, :ocr, :routed],
+      %{count: 1, pages: page_count},
+      metadata,
+      "ingestion_ocr_routed"
+    )
+  end
+
+  def processing_retry(metadata) do
+    emit(
+      [:brussels_wtf, :ingestion, :processing, :retry],
+      %{count: 1},
+      metadata,
+      "ingestion_processing_retry"
+    )
+  end
+
   def review_case_created(metadata) do
     emit(
       [:brussels_wtf, :ingestion, :review_case, :created],
@@ -99,6 +129,32 @@ defmodule BrusselsWtf.Ingestion.Observability do
     started_at = job.attempted_at || BrusselsWtf.Clock.utc_now()
     queued_at = job.scheduled_at || job.inserted_at || started_at
     max(DateTime.diff(started_at, queued_at, :millisecond), 0)
+  end
+
+  def measure_ocr_queue do
+    states = ["available", "scheduled", "executing", "retryable"]
+
+    {backlog, oldest} =
+      BrusselsWtf.Repo.one(
+        from job in Oban.Job,
+          where: job.queue == "ocr" and job.state in ^states,
+          select: {count(job.id), min(job.inserted_at)}
+      )
+
+    age_ms =
+      if oldest,
+        do: max(DateTime.diff(BrusselsWtf.Clock.utc_now(), oldest, :millisecond), 0),
+        else: 0
+
+    :telemetry.execute(
+      [:brussels_wtf, :ingestion, :ocr, :queue],
+      %{backlog: backlog, oldest_age_ms: age_ms},
+      %{}
+    )
+
+    :ok
+  rescue
+    _error -> :ok
   end
 
   def measure_health do

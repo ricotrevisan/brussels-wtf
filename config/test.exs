@@ -28,6 +28,7 @@ config :brussels_wtf,
   http: BrusselsWtf.HTTP.Stub,
   archive: BrusselsWtf.Archive.Memory,
   processors: BrusselsWtf.Processors.Stub,
+  pdf_processor: BrusselsWtf.PDF.Stub,
   coverage_processor: BrusselsWtf.Processors.Stub
 
 config :brussels_wtf, Oban, testing: :manual, queues: false

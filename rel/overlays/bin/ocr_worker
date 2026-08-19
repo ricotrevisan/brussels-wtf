@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+export PROCESS_ROLE=ocr
+unset PHX_SERVER
+exec /app/bin/brussels_wtf start

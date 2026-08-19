@@ -22,6 +22,36 @@ defmodule BrusselsWtf.Release do
   def validate do
     validate_database()
     validate_archive()
+    validate_pdf_toolchain()
+    validate_transcription_disabled()
+  end
+
+  def validate_pdf_toolchain do
+    load_app()
+    metadata = BrusselsWtf.PDF.Processor.metadata()
+    versions = metadata.tool_versions
+
+    required = ["pdfinfo", "pdftotext", "ocrmypdf", "tesseract"]
+
+    if Enum.any?(required, &(versions[&1] in [nil, "", "unavailable"])) or
+         not String.contains?(versions["tesseract_languages"] || "", "fra") or
+         not String.contains?(versions["tesseract_languages"] || "", "nld") do
+      raise "PDF toolchain validation failed"
+    end
+
+    IO.puts("PDF toolchain validation passed")
+    :ok
+  end
+
+  def validate_transcription_disabled do
+    load_app()
+
+    if Application.fetch_env!(@app, :automatic_transcription) do
+      raise "automatic transcription must remain disabled"
+    end
+
+    IO.puts("Automatic transcription is disabled")
+    :ok
   end
 
   def validate_database(options \\ []) do

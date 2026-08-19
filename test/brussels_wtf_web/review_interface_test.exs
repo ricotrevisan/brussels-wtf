@@ -228,8 +228,15 @@ defmodule BrusselsWtfWeb.ReviewInterfaceTest do
         output_kind: "extracted-text",
         object_key: derived_archive.object_key,
         media_type: "text/plain",
+        byte_size: byte_size(derived_bytes),
         quality_measurements: %{"text_ratio" => 0.12}
       })
+
+    Ingestion.link_processing_run_artifact!(%{
+      processing_run_id: run.id,
+      derived_artifact_id: artifact.id,
+      role: :native_output
+    })
 
     review_case =
       Review.open_review_case!(%{

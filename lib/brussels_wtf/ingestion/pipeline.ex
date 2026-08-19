@@ -10,10 +10,6 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
   alias BrusselsWtf.Ingestion
   alias BrusselsWtf.Workers
 
-  @extract_processor "native-extraction"
-  @processor_version "fixture-contract-1"
-  @config_hash "sha256:fixture-contract-1"
-
   @spec discover_and_enqueue(
           Ecto.UUID.t(),
           Ecto.UUID.t(),
@@ -260,41 +256,255 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
   end
 
   @spec extract(Ecto.UUID.t()) :: :ok | {:error, term()}
-  def extract(source_version_id) do
+  def extract(source_version_id, attempt \\ 1) do
     version = Ash.load!(Ingestion.get_source_version!(source_version_id), :source_record)
 
     with {:ok, bytes} <- BrusselsWtf.Archive.get(version.object_key),
          actual when actual == version.sha256 <- BrusselsWtf.Digest.sha256(bytes),
-         {:ok, extracted} <- BrusselsWtf.Processors.extract(%{sha256: version.sha256}, bytes) do
-      run =
-        Ingestion.record_processing_run!(%{
-          source_version_id: version.id,
-          processor_name: @extract_processor,
-          processor_version: @processor_version,
-          config_hash: @config_hash,
-          status: :succeeded,
-          output: Map.put(extracted, "sha256", version.sha256)
-        })
-
-      %{processing_run_id: run.id, locator_url: version.source_record.origin_url}
-      |> Workers.NormalizeSource.new()
-      |> Oban.insert!()
-
-      :ok
+         {:ok, result} <-
+           BrusselsWtf.PDF.Processor.native(
+             %{sha256: version.sha256, media_type: version.media_type},
+             bytes
+           ),
+         {:ok, archived_text} <- BrusselsWtf.Archive.store(result.text) do
+      record_native_result(version, result, archived_text, attempt)
     else
       actual when is_binary(actual) ->
         reason = {:archived_hash_mismatch, version.sha256, actual}
-        record_extraction_failure(version, reason)
+        run = record_extraction_failure(version, reason)
+        record_failed_attempt(run, attempt, reason)
         {:error, reason}
 
       {:error, reason} ->
-        record_extraction_failure(version, reason)
+        run = record_extraction_failure(version, reason)
+        record_failed_attempt(run, attempt, reason)
         {:error, reason}
     end
   end
 
+  defp record_native_result(version, result, archived_text, attempt) do
+    metadata = BrusselsWtf.PDF.Processor.metadata()
+    completed_at = BrusselsWtf.Clock.utc_now()
+    started_at = DateTime.add(completed_at, -result.duration_ms, :millisecond)
+
+    run =
+      Ingestion.record_processing_run!(%{
+        source_version_id: version.id,
+        processor_role: :native_extraction,
+        processor_name: metadata.native_processor_name,
+        processor_version: metadata.native_processor_version,
+        config_hash: metadata.config_hash,
+        status: :succeeded,
+        output: extraction_summary(result, version.sha256),
+        tool_versions: result.tool_versions,
+        diagnostics: result.diagnostics,
+        quality_measurements: result.quality_measurements,
+        started_at: started_at,
+        completed_at: completed_at,
+        duration_ms: result.duration_ms
+      })
+
+    record_succeeded_attempt(run, attempt, result, started_at, completed_at)
+
+    native_artifact =
+      Ingestion.upsert_derived_artifact!(%{
+        source_version_id: version.id,
+        processing_run_id: run.id,
+        input_sha256: version.sha256,
+        output_sha256: archived_text.sha256,
+        processor_name: run.processor_name,
+        processor_version: run.processor_version,
+        config_hash: run.config_hash,
+        output_kind: "native-text",
+        object_key: archived_text.object_key,
+        media_type: "text/plain; charset=utf-8",
+        byte_size: byte_size(result.text),
+        schema_version: "derived-artifact-v1",
+        quality_measurements: result.quality_measurements
+      })
+
+    Ingestion.link_processing_run_artifact!(%{
+      processing_run_id: run.id,
+      derived_artifact_id: native_artifact.id,
+      role: :native_output
+    })
+
+    Ingestion.Observability.extraction_completed(
+      %{
+        source_version_id: version.id,
+        processing_run_id: run.id,
+        processor_role: :native_extraction,
+        status: :succeeded
+      },
+      result.duration_ms,
+      result.quality_measurements["rejected_pages"]
+    )
+
+    if result.quality_measurements["accepted"] do
+      enqueue_normalization(run, version.source_record.origin_url)
+    else
+      enqueue_ocr(version, run, native_artifact, result.quality_measurements)
+    end
+  end
+
+  defp enqueue_ocr(version, native_run, native_artifact, quality) do
+    metadata = BrusselsWtf.PDF.Processor.metadata()
+    limits = Application.fetch_env!(:brussels_wtf, :pdf_limits)
+
+    run =
+      Ingestion.record_processing_run!(%{
+        source_version_id: version.id,
+        processor_role: :ocr,
+        inputs: %{
+          "source_sha256" => version.sha256,
+          "native_run_id" => native_run.id,
+          "native_artifact_id" => native_artifact.id,
+          "review_case_id" => native_run.output["review_case_id"],
+          "pages" => quality["rejected_pages"],
+          "languages" => limits.ocr_languages,
+          "limits" => Map.new(limits, fn {key, value} -> {to_string(key), value} end)
+        },
+        processor_name: metadata.ocr_processor_name,
+        processor_version: metadata.ocr_processor_version,
+        config_hash: metadata.config_hash,
+        status: :queued,
+        output: %{}
+      })
+
+    Ingestion.Observability.ocr_routed(
+      %{source_version_id: version.id, processing_run_id: run.id, processor_role: :ocr},
+      length(quality["rejected_pages"])
+    )
+
+    %{processing_run_id: run.id}
+    |> Workers.OCRSource.new()
+    |> Oban.insert!()
+
+    :ok
+  end
+
+  defp enqueue_normalization(run, locator_url) do
+    %{processing_run_id: run.id, locator_url: locator_url}
+    |> Workers.NormalizeSource.new()
+    |> Oban.insert!()
+
+    :ok
+  end
+
+  @spec ocr(Ecto.UUID.t(), pos_integer()) :: :ok | {:error, term()}
+  def ocr(processing_run_id, attempt \\ 1) do
+    run =
+      Ash.load!(Ingestion.get_processing_run!(processing_run_id),
+        source_version: [:source_record]
+      )
+
+    version = run.source_version
+    pages = run.inputs["pages"]
+
+    result =
+      with {:ok, bytes} <- BrusselsWtf.Archive.get(version.object_key),
+           actual when actual == version.sha256 <- BrusselsWtf.Digest.sha256(bytes),
+           {:ok, extracted} <-
+             BrusselsWtf.PDF.Processor.ocr(
+               %{sha256: version.sha256, media_type: version.media_type},
+               bytes,
+               pages
+             ),
+           true <- extracted.quality_measurements["accepted"],
+           {:ok, archived_pdf} <- BrusselsWtf.Archive.store(extracted.searchable_pdf),
+           {:ok, archived_text} <- BrusselsWtf.Archive.store(extracted.text) do
+        complete_ocr(run, extracted, archived_pdf, archived_text, attempt)
+      else
+        false ->
+          {:error, {:quality_failure, %{stage: :ocr}}}
+
+        actual when is_binary(actual) ->
+          {:error, {:archived_hash_mismatch, version.sha256, actual}}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+
+    case result do
+      :ok ->
+        :ok
+
+      {:error, reason} = error ->
+        record_failed_attempt(run, attempt, reason)
+        error
+    end
+  end
+
+  defp complete_ocr(run, result, archived_pdf, archived_text, attempt) do
+    completed_at = BrusselsWtf.Clock.utc_now()
+    started_at = DateTime.add(completed_at, -result.duration_ms, :millisecond)
+
+    completed =
+      Ingestion.complete_processing_run!(run, %{
+        status: :succeeded,
+        output: extraction_summary(result, run.source_version.sha256),
+        tool_versions: result.tool_versions,
+        diagnostics: result.diagnostics,
+        quality_measurements: result.quality_measurements,
+        started_at: started_at,
+        completed_at: completed_at,
+        duration_ms: result.duration_ms
+      })
+
+    record_succeeded_attempt(completed, attempt, result, started_at, completed_at)
+
+    for {kind, archived, media_type} <- [
+          {"ocr-pdf", archived_pdf, "application/pdf"},
+          {"ocr-text", archived_text, "text/plain; charset=utf-8"}
+        ] do
+      artifact =
+        Ingestion.upsert_derived_artifact!(%{
+          source_version_id: run.source_version.id,
+          processing_run_id: completed.id,
+          input_sha256: run.source_version.sha256,
+          output_sha256: archived.sha256,
+          processor_name: completed.processor_name,
+          processor_version: completed.processor_version,
+          config_hash: completed.config_hash,
+          output_kind: kind,
+          object_key: archived.object_key,
+          media_type: media_type,
+          byte_size:
+            if(kind == "ocr-pdf",
+              do: byte_size(result.searchable_pdf),
+              else: byte_size(result.text)
+            ),
+          schema_version: "derived-artifact-v1",
+          quality_measurements: result.quality_measurements
+        })
+
+      Ingestion.link_processing_run_artifact!(%{
+        processing_run_id: completed.id,
+        derived_artifact_id: artifact.id,
+        role: if(kind == "ocr-pdf", do: :ocr_document, else: :ocr_output)
+      })
+    end
+
+    if review_case_id = completed.inputs["review_case_id"] do
+      BrusselsWtf.Review.complete_retry!(review_case_id)
+    end
+
+    Ingestion.Observability.extraction_completed(
+      %{
+        source_version_id: run.source_version.id,
+        processing_run_id: completed.id,
+        processor_role: :ocr,
+        status: :succeeded
+      },
+      result.duration_ms,
+      result.quality_measurements["rejected_pages"]
+    )
+
+    enqueue_normalization(completed, run.source_version.source_record.origin_url)
+  end
+
   @spec retry_extraction(Ecto.UUID.t()) :: :ok | {:error, term()}
-  def retry_extraction(processing_run_id) do
+  def retry_extraction(processing_run_id, attempt \\ 1) do
     run =
       Ash.load!(Ingestion.get_processing_run!(processing_run_id),
         source_version: [:source_record]
@@ -306,28 +516,12 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
       with {:ok, bytes} <- BrusselsWtf.Archive.get(version.object_key),
            actual when actual == version.sha256 <- BrusselsWtf.Digest.sha256(bytes),
            {:ok, extracted} <-
-             BrusselsWtf.Processors.extract(%{sha256: version.sha256}, bytes) do
-        completed =
-          Ingestion.complete_processing_run!(run, %{
-            status: :succeeded,
-            output:
-              run.output
-              |> Map.merge(extracted)
-              |> Map.put("sha256", version.sha256)
-          })
-
-        if review_case_id = run.output["review_case_id"] do
-          BrusselsWtf.Review.complete_retry!(review_case_id)
-        end
-
-        %{
-          processing_run_id: completed.id,
-          locator_url: version.source_record.origin_url
-        }
-        |> Workers.NormalizeSource.new()
-        |> Oban.insert!()
-
-        :ok
+             BrusselsWtf.PDF.Processor.native(
+               %{sha256: version.sha256, media_type: version.media_type},
+               bytes
+             ),
+           {:ok, archived_text} <- BrusselsWtf.Archive.store(extracted.text) do
+        complete_review_extraction(run, extracted, archived_text, attempt)
       else
         actual when is_binary(actual) ->
           {:error, {:archived_hash_mismatch, version.sha256, actual}}
@@ -341,12 +535,65 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         :ok
 
       {:error, reason} = error ->
-        Ingestion.complete_processing_run!(run, %{
-          status: :failed,
-          output: Map.put(run.output || %{}, "error", safe_error(reason))
-        })
-
+        classification = Ingestion.ProcessingFailure.classify(reason)
+        record_failed_attempt(run, attempt, reason)
+        fail_processing_run(run, Ingestion.ProcessingFailure.terminal(classification))
         error
+    end
+  end
+
+  defp complete_review_extraction(run, result, archived_text, attempt) do
+    completed_at = BrusselsWtf.Clock.utc_now()
+
+    completed =
+      Ingestion.complete_processing_run!(run, %{
+        status: :succeeded,
+        output:
+          extraction_summary(result, run.source_version.sha256)
+          |> Map.merge(
+            Map.take(run.output || %{}, ["review_action_id", "review_case_id", "note"])
+          ),
+        tool_versions: result.tool_versions,
+        diagnostics: result.diagnostics,
+        quality_measurements: result.quality_measurements,
+        started_at: DateTime.add(completed_at, -result.duration_ms, :millisecond),
+        completed_at: completed_at,
+        duration_ms: result.duration_ms
+      })
+
+    record_succeeded_attempt(completed, attempt, result, completed.started_at, completed_at)
+
+    artifact =
+      Ingestion.upsert_derived_artifact!(%{
+        source_version_id: run.source_version.id,
+        processing_run_id: completed.id,
+        input_sha256: run.source_version.sha256,
+        output_sha256: archived_text.sha256,
+        processor_name: completed.processor_name,
+        processor_version: completed.processor_version,
+        config_hash: completed.config_hash,
+        output_kind: "native-text",
+        object_key: archived_text.object_key,
+        media_type: "text/plain; charset=utf-8",
+        byte_size: byte_size(result.text),
+        schema_version: "derived-artifact-v1",
+        quality_measurements: result.quality_measurements
+      })
+
+    Ingestion.link_processing_run_artifact!(%{
+      processing_run_id: completed.id,
+      derived_artifact_id: artifact.id,
+      role: :native_output
+    })
+
+    if result.quality_measurements["accepted"] do
+      if review_case_id = completed.output["review_case_id"] do
+        BrusselsWtf.Review.complete_retry!(review_case_id)
+      end
+
+      enqueue_normalization(completed, run.source_version.source_record.origin_url)
+    else
+      enqueue_ocr(run.source_version, completed, artifact, result.quality_measurements)
     end
   end
 
@@ -359,7 +606,14 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
 
     version = run.source_version
     source_record = version.source_record
-    {:ok, normalized} = BrusselsWtf.Processors.normalize(run.output)
+    artifact = accepted_text_artifact!(Ash.load!(run, :derived_artifacts))
+    {:ok, text} = BrusselsWtf.Archive.get(artifact.object_key)
+
+    if BrusselsWtf.Digest.sha256(text) != artifact.output_sha256 do
+      raise "derived extraction artifact checksum mismatch"
+    end
+
+    {:ok, normalized} = BrusselsWtf.Processors.normalize(Map.put(run.output, "text", text))
 
     meeting =
       Council.upsert_meeting!(%{
@@ -730,7 +984,17 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
   end
 
   defp processed?(version) do
-    version |> Ash.load!(:processing_runs) |> Map.fetch!(:processing_runs) |> Enum.any?()
+    metadata = BrusselsWtf.PDF.Processor.metadata()
+
+    version
+    |> Ash.load!(:processing_runs)
+    |> Map.fetch!(:processing_runs)
+    |> Enum.any?(fn run ->
+      run.processor_role == :native_extraction and
+        run.processor_name == metadata.native_processor_name and
+        run.processor_version == metadata.native_processor_version and
+        run.config_hash == metadata.config_hash
+    end)
   end
 
   defp scheduled_check_key(check_key, locator_id), do: "#{check_key}:locator:#{locator_id}"
@@ -819,19 +1083,88 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
   defp safe_error(reason),
     do: reason |> inspect(limit: 20, printable_limit: 500) |> String.slice(0, 1_000)
 
+  defp record_succeeded_attempt(run, attempt, result, started_at, completed_at) do
+    Ingestion.record_processing_attempt!(%{
+      processing_run_id: run.id,
+      attempt: attempt,
+      status: :succeeded,
+      started_at: started_at,
+      completed_at: completed_at,
+      duration_ms: result.duration_ms,
+      diagnostics: result.diagnostics,
+      tool_versions: result.tool_versions,
+      quality_measurements: result.quality_measurements
+    })
+  end
+
+  defp record_failed_attempt(run, attempt, reason) do
+    classification = Ingestion.ProcessingFailure.classify(reason)
+    now = BrusselsWtf.Clock.utc_now()
+
+    Ingestion.record_processing_attempt!(%{
+      processing_run_id: run.id,
+      attempt: attempt,
+      status: :failed,
+      started_at: now,
+      completed_at: now,
+      duration_ms: 0,
+      failure_classification: Atom.to_string(classification),
+      diagnostics: %{"classification" => Atom.to_string(classification)}
+    })
+  end
+
+  defp extraction_summary(result, source_sha256) do
+    %{
+      "sha256" => source_sha256,
+      "page_count" => result.page_count,
+      "language_signals" => Map.get(result.output, "language_signals", %{}),
+      "quality_accepted" => result.quality_measurements["accepted"]
+    }
+  end
+
+  defp accepted_text_artifact!(run) do
+    kind = if run.processor_role == :ocr, do: "ocr-text", else: "native-text"
+
+    case Enum.filter(run.derived_artifacts, &(&1.output_kind == kind)) do
+      [artifact] -> artifact
+      _ -> raise "processing run has no unique accepted text artifact"
+    end
+  end
+
   defp record_extraction_failure(version, reason) do
     classification = BrusselsWtf.Ingestion.ProcessingFailure.classify(reason)
+    metadata = BrusselsWtf.PDF.Processor.metadata()
+    now = BrusselsWtf.Clock.utc_now()
 
     Ingestion.record_processing_run!(%{
       source_version_id: version.id,
-      processor_name: @extract_processor,
-      processor_version: @processor_version,
-      config_hash: @config_hash,
+      processor_role: :native_extraction,
+      processor_name: metadata.native_processor_name,
+      processor_version: metadata.native_processor_version,
+      config_hash: metadata.config_hash,
       status: :failed,
+      failure_classification: Atom.to_string(classification),
+      started_at: now,
+      completed_at: now,
+      duration_ms: 0,
+      diagnostics: %{"classification" => Atom.to_string(classification)},
       output: %{
         "classification" => Atom.to_string(classification),
         "error" => safe_error(reason)
       }
+    })
+  end
+
+  def fail_processing_run(run, classification) do
+    now = BrusselsWtf.Clock.utc_now()
+
+    Ingestion.complete_processing_run!(run, %{
+      status: :failed,
+      failure_classification: Atom.to_string(classification),
+      diagnostics: %{"classification" => Atom.to_string(classification)},
+      completed_at: now,
+      duration_ms: run.duration_ms || 0,
+      output: %{"classification" => Atom.to_string(classification)}
     })
   end
 

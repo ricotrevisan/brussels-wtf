@@ -82,11 +82,21 @@ defmodule BrusselsWtfWeb.Telemetry do
       sum("brussels_wtf.ingestion.retry.scheduled.count", tags: [:attempt]),
       last_value("brussels_wtf.ingestion.retry.scheduled.delay_seconds", tags: [:attempt]),
       sum("brussels_wtf.ingestion.review_case.created.count", tags: [:classification]),
+      sum("brussels_wtf.ingestion.extraction.stop.count", tags: [:processor_role, :status]),
+      summary("brussels_wtf.ingestion.extraction.stop.duration_ms", tags: [:processor_role]),
+      sum("brussels_wtf.ingestion.extraction.stop.rejected_pages", tags: [:processor_role]),
+      sum("brussels_wtf.ingestion.ocr.routed.count"),
+      sum("brussels_wtf.ingestion.ocr.routed.pages"),
+      sum("brussels_wtf.ingestion.processing.retry.count",
+        tags: [:processor_role, :classification]
+      ),
       sum("brussels_wtf.ingestion.adapter.unavailable.count", tags: [:commune_slug]),
       summary("brussels_wtf.ingestion.poll.stop.duration", unit: {:native, :millisecond}),
       summary("brussels_wtf.ingestion.poll.stop.queue_age", unit: :millisecond),
       last_value("brussels_wtf.ingestion.health.stale_communes"),
       last_value("brussels_wtf.ingestion.health.repeated_failures"),
+      last_value("brussels_wtf.ingestion.ocr.queue.backlog"),
+      last_value("brussels_wtf.ingestion.ocr.queue.oldest_age_ms", unit: :millisecond),
 
       # VM Metrics
       summary("vm.memory.total", unit: {:byte, :kilobyte}),
@@ -98,7 +108,8 @@ defmodule BrusselsWtfWeb.Telemetry do
 
   defp periodic_measurements do
     [
-      {BrusselsWtf.Ingestion.Observability, :measure_health, []}
+      {BrusselsWtf.Ingestion.Observability, :measure_health, []},
+      {BrusselsWtf.Ingestion.Observability, :measure_ocr_queue, []}
     ]
   end
 end

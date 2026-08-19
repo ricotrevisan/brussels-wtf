@@ -114,8 +114,11 @@ defmodule BrusselsWtf.ReviewInboxAndActionsTest do
       args: %{source_version_id: context.version.id, processing_run_id: retry_run_id}
     )
 
+    corrected_text =
+      "Corrected Conseil communal Gemeenteraad extraction with sufficient official proposal text"
+
     BrusselsWtf.Processors.Stub.put(context.version.sha256, %{
-      extract: %{"text" => "corrected extraction"}
+      extract: %{"text" => corrected_text}
     })
 
     assert :ok =
@@ -130,7 +133,10 @@ defmodule BrusselsWtf.ReviewInboxAndActionsTest do
     completed_retry =
       Enum.find(completed.source_version.processing_runs, &(&1.id == retry_run_id))
 
-    assert %{status: :succeeded, output: %{"text" => "corrected extraction"}} = completed_retry
+    assert %{status: :succeeded, output: %{"quality_accepted" => true}} = completed_retry
+    [artifact] = Ash.load!(completed_retry, :derived_artifacts).derived_artifacts
+    assert artifact.output_kind == "native-text"
+    assert BrusselsWtf.Archive.get(artifact.object_key) == {:ok, corrected_text}
     assert Ingestion.get_processing_run!(failed_run.id).status == :failed
 
     unchanged_version = Ingestion.get_source_version!(context.version.id)

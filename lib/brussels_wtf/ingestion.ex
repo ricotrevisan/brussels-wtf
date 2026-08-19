@@ -56,6 +56,14 @@ defmodule BrusselsWtf.Ingestion do
       define :upsert_derived_artifact, action: :upsert
     end
 
+    resource BrusselsWtf.Ingestion.ProcessingAttempt do
+      define :record_processing_attempt, action: :record
+    end
+
+    resource BrusselsWtf.Ingestion.ProcessingRunArtifact do
+      define :link_processing_run_artifact, action: :link
+    end
+
     resource BrusselsWtf.Ingestion.ProcessingRun do
       define :get_processing_run, action: :read, get_by: [:id]
       define :record_processing_run, action: :upsert

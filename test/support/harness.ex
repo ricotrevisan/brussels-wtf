@@ -6,7 +6,7 @@ defmodule BrusselsWtf.Test.Harness do
   alias BrusselsWtf.Ingestion
 
   @fixtures Path.expand("fixtures", __DIR__)
-  @queues [:poll, :fetch, :extract, :normalize, :publish]
+  @queues [:poll, :fetch, :extract, :ocr, :normalize, :publish]
 
   def load(name) do
     dir = Path.join(@fixtures, name)

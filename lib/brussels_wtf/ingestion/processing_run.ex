@@ -18,17 +18,38 @@ defmodule BrusselsWtf.Ingestion.ProcessingRun do
 
     update :complete do
       require_atomic? false
-      accept [:status, :output]
+      change BrusselsWtf.Ingestion.ProcessingRun.Changes.CompleteQueued
+
+      accept [
+        :status,
+        :output,
+        :tool_versions,
+        :diagnostics,
+        :quality_measurements,
+        :failure_classification,
+        :started_at,
+        :completed_at,
+        :duration_ms
+      ]
     end
 
     create :review_retry do
       accept [
         :source_version_id,
+        :processor_role,
+        :inputs,
         :processor_name,
         :processor_version,
         :config_hash,
         :status,
-        :output
+        :output,
+        :tool_versions,
+        :diagnostics,
+        :quality_measurements,
+        :failure_classification,
+        :started_at,
+        :completed_at,
+        :duration_ms
       ]
     end
 
@@ -37,11 +58,20 @@ defmodule BrusselsWtf.Ingestion.ProcessingRun do
 
       accept [
         :source_version_id,
+        :processor_role,
+        :inputs,
         :processor_name,
         :processor_version,
         :config_hash,
         :status,
-        :output
+        :output,
+        :tool_versions,
+        :diagnostics,
+        :quality_measurements,
+        :failure_classification,
+        :started_at,
+        :completed_at,
+        :duration_ms
       ]
 
       upsert? true
@@ -52,6 +82,22 @@ defmodule BrusselsWtf.Ingestion.ProcessingRun do
 
   attributes do
     uuid_v7_primary_key :id
+
+    attribute :processor_role, :atom do
+      allow_nil? false
+      public? true
+      default :native_extraction
+      constraints one_of: [:native_extraction, :ocr]
+    end
+
+    attribute :inputs, :map, allow_nil?: false, public?: true, default: %{}
+    attribute :tool_versions, :map, allow_nil?: false, public?: true, default: %{}
+    attribute :diagnostics, :map, allow_nil?: false, public?: true, default: %{}
+    attribute :quality_measurements, :map, allow_nil?: false, public?: true, default: %{}
+    attribute :failure_classification, :string, public?: true
+    attribute :started_at, :utc_datetime_usec, public?: true
+    attribute :completed_at, :utc_datetime_usec, public?: true
+    attribute :duration_ms, :integer, allow_nil?: false, public?: true, default: 0
 
     attribute :processor_name, :string do
       allow_nil? false
@@ -87,7 +133,15 @@ defmodule BrusselsWtf.Ingestion.ProcessingRun do
   end
 
   relationships do
-    has_many :derived_artifacts, BrusselsWtf.Ingestion.DerivedArtifact
+    has_many :originated_derived_artifacts, BrusselsWtf.Ingestion.DerivedArtifact
+    has_many :artifact_links, BrusselsWtf.Ingestion.ProcessingRunArtifact
+    has_many :attempts, BrusselsWtf.Ingestion.ProcessingAttempt
+
+    many_to_many :derived_artifacts, BrusselsWtf.Ingestion.DerivedArtifact do
+      through BrusselsWtf.Ingestion.ProcessingRunArtifact
+      source_attribute_on_join_resource :processing_run_id
+      destination_attribute_on_join_resource :derived_artifact_id
+    end
   end
 
   identities do

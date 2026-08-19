@@ -15,6 +15,8 @@ defmodule BrusselsWtf.Processors.Stub do
     Agent.update(__MODULE__, &Map.put(&1, sha256, outputs))
   end
 
+  def pdf_fixture(sha256, key), do: fetch(sha256, key)
+
   def put_locales(meeting_identifier, output)
       when is_binary(meeting_identifier) and is_map(output) do
     Agent.update(__MODULE__, &Map.put(&1, {:locales, meeting_identifier}, output))

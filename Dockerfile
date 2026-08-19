@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 ARG ELIXIR_VERSION=1.19.5
 ARG OTP_VERSION=28.5
-ARG DEBIAN_VERSION=bullseye-20260421-slim
+ARG DEBIAN_VERSION=bookworm-20260610-slim
 
 ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-${DEBIAN_VERSION}"
 ARG RUNNER_IMAGE="debian:${DEBIAN_VERSION}"
@@ -37,7 +37,10 @@ RUN mix release
 FROM ${RUNNER_IMAGE} AS runner
 
 RUN apt-get update -y \
-  && apt-get install -y --no-install-recommends libstdc++6 openssl libncurses5 locales ca-certificates curl \
+  && apt-get install -y --no-install-recommends \
+    libstdc++6 openssl libncurses6 locales ca-certificates curl coreutils util-linux \
+    poppler-utils ocrmypdf tesseract-ocr tesseract-ocr-fra tesseract-ocr-nld \
+    tesseract-ocr-osd qpdf ghostscript \
   && rm -rf /var/lib/apt/lists/*
 
 RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && locale-gen
@@ -55,4 +58,4 @@ USER nobody
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD curl --fail --silent --show-error "http://127.0.0.1:${PORT}/health/ready" || exit 1
-CMD ["sh", "-c", "/app/bin/migrate && /app/bin/validate && /app/bin/server"]
+CMD ["sh", "-c", "case ${PROCESS_ROLE:-app} in app) /app/bin/migrate && /app/bin/validate && /app/bin/server ;; ocr) /app/bin/validate && /app/bin/ocr_worker ;; *) echo invalid-process-role >&2; exit 64 ;; esac"]
