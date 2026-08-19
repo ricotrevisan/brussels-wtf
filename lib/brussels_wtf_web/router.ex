@@ -46,7 +46,8 @@ defmodule BrusselsWtfWeb.Router do
     dstar("/cases/:id", ReviewCasePage)
     post "/cases/:case_id/actions/:action", ReviewActionController, :create
     post "/cases/:case_id/notes", ReviewNoteController, :create
-    get "/artifacts/:id", ReviewArtifactController, :show
+    get "/artifacts/source-versions/:id", ReviewArtifactController, :source_version
+    get "/artifacts/derived/:id", ReviewArtifactController, :derived_artifact
   end
 
   if Application.compile_env(:brussels_wtf, :dev_routes) do

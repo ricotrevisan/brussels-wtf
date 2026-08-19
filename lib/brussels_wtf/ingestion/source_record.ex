@@ -22,6 +22,10 @@ defmodule BrusselsWtf.Ingestion.SourceRecord do
       upsert_fields []
     end
 
+    update :reclassify do
+      accept [:role]
+    end
+
     update :link_meeting do
       accept [:council_meeting_id]
     end

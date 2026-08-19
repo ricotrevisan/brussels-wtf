@@ -46,17 +46,27 @@ defmodule BrusselsWtf.ReviewInboxAndActionsTest do
     assert {:ok, original_bytes} = BrusselsWtf.Archive.get(original_version.object_key)
 
     assert_raise Ash.Error.Forbidden, fn ->
-      Review.retry_review_case!(context.review_case, %{note: "try the corrected extractor"})
+      Review.retry_review_case!(context.review_case, %{
+        note: "try the corrected extractor",
+        processor_name: "native-extraction",
+        processor_version: "2",
+        config_hash: "corrected-fixture"
+      })
     end
 
     updated =
       Review.retry_review_case!(
         context.review_case,
-        %{note: "try the corrected extractor", details: %{"processor" => "native-extraction-v2"}},
+        %{
+          note: "try the corrected extractor",
+          processor_name: "native-extraction",
+          processor_version: "2",
+          config_hash: "corrected-fixture"
+        },
         actor: actor
       )
 
-    assert updated.status == :resolved
+    assert updated.status == :open
     assert updated.disposition == :retry_requested
 
     detail = Review.get_review_case!(updated.id, actor: actor)
@@ -70,7 +80,7 @@ defmodule BrusselsWtf.ReviewInboxAndActionsTest do
              }
            ] = detail.actions
 
-    assert [%{id: retry_run_id, processor_name: "review-retry", status: :queued}] =
+    assert [%{id: retry_run_id, processor_name: "native-extraction", status: :queued}] =
              detail.source_version.processing_runs
 
     assert_enqueued(
@@ -89,6 +99,7 @@ defmodule BrusselsWtf.ReviewInboxAndActionsTest do
              })
 
     completed = Review.get_review_case!(updated.id, actor: actor)
+    assert completed.status == :resolved
 
     assert [%{status: :succeeded, output: %{"text" => "corrected extraction"}}] =
              completed.source_version.processing_runs
@@ -110,15 +121,10 @@ defmodule BrusselsWtf.ReviewInboxAndActionsTest do
     ]
 
     for {operation, disposition, effect} <- expectations do
-      %{review_case: review_case} = build_case!(generation: Atom.to_string(disposition))
+      context = build_case!(generation: Atom.to_string(disposition))
+      inputs = action_inputs(operation, context)
 
-      updated =
-        apply(Review, operation, [
-          review_case,
-          %{note: "reviewed", details: %{"reason" => "fixture"}},
-          [actor: actor]
-        ])
-
+      updated = apply(Review, operation, [context.review_case, inputs, [actor: actor]])
       detail = Review.get_review_case!(updated.id, actor: actor)
 
       assert updated.disposition == disposition
@@ -128,8 +134,56 @@ defmodule BrusselsWtf.ReviewInboxAndActionsTest do
         :domain_revision -> assert [%{actor_id: "rico", note: "reviewed"}] = detail.revisions
         :exclusion -> assert [%{actor_id: "rico", reason: "reviewed"}] = detail.exclusions
       end
+
+      assert_domain_effect(operation, updated, context)
+
+      if operation == :mark_review_case_unsupported! do
+        assert_raise Ash.Error.Invalid, fn ->
+          Review.retry_review_case!(
+            updated,
+            %{
+              note: "should not retry",
+              processor_name: "native-extraction",
+              processor_version: "3",
+              config_hash: "excluded"
+            },
+            actor: actor
+          )
+        end
+      end
     end
   end
+
+  defp action_inputs(:reclassify_review_case!, _context),
+    do: %{note: "reviewed", classification: :minutes}
+
+  defp action_inputs(:relink_review_case!, context),
+    do: %{
+      note: "reviewed",
+      target_record_id: context.meeting.id,
+      target_record_type: "council_meeting"
+    }
+
+  defp action_inputs(:correct_review_case!, _context),
+    do: %{note: "reviewed", corrected_content: %{"title" => "Corrected title"}}
+
+  defp action_inputs(:mark_review_case_unsupported!, _context),
+    do: %{note: "reviewed", reason_code: "unsupported-media"}
+
+  defp assert_domain_effect(:reclassify_review_case!, _updated, context) do
+    assert Ingestion.get_source_record!(context.record.id).role == :minutes
+  end
+
+  defp assert_domain_effect(:relink_review_case!, _updated, context) do
+    assert Ingestion.get_source_record!(context.record.id).council_meeting_id ==
+             context.meeting.id
+  end
+
+  defp assert_domain_effect(:correct_review_case!, updated, _context) do
+    assert updated.normalized_content == %{"title" => "Corrected title"}
+  end
+
+  defp assert_domain_effect(:mark_review_case_unsupported!, _updated, _context), do: :ok
 
   defp build_case!(overrides \\ []) do
     slug = Keyword.get(overrides, :commune_slug, "ixelles")
@@ -141,6 +195,13 @@ defmodule BrusselsWtf.ReviewInboxAndActionsTest do
         slug: slug,
         name: String.capitalize(slug),
         index_url: "https://example.test/#{slug}/index"
+      })
+
+    meeting =
+      BrusselsWtf.Council.upsert_meeting!(%{
+        commune_id: commune.id,
+        municipal_identifier: "review-target",
+        scheduled_on: ~D[2026-08-30]
       })
 
     now = BrusselsWtf.Clock.utc_now()
@@ -184,6 +245,13 @@ defmodule BrusselsWtf.ReviewInboxAndActionsTest do
         related_evidence: %{"location" => "page 1"}
       })
 
-    %{commune: commune, record: record, version: version, review_case: review_case, bytes: bytes}
+    %{
+      commune: commune,
+      meeting: meeting,
+      record: record,
+      version: version,
+      review_case: review_case,
+      bytes: bytes
+    }
   end
 end

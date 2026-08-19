@@ -75,6 +75,10 @@ defmodule BrusselsWtf.Ingestion.ProcessingRun do
     end
   end
 
+  relationships do
+    has_many :derived_artifacts, BrusselsWtf.Ingestion.DerivedArtifact
+  end
+
   identities do
     identity :unique_processing, [
       :source_version_id,

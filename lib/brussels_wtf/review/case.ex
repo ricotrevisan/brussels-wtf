@@ -71,16 +71,41 @@ defmodule BrusselsWtf.Review.Case do
     update :retry do
       require_atomic? false
       argument :note, :string, allow_nil?: false
+      argument :processor_name, :string, allow_nil?: false
+      argument :processor_version, :string, allow_nil?: false
+      argument :config_hash, :string, allow_nil?: false
       argument :details, :map, allow_nil?: false, default: %{}
 
       change {BrusselsWtf.Review.Changes.AuditAction,
-              action: :retry, effect: :processing_generation, disposition: :retry_requested}
+              action: :retry,
+              effect: :processing_generation,
+              disposition: :retry_requested,
+              resolve?: false}
+    end
+
+    update :complete_retry do
+      require_atomic? false
+      change set_attribute(:status, :resolved)
     end
 
     update :reclassify do
       require_atomic? false
       argument :note, :string, allow_nil?: false
-      argument :details, :map, allow_nil?: false, default: %{}
+
+      argument :classification, :atom,
+        allow_nil?: false,
+        constraints: [
+          one_of: [
+            :index,
+            :agenda,
+            :project,
+            :supplement,
+            :addendum,
+            :minutes,
+            :register,
+            :recording
+          ]
+        ]
 
       change {BrusselsWtf.Review.Changes.AuditAction,
               action: :reclassify, effect: :domain_revision, disposition: :reclassified}
@@ -89,7 +114,8 @@ defmodule BrusselsWtf.Review.Case do
     update :relink do
       require_atomic? false
       argument :note, :string, allow_nil?: false
-      argument :details, :map, allow_nil?: false, default: %{}
+      argument :target_record_id, :uuid, allow_nil?: false
+      argument :target_record_type, :string, allow_nil?: false
 
       change {BrusselsWtf.Review.Changes.AuditAction,
               action: :relink, effect: :domain_revision, disposition: :relinked}
@@ -98,7 +124,7 @@ defmodule BrusselsWtf.Review.Case do
     update :correct do
       require_atomic? false
       argument :note, :string, allow_nil?: false
-      argument :details, :map, allow_nil?: false, default: %{}
+      argument :corrected_content, :map, allow_nil?: false
 
       change {BrusselsWtf.Review.Changes.AuditAction,
               action: :correct, effect: :domain_revision, disposition: :corrected}
@@ -107,7 +133,7 @@ defmodule BrusselsWtf.Review.Case do
     update :mark_unsupported do
       require_atomic? false
       argument :note, :string, allow_nil?: false
-      argument :details, :map, allow_nil?: false, default: %{}
+      argument :reason_code, :string, allow_nil?: false
 
       change {BrusselsWtf.Review.Changes.AuditAction,
               action: :mark_unsupported, effect: :exclusion, disposition: :unsupported}
@@ -117,6 +143,10 @@ defmodule BrusselsWtf.Review.Case do
   policies do
     policy action(:open) do
       authorize_if always()
+    end
+
+    policy action(:complete_retry) do
+      authorize_if actor_absent()
     end
 
     policy action_type(:read) do

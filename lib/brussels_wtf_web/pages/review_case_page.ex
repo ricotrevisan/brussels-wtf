@@ -32,29 +32,48 @@ defmodule BrusselsWtfWeb.ReviewCasePage do
           []
 
         {commune, record} ->
-          commune.id
-          |> Ingestion.list_locators!()
-          |> Enum.filter(&(&1.url == record.origin_url))
-          |> Enum.map(&Ash.load!(&1, :observations))
+          Ingestion.locator_history!(commune.id, record.origin_url)
       end
 
-    preview_url =
-      case review_case.source_version do
+    source_versions =
+      case review_case.source_record do
         %Ash.NotLoaded{} ->
-          nil
+          []
 
         nil ->
-          nil
+          []
 
-        version ->
-          "/review/artifacts/#{version.id}?token=#{BrusselsWtfWeb.ReviewPreview.sign(version.id)}"
+        record ->
+          Enum.sort_by(record.versions, & &1.first_retrieved_at, {:desc, DateTime})
       end
+
+    previews =
+      Map.new(source_versions, fn version ->
+        {version.id,
+         "/review/artifacts/source-versions/#{version.id}?token=#{BrusselsWtfWeb.ReviewPreview.sign_source_version(version.id)}"}
+      end)
+
+    derived_artifacts =
+      case review_case.source_version do
+        %Ash.NotLoaded{} -> []
+        nil -> []
+        version -> Enum.flat_map(version.processing_runs, & &1.derived_artifacts)
+      end
+
+    artifact_previews =
+      Map.new(derived_artifacts, fn artifact ->
+        {artifact.id,
+         "/review/artifacts/derived/#{artifact.id}?token=#{BrusselsWtfWeb.ReviewPreview.sign_derived_artifact(artifact.id)}"}
+      end)
 
     assign(conn,
       page_title: "Review case · brussels.wtf",
       review_case: review_case,
       locators: locators,
-      preview_url: preview_url,
+      source_versions: source_versions,
+      previews: previews,
+      derived_artifacts: derived_artifacts,
+      artifact_previews: artifact_previews,
       actions: @actions,
       csrf_token: Plug.CSRFProtection.get_csrf_token()
     )
@@ -92,9 +111,29 @@ defmodule BrusselsWtfWeb.ReviewCasePage do
           <dt>Media type</dt><dd>{source_value(@review_case, :media_type)}</dd>
           <dt>Byte size</dt><dd>{source_value(@review_case, :byte_size)}</dd>
         </dl>
-        <p :if={@preview_url} class="mt-4">
-          <a data-private-artifact href={@preview_url} class="underline">Open private source preview (expires in 60 seconds)</a>
-        </p>
+        <h3 class="mt-5 font-semibold">Source versions</h3>
+        <ul class="mt-2 space-y-2">
+          <li :for={version <- @source_versions}>
+            <time>{DateTime.to_iso8601(version.first_retrieved_at)}</time>
+            · SHA-256 <code class="break-all">{version.sha256}</code>
+            ·
+            <a data-private-artifact href={@previews[version.id]} class="underline">Private preview (expires in 60 seconds)</a>
+          </li>
+        </ul>
+        <h3 class="mt-5 font-semibold">Derived artifacts</h3>
+        <p :if={@derived_artifacts == []} class="mt-2">No derived artifacts are attached.</p>
+        <ul class="mt-2 space-y-2">
+          <li :for={artifact <- @derived_artifacts}>
+            {artifact.output_kind} · SHA-256 <code class="break-all">{artifact.output_sha256}</code>
+            · {artifact.media_type} · quality {inspect(artifact.quality_measurements)} ·
+            <a
+              data-private-artifact
+              data-artifact-kind="derived"
+              href={@artifact_previews[artifact.id]}
+              class="underline"
+            >Private artifact preview (expires in 60 seconds)</a>
+          </li>
+        </ul>
       </section>
 
       <section class="mt-8" aria-labelledby="locator-history">
@@ -144,8 +183,49 @@ defmodule BrusselsWtfWeb.ReviewCasePage do
               required
               class="textarea textarea-bordered mt-1 w-full"
             ></textarea></label>
-            <label class="mt-3 block">Instruction / target
-            <input name="details" class="input input-bordered mt-1 w-full" /></label>
+            <div :if={action == "retry"} class="mt-3 grid gap-2">
+              <label>Processor
+              <input
+                name="processor_name"
+                value="native-extraction"
+                required
+                class="input input-bordered w-full"
+              /></label>
+              <label>Processor version
+              <input name="processor_version" required class="input input-bordered w-full" /></label>
+              <label>Configuration hash
+              <input name="config_hash" required class="input input-bordered w-full" /></label>
+            </div>
+            <label :if={action == "reclassify"} class="mt-3 block">
+              Source classification
+              <select name="classification" required class="select select-bordered mt-1 w-full">
+                <option
+                  :for={
+                    role <- ~w(index agenda project supplement addendum minutes register recording)
+                  }
+                  value={role}
+                >
+                  {humanize(role)}
+                </option>
+              </select>
+            </label>
+            <div :if={action == "relink"} class="mt-3 grid gap-2">
+              <label>Target type
+              <select name="target_record_type" required class="select select-bordered w-full"><option value="council_meeting">
+                Council meeting
+              </option></select></label>
+              <label>Target UUID
+              <input name="target_record_id" required class="input input-bordered w-full" /></label>
+            </div>
+            <label :if={action == "correct"} class="mt-3 block">
+              Corrected normalized content (JSON) <textarea
+                name="corrected_content"
+                required
+                class="textarea textarea-bordered mt-1 w-full"
+              >{Jason.encode!(@review_case.normalized_content)}</textarea>
+            </label>
+            <label :if={action == "mark-unsupported"} class="mt-3 block">Reason code
+            <input name="reason_code" required class="input input-bordered mt-1 w-full" /></label>
             <button class="btn btn-sm mt-3" type="submit">{label}</button>
           </form>
         </div>

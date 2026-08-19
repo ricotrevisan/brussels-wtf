@@ -50,6 +50,7 @@ defmodule BrusselsWtf.Ingestion.SourceVersion do
 
     has_many :processing_runs, BrusselsWtf.Ingestion.ProcessingRun
     has_many :observations, BrusselsWtf.Ingestion.RetrievalObservation
+    has_many :derived_artifacts, BrusselsWtf.Ingestion.DerivedArtifact
   end
 
   identities do

@@ -48,17 +48,31 @@ defmodule BrusselsWtfWeb.ReviewInterfaceTest do
   } do
     detail = get(conn, ~p"/review/cases/#{context.review_case.id}")
     document = detail |> html_response(200) |> LazyHTML.from_document()
-    [href] = LazyHTML.attribute(document["a[data-private-artifact]"], "href")
+
+    [href] =
+      LazyHTML.attribute(document["a[data-private-artifact]:not([data-artifact-kind])"], "href")
 
     preview = get(recycle(detail), href)
     assert response(preview, 200) == context.bytes
     assert get_resp_header(preview, "cache-control") == ["private, no-store"]
     refute href =~ context.version.object_key
 
+    [derived_href] =
+      LazyHTML.attribute(document["a[data-artifact-kind='derived']"], "href")
+
+    derived_preview = get(recycle(detail), derived_href)
+    assert response(derived_preview, 200) == context.derived_bytes
+    refute derived_href =~ context.artifact.object_key
+
     anonymous = build_conn() |> get(href)
     assert redirected_to(anonymous) == ~p"/review/login"
 
-    denied = get(recycle(detail), ~p"/review/artifacts/#{context.version.id}?token=invalid")
+    denied =
+      get(
+        recycle(detail),
+        ~p"/review/artifacts/source-versions/#{context.version.id}?token=invalid"
+      )
+
     assert response(denied, 404) == "Not found"
   end
 
@@ -82,7 +96,9 @@ defmodule BrusselsWtfWeb.ReviewInterfaceTest do
       |> post(~p"/review/cases/#{context.review_case.id}/actions/retry", %{
         "_csrf_token" => csrf,
         "note" => "retry with corrected configuration",
-        "details" => "native-extraction-v2"
+        "processor_name" => "native-extraction",
+        "processor_version" => "2",
+        "config_hash" => "corrected-fixture"
       })
 
     assert redirected_to(acted) == ~p"/review/cases/#{context.review_case.id}"
@@ -170,18 +186,37 @@ defmodule BrusselsWtfWeb.ReviewInterfaceTest do
       redirect_chain: [%{"status" => 302, "url" => url}]
     })
 
-    Ingestion.record_processing_run!(%{
-      source_version_id: version.id,
-      processor_name: "native-extraction",
-      processor_version: "1",
-      config_hash: "fixture",
-      status: :failed,
-      output: %{
-        "text" => "broken extraction",
-        "quality" => %{"text_ratio" => 0.12},
-        "diagnostic" => "too little text"
-      }
-    })
+    run =
+      Ingestion.record_processing_run!(%{
+        source_version_id: version.id,
+        processor_name: "native-extraction",
+        processor_version: "1",
+        config_hash: "fixture",
+        status: :failed,
+        output: %{
+          "text" => "broken extraction",
+          "quality" => %{"text_ratio" => 0.12},
+          "diagnostic" => "too little text"
+        }
+      })
+
+    derived_bytes = "broken extraction artifact"
+    {:ok, derived_archive} = BrusselsWtf.Archive.store(derived_bytes)
+
+    artifact =
+      Ingestion.upsert_derived_artifact!(%{
+        source_version_id: version.id,
+        processing_run_id: run.id,
+        input_sha256: version.sha256,
+        output_sha256: derived_archive.sha256,
+        processor_name: run.processor_name,
+        processor_version: run.processor_version,
+        config_hash: run.config_hash,
+        output_kind: "extracted-text",
+        object_key: derived_archive.object_key,
+        media_type: "text/plain",
+        quality_measurements: %{"text_ratio" => 0.12}
+      })
 
     review_case =
       Review.open_review_case!(%{
@@ -208,7 +243,9 @@ defmodule BrusselsWtfWeb.ReviewInterfaceTest do
       version: version,
       review_case: review_case,
       url: url,
-      bytes: bytes
+      bytes: bytes,
+      artifact: artifact,
+      derived_bytes: derived_bytes
     }
   end
 end

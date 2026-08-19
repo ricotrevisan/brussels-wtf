@@ -211,8 +211,15 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         completed =
           Ingestion.complete_processing_run!(run, %{
             status: :succeeded,
-            output: Map.put(extracted, "sha256", version.sha256)
+            output:
+              run.output
+              |> Map.merge(extracted)
+              |> Map.put("sha256", version.sha256)
           })
+
+        if review_case_id = run.output["review_case_id"] do
+          BrusselsWtf.Review.complete_retry!(review_case_id)
+        end
 
         %{
           processing_run_id: completed.id,
@@ -237,7 +244,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
       {:error, reason} = error ->
         Ingestion.complete_processing_run!(run, %{
           status: :failed,
-          output: %{"error" => safe_error(reason)}
+          output: Map.put(run.output || %{}, "error", safe_error(reason))
         })
 
         error

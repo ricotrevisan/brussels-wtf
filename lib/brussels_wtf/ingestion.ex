@@ -24,9 +24,11 @@ defmodule BrusselsWtf.Ingestion do
     end
 
     resource BrusselsWtf.Ingestion.SourceRecord do
+      define :get_source_record, action: :read, get_by: [:id]
       define :get_source_record_by_origin, action: :by_origin, args: [:commune_id, :origin_url]
       define :upsert_source_record, action: :upsert
       define :link_source_record_to_meeting, action: :link_meeting
+      define :reclassify_source_record, action: :reclassify
     end
 
     resource BrusselsWtf.Ingestion.RetrievalObservation do
@@ -37,6 +39,11 @@ defmodule BrusselsWtf.Ingestion do
     resource BrusselsWtf.Ingestion.SourceVersion do
       define :get_source_version, action: :read, get_by: [:id]
       define :upsert_source_version, action: :upsert
+    end
+
+    resource BrusselsWtf.Ingestion.DerivedArtifact do
+      define :get_derived_artifact, action: :read, get_by: [:id]
+      define :upsert_derived_artifact, action: :upsert
     end
 
     resource BrusselsWtf.Ingestion.ProcessingRun do
@@ -66,6 +73,22 @@ defmodule BrusselsWtf.Ingestion do
 
   def check_locator(locator_id, poll_run_id, check_key) when is_binary(check_key) do
     BrusselsWtf.Ingestion.Pipeline.retrieve(locator_id, poll_run_id, check_key)
+  end
+
+  @doc "Returns exact locator contexts and ordered observations for one authoritative origin."
+  def locator_history!(commune_id, origin_url) when is_binary(origin_url) do
+    commune_id
+    |> list_locators!()
+    |> Enum.filter(&(&1.url == origin_url))
+    |> Enum.map(fn locator ->
+      Ash.load!(locator, :observations)
+      |> Map.update!(
+        :observations,
+        &Enum.sort_by(&1, fn observation ->
+          {observation.observed_at, observation.inserted_at, observation.id}
+        end)
+      )
+    end)
   end
 
   @doc "Returns immutable source history through Ash-backed domain reads."

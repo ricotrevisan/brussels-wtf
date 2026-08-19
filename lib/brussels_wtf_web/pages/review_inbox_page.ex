@@ -115,9 +115,16 @@ defmodule BrusselsWtfWeb.ReviewInboxPage do
                 )}</span>
               </td>
               <td>{commune_name(review_case)}</td>
+              <td>
+                <span>{review_case.affected_record_type}</span><br /><code class="text-xs">{review_case.affected_record_id}</code>
+              </td>
               <td><code>{review_case.processing_generation}</code></td>
               <td>{humanize(review_case.urgency)}</td>
-              <td>{humanize(review_case.status)}</td>
+              <td>
+                {humanize(review_case.status)}<br /><span class="text-sm">{humanize(
+                  review_case.disposition
+                )}</span>
+              </td>
               <td>{age(review_case.inserted_at)}</td>
             </tr>
           </tbody>

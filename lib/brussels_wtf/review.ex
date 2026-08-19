@@ -11,6 +11,7 @@ defmodule BrusselsWtf.Review do
     resource BrusselsWtf.Review.Case do
       define :open_review_case, action: :open
       define :retry_review_case, action: :retry
+      define :complete_review_retry, action: :complete_retry
       define :reclassify_review_case, action: :reclassify
       define :relink_review_case, action: :relink
       define :correct_review_case, action: :correct
@@ -34,6 +35,16 @@ defmodule BrusselsWtf.Review do
     end
   end
 
+  def complete_retry!(review_case_id) do
+    review_case =
+      Ash.get!(BrusselsWtf.Review.Case, review_case_id,
+        authorize?: false,
+        domain: __MODULE__
+      )
+
+    complete_review_retry!(review_case)
+  end
+
   def list_review_cases!(filters \\ %{}, opts \\ []) do
     BrusselsWtf.Review.Case
     |> Ash.Query.for_read(:inbox, filters)
@@ -47,12 +58,12 @@ defmodule BrusselsWtf.Review do
     |> Ash.Query.filter(id == ^id)
     |> Ash.Query.load([
       :commune,
-      :source_record,
       :actions,
       :notes,
       :revisions,
       :exclusions,
-      source_version: [:processing_runs, :observations]
+      source_record: [:versions],
+      source_version: [:observations, processing_runs: [:derived_artifacts]]
     ])
     |> Ash.read_one!(Keyword.merge([domain: __MODULE__], opts))
     |> case do
