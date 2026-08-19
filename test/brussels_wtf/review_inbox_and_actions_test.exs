@@ -179,6 +179,7 @@ defmodule BrusselsWtf.ReviewInboxAndActionsTest do
              Ash.load!(failed, :attempts).attempts
 
     assert failed.started_at == attempt_started
+    assert failed.completed_at == hd(Ash.load!(failed, :attempts).attempts).completed_at
     assert failed.duration_ms == attempt_duration
 
     cases = Review.list_review_cases!(%{kind: :extraction, status: :open}, actor: actor)

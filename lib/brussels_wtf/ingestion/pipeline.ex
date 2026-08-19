@@ -1349,7 +1349,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
       quality_measurements:
         if(latest_attempt, do: latest_attempt.quality_measurements, else: %{}),
       started_at: if(first_attempt, do: first_attempt.started_at, else: now),
-      completed_at: now,
+      completed_at: if(latest_attempt, do: latest_attempt.completed_at, else: now),
       duration_ms: Enum.reduce(attempts, 0, &(&1.duration_ms + &2)),
       output: %{"classification" => Atom.to_string(classification)}
     })
