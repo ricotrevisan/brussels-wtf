@@ -104,6 +104,7 @@ defmodule BrusselsWtf.Review.Changes.AuditAction do
     run =
       BrusselsWtf.Ingestion.create_review_processing_run!(%{
         source_version_id: version_id,
+        generation_key: "review:#{audit.id}",
         processor_name: Map.fetch!(details, "processor_name"),
         processor_version: Map.fetch!(details, "processor_version"),
         config_hash: Map.fetch!(details, "config_hash"),

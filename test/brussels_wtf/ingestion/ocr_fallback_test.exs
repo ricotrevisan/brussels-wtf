@@ -150,7 +150,13 @@ defmodule BrusselsWtf.Ingestion.OcrFallbackTest do
 
     assert [review_case] = cases
     assert review_case.related_evidence["processing_run_id"] == ocr.id
-    assert review_case.diagnostics == %{"classification" => "resource_limit"}
+    assert review_case.diagnostics["classification"] == "resource_limit"
+
+    assert get_in(review_case.diagnostics, ["processing_run", "failure_classification"]) ==
+             "resource_limit"
+
+    assert [%{"attempt" => 1, "failure_classification" => "resource_limit"}] =
+             get_in(review_case.diagnostics, ["processing_run", "attempts"])
 
     BrusselsWtf.Ingestion.ExtractionReview.open_for_version(version.id, :resource_limit, ocr.id)
 
@@ -159,6 +165,56 @@ defmodule BrusselsWtf.Ingestion.OcrFallbackTest do
       |> Enum.filter(&(&1.affected_record_id == version.id))
 
     assert length(cases) == 1
+  end
+
+  test "rejected OCR outputs remain immutable review evidence", %{version: version} do
+    {:ok, native} = BrusselsWtf.Processors.Stub.pdf_fixture(version.sha256, :extract)
+
+    BrusselsWtf.Processors.Stub.put(version.sha256, %{
+      extract: native,
+      ocr: %{
+        "page_texts" => ["", "", ""],
+        "searchable_pdf" => "%PDF rejected searchable fixture"
+      }
+    })
+
+    assert :ok = BrusselsWtf.Ingestion.Pipeline.extract(version.id)
+
+    [ocr] =
+      version.id
+      |> Ingestion.get_source_version!()
+      |> Ash.load!(:processing_runs)
+      |> Map.fetch!(:processing_runs)
+      |> Enum.filter(&(&1.processor_role == :ocr))
+
+    assert :ok = perform_job(BrusselsWtf.Workers.OCRSource, %{processing_run_id: ocr.id})
+
+    failed = Ingestion.get_processing_run!(ocr.id) |> Ash.load!(:derived_artifacts)
+    assert failed.status == :failed
+    assert failed.failure_classification == "repeated_quality_failure"
+
+    assert MapSet.new(Enum.map(failed.derived_artifacts, & &1.output_kind)) ==
+             MapSet.new(["ocr-pdf", "ocr-text"])
+
+    assert Enum.all?(failed.derived_artifacts, fn artifact ->
+             artifact.quality_measurements["accepted"] == false and
+               String.starts_with?(artifact.object_key, "derived/sha256/")
+           end)
+
+    [review_case] =
+      BrusselsWtf.Review.list_review_cases!(%{kind: :extraction, status: :open},
+        authorize?: false
+      )
+
+    assert get_in(review_case.diagnostics, ["processing_run", "quality_measurements", "accepted"]) ==
+             false
+
+    assert review_case.diagnostics
+           |> get_in(["processing_run", "artifacts"])
+           |> Enum.map(& &1["output_kind"])
+           |> MapSet.new() == MapSet.new(["ocr-pdf", "ocr-text"])
+
+    refute_enqueued(worker: BrusselsWtf.Workers.NormalizeSource)
   end
 
   test "a transient OCR attempt can complete the queued generation on retry", %{version: version} do

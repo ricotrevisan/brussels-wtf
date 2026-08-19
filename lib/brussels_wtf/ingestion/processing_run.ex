@@ -36,6 +36,7 @@ defmodule BrusselsWtf.Ingestion.ProcessingRun do
     create :review_retry do
       accept [
         :source_version_id,
+        :generation_key,
         :processor_role,
         :inputs,
         :processor_name,
@@ -58,6 +59,7 @@ defmodule BrusselsWtf.Ingestion.ProcessingRun do
 
       accept [
         :source_version_id,
+        :generation_key,
         :processor_role,
         :inputs,
         :processor_name,
@@ -82,6 +84,12 @@ defmodule BrusselsWtf.Ingestion.ProcessingRun do
 
   attributes do
     uuid_v7_primary_key :id
+
+    attribute :generation_key, :string do
+      allow_nil? false
+      public? true
+      default "automatic"
+    end
 
     attribute :processor_role, :atom do
       allow_nil? false
@@ -144,12 +152,65 @@ defmodule BrusselsWtf.Ingestion.ProcessingRun do
     end
   end
 
+  def review_context(run) do
+    run = Ash.load!(run, [:attempts, :derived_artifacts])
+
+    %{
+      id: run.id,
+      generation_key: run.generation_key,
+      processor_role: run.processor_role,
+      processor_name: run.processor_name,
+      processor_version: run.processor_version,
+      config_hash: run.config_hash,
+      status: run.status,
+      failure_classification: run.failure_classification,
+      tool_versions: run.tool_versions,
+      diagnostics: run.diagnostics,
+      quality_measurements: run.quality_measurements,
+      timing: %{
+        started_at: run.started_at,
+        completed_at: run.completed_at,
+        duration_ms: run.duration_ms
+      },
+      attempts:
+        run.attempts
+        |> Enum.sort_by(& &1.attempt)
+        |> Enum.map(fn attempt ->
+          %{
+            attempt: attempt.attempt,
+            status: attempt.status,
+            failure_classification: attempt.failure_classification,
+            diagnostics: attempt.diagnostics,
+            tool_versions: attempt.tool_versions,
+            quality_measurements: attempt.quality_measurements,
+            started_at: attempt.started_at,
+            completed_at: attempt.completed_at,
+            duration_ms: attempt.duration_ms
+          }
+        end),
+      artifacts:
+        Enum.map(run.derived_artifacts, fn artifact ->
+          %{
+            output_kind: artifact.output_kind,
+            output_sha256: artifact.output_sha256,
+            media_type: artifact.media_type,
+            byte_size: artifact.byte_size,
+            schema_version: artifact.schema_version,
+            quality_measurements: artifact.quality_measurements
+          }
+        end)
+    }
+    |> Jason.encode!()
+    |> Jason.decode!()
+  end
+
   identities do
     identity :unique_processing, [
       :source_version_id,
       :processor_name,
       :processor_version,
-      :config_hash
+      :config_hash,
+      :generation_key
     ]
   end
 end

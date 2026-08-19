@@ -7,6 +7,16 @@ defmodule BrusselsWtf.Ingestion.ExtractionReview do
     version = source_version_id |> Ingestion.get_source_version!() |> Ash.load!(:source_record)
     generation = processing_run_id
 
+    diagnostics =
+      if processing_run_id do
+        processing_run_id
+        |> Ingestion.get_processing_run!()
+        |> BrusselsWtf.Ingestion.ProcessingRun.review_context()
+        |> then(&%{"classification" => Atom.to_string(classification), "processing_run" => &1})
+      else
+        %{"classification" => Atom.to_string(classification)}
+      end
+
     review_case =
       BrusselsWtf.Review.open_review_case!(%{
         kind: :extraction,
@@ -18,7 +28,7 @@ defmodule BrusselsWtf.Ingestion.ExtractionReview do
         processing_generation: "extraction:#{generation}",
         urgency: :high,
         summary: summary(classification),
-        diagnostics: %{"classification" => Atom.to_string(classification)},
+        diagnostics: diagnostics,
         related_evidence: %{"processing_run_id" => processing_run_id}
       })
 
@@ -42,6 +52,7 @@ defmodule BrusselsWtf.Ingestion.ExtractionReview do
 
   defp summary(:resource_limit), do: "PDF processing exceeded a calibrated resource limit"
   defp summary(:authentication_failure), do: "The PDF is encrypted or requires authentication"
+  defp summary(:configuration_mismatch), do: "The configured processor changed before execution"
   defp summary(:processor_unavailable), do: "The configured PDF processor is unavailable"
   defp summary(:processor_failure), do: "The PDF processor failed repeatedly"
   defp summary(_classification), do: "PDF processing failed repeatedly and requires review"

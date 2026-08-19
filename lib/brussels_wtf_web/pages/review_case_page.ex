@@ -293,26 +293,16 @@ defmodule BrusselsWtfWeb.ReviewCasePage do
   defp diagnostics(review_case) do
     runs =
       case review_case.source_version do
-        %Ash.NotLoaded{} ->
-          []
-
-        nil ->
-          []
-
-        version ->
-          Enum.map(
-            version.processing_runs,
-            &%{
-              processor: &1.processor_name,
-              version: &1.processor_version,
-              status: &1.status,
-              output: &1.output
-            }
-          )
+        %Ash.NotLoaded{} -> []
+        nil -> []
+        version -> Enum.map(version.processing_runs, &processor_run_context/1)
       end
 
     %{case: review_case.diagnostics, processing_runs: runs}
   end
+
+  defp processor_run_context(run),
+    do: BrusselsWtf.Ingestion.ProcessingRun.review_context(run)
 
   defp humanize(nil), do: "—"
 

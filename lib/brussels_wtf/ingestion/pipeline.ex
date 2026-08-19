@@ -454,6 +454,26 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     enqueue_normalization(run, run.source_version.source_record.origin_url)
   end
 
+  defp verify_processor_provenance(run, role) do
+    metadata = BrusselsWtf.PDF.Processor.metadata()
+
+    expected =
+      case role do
+        :native_extraction ->
+          {metadata.native_processor_name, metadata.native_processor_version,
+           metadata.config_hash}
+
+        :ocr ->
+          {metadata.ocr_processor_name, metadata.ocr_processor_version, metadata.config_hash}
+      end
+
+    actual = {run.processor_name, run.processor_version, run.config_hash}
+
+    if actual == expected,
+      do: :ok,
+      else: {:error, {:processor_provenance_mismatch, role}}
+  end
+
   defp enqueue_ocr(version, native_run, native_artifact, quality) do
     metadata = BrusselsWtf.PDF.Processor.metadata()
     limits = Application.fetch_env!(:brussels_wtf, :pdf_limits)
@@ -462,6 +482,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
       Ingestion.record_processing_run!(%{
         source_version_id: version.id,
         processor_role: :ocr,
+        generation_key: "ocr:#{native_run.id}",
         inputs: %{
           "source_sha256" => version.sha256,
           "native_run_id" => native_run.id,
@@ -519,7 +540,8 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     pages = run.inputs["pages"]
 
     result =
-      with {:ok, bytes} <- BrusselsWtf.Archive.get(version.object_key),
+      with :ok <- verify_processor_provenance(run, :ocr),
+           {:ok, bytes} <- BrusselsWtf.Archive.get(version.object_key),
            actual when actual == version.sha256 <- BrusselsWtf.Digest.sha256(bytes),
            {:ok, extracted} <-
              BrusselsWtf.PDF.Processor.ocr(
@@ -527,10 +549,16 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
                bytes,
                pages
              ),
-           :ok <- ensure_accepted_quality(extracted.quality_measurements),
            {:ok, archived_pdf} <- BrusselsWtf.Archive.store(extracted.searchable_pdf, :derived),
            {:ok, archived_text} <- BrusselsWtf.Archive.store(extracted.text, :derived) do
-        complete_ocr(run, extracted, archived_pdf, archived_text, attempt)
+        case ensure_accepted_quality(extracted.quality_measurements) do
+          :ok ->
+            complete_ocr(run, extracted, archived_pdf, archived_text, attempt)
+
+          {:error, _reason} = error ->
+            persist_rejected_ocr_artifacts(run, extracted, archived_pdf, archived_text)
+            error
+        end
       else
         false ->
           {:error, {:quality_failure, %{stage: :ocr}}}
@@ -559,6 +587,62 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     end
   end
 
+  defp persist_rejected_ocr_artifacts(run, result, archived_pdf, archived_text) do
+    {:ok, notifications} =
+      BrusselsWtf.Repo.transaction(fn ->
+        persist_ocr_artifacts(run, result, archived_pdf, archived_text)
+      end)
+
+    Ash.Notifier.notify(notifications)
+    :ok
+  end
+
+  defp persist_ocr_artifacts(run, result, archived_pdf, archived_text) do
+    Enum.flat_map(
+      [
+        {"ocr-pdf", archived_pdf, "application/pdf"},
+        {"ocr-text", archived_text, "text/plain; charset=utf-8"}
+      ],
+      fn {kind, archived, media_type} ->
+        {artifact, created_notifications} =
+          Ingestion.upsert_derived_artifact!(
+            %{
+              source_version_id: run.source_version.id,
+              processing_run_id: run.id,
+              input_sha256: run.source_version.sha256,
+              output_sha256: archived.sha256,
+              processor_name: run.processor_name,
+              processor_version: run.processor_version,
+              config_hash: run.config_hash,
+              output_kind: kind,
+              object_key: archived.object_key,
+              media_type: media_type,
+              byte_size:
+                if(kind == "ocr-pdf",
+                  do: byte_size(result.searchable_pdf),
+                  else: byte_size(result.text)
+                ),
+              schema_version: "derived-artifact-v1",
+              quality_measurements: result.quality_measurements
+            },
+            return_notifications?: true
+          )
+
+        {_link, linked_notifications} =
+          Ingestion.link_processing_run_artifact!(
+            %{
+              processing_run_id: run.id,
+              derived_artifact_id: artifact.id,
+              role: if(kind == "ocr-pdf", do: :ocr_document, else: :ocr_output)
+            },
+            return_notifications?: true
+          )
+
+        created_notifications ++ linked_notifications
+      end
+    )
+  end
+
   defp complete_ocr(run, result, archived_pdf, archived_text, attempt) do
     completed_at = BrusselsWtf.Clock.utc_now()
     started_at = DateTime.add(completed_at, -result.duration_ms, :millisecond)
@@ -585,49 +669,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
           record_succeeded_attempt(completed, attempt, result, started_at, completed_at)
 
         artifact_notifications =
-          Enum.flat_map(
-            [
-              {"ocr-pdf", archived_pdf, "application/pdf"},
-              {"ocr-text", archived_text, "text/plain; charset=utf-8"}
-            ],
-            fn {kind, archived, media_type} ->
-              {artifact, created_notifications} =
-                Ingestion.upsert_derived_artifact!(
-                  %{
-                    source_version_id: run.source_version.id,
-                    processing_run_id: completed.id,
-                    input_sha256: run.source_version.sha256,
-                    output_sha256: archived.sha256,
-                    processor_name: completed.processor_name,
-                    processor_version: completed.processor_version,
-                    config_hash: completed.config_hash,
-                    output_kind: kind,
-                    object_key: archived.object_key,
-                    media_type: media_type,
-                    byte_size:
-                      if(kind == "ocr-pdf",
-                        do: byte_size(result.searchable_pdf),
-                        else: byte_size(result.text)
-                      ),
-                    schema_version: "derived-artifact-v1",
-                    quality_measurements: result.quality_measurements
-                  },
-                  return_notifications?: true
-                )
-
-              {_link, linked_notifications} =
-                Ingestion.link_processing_run_artifact!(
-                  %{
-                    processing_run_id: completed.id,
-                    derived_artifact_id: artifact.id,
-                    role: if(kind == "ocr-pdf", do: :ocr_document, else: :ocr_output)
-                  },
-                  return_notifications?: true
-                )
-
-              created_notifications ++ linked_notifications
-            end
-          )
+          persist_ocr_artifacts(completed, result, archived_pdf, archived_text)
 
         review_notifications =
           if review_case_id = completed.inputs["review_case_id"] do
@@ -671,7 +713,8 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     version = run.source_version
 
     result =
-      with {:ok, bytes} <- BrusselsWtf.Archive.get(version.object_key),
+      with :ok <- verify_processor_provenance(run, :native_extraction),
+           {:ok, bytes} <- BrusselsWtf.Archive.get(version.object_key),
            actual when actual == version.sha256 <- BrusselsWtf.Digest.sha256(bytes),
            {:ok, extracted} <-
              BrusselsWtf.PDF.Processor.native(

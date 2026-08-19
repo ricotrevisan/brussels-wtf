@@ -105,7 +105,7 @@ defmodule BrusselsWtf.Review do
       :revisions,
       :exclusions,
       source_record: [:versions],
-      source_version: [:observations, processing_runs: [:derived_artifacts]]
+      source_version: [:observations, processing_runs: [:derived_artifacts, :attempts]]
     ])
     |> Ash.read_one!(Keyword.merge([domain: __MODULE__], opts))
     |> case do

@@ -14,7 +14,7 @@ The `pdf-extraction-v1` thresholds are explicit in `config/config.exs`:
 - control-character ratio no greater than 0.01;
 - replacement-character ratio no greater than 0.005.
 
-A single rejected page rejects native extraction for the document. Only rejected page numbers are sent to OCRmyPDF with Tesseract `fra+nld` and `--redo-ocr`; accepted pages outside that selected set are retained and are not re-OCRed. Normalization reads the checksum-verified accepted text artifact, never an unarchived processor response.
+A single rejected page rejects native extraction for the document. Only rejected page numbers are sent to OCRmyPDF with Tesseract `fra+nld` and `--redo-ocr`; accepted pages outside that selected set are retained and are not re-OCRed. OCR PDF/text outputs are archived before the quality decision, so rejected OCR remains private review evidence; normalization still reads only a checksum-verified accepted text artifact.
 
 ## Isolation and limits
 
@@ -29,7 +29,7 @@ The calibrated defaults are 25 MiB input, 500 pages, 120 seconds wall time, 90 C
 
 ## Failure and observability
 
-Poor native quality is routing, not a terminal failure. Invalid/malformed input, oversized input, and exhausted CPU/memory/wall limits are classified and converge on one private extraction review case per processing generation. Other executable failures retry at most three times. Reviewer retry appends a new generation and never mutates raw bytes or prior artifacts. Reviewers provide only a note; processor name, executable version, and configuration hash are derived from the deployed processor contract rather than accepted from form input. A terminal reviewer retry opens a distinct case keyed to that failed generation.
+Poor native quality is routing, not a terminal failure. Invalid/malformed input, oversized input, and exhausted CPU/memory/wall limits are classified and converge on one private extraction review case per processing generation. Other executable failures retry at most three times. Reviewer retry appends a generation keyed by its immutable audit action and never mutates raw bytes or prior artifacts, even when the processor/configuration identity is unchanged. Reviewers provide only a note; processor name, executable version, and configuration hash are derived from the deployed processor contract rather than accepted from form input, then verified again at execution. A terminal reviewer retry opens a distinct case keyed to that failed generation. Authenticated case diagnostics include safe run/attempt timing, tool versions, quality, and artifact hashes without archive object keys or source text.
 
 Safe telemetry covers page rejection counts, native/OCR duration, OCR routing, bounded retries, review-case creation, backlog, and oldest OCR queue age. Correlation identifiers include source version, processing run, and review case. Logs exclude object keys, source bytes/text, command output, endpoints, credentials, and private diagnostics.
 

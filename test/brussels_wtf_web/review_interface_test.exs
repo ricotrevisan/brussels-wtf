@@ -43,6 +43,11 @@ defmodule BrusselsWtfWeb.ReviewInterfaceTest do
     assert body =~ "text_ratio"
     assert body =~ "too little text"
     assert body =~ "page 1"
+    assert body =~ "fixture-poppler"
+    assert body =~ "invalid_pdf"
+    assert body =~ "rejected_pages"
+    assert body =~ "duration_ms"
+    assert body =~ "attempts"
     refute body =~ context.version.object_key
   end
 
@@ -230,12 +235,32 @@ defmodule BrusselsWtfWeb.ReviewInterfaceTest do
         processor_version: "1",
         config_hash: "fixture",
         status: :failed,
+        failure_classification: "invalid_content",
+        tool_versions: %{"pdfinfo" => "fixture-poppler"},
+        diagnostics: %{"kind" => "invalid_pdf", "detail" => "syntax"},
+        quality_measurements: %{"accepted" => false, "rejected_pages" => [1]},
+        started_at: now,
+        completed_at: now,
+        duration_ms: 17,
         output: %{
           "text" => "broken extraction",
           "quality" => %{"text_ratio" => 0.12},
           "diagnostic" => "too little text"
         }
       })
+
+    Ingestion.record_processing_attempt!(%{
+      processing_run_id: run.id,
+      attempt: 1,
+      status: :failed,
+      started_at: now,
+      completed_at: now,
+      duration_ms: 17,
+      failure_classification: "invalid_content",
+      diagnostics: %{"kind" => "invalid_pdf", "detail" => "syntax"},
+      tool_versions: %{"pdfinfo" => "fixture-poppler"},
+      quality_measurements: %{"accepted" => false, "rejected_pages" => [1]}
+    })
 
     derived_bytes = "broken extraction artifact"
     {:ok, derived_archive} = BrusselsWtf.Archive.store(derived_bytes)

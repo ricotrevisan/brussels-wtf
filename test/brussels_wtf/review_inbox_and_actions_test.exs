@@ -6,6 +6,21 @@ defmodule BrusselsWtf.ReviewInboxAndActionsTest do
   alias BrusselsWtf.Review
   alias BrusselsWtf.Review.Actor
 
+  defmodule ChangedPdfProcessor do
+    @behaviour BrusselsWtf.PDF.Processor
+    @impl true
+    defdelegate native(meta, bytes), to: BrusselsWtf.PDF.Stub
+    @impl true
+    defdelegate ocr(meta, bytes, pages), to: BrusselsWtf.PDF.Stub
+
+    @impl true
+    def metadata do
+      BrusselsWtf.PDF.Stub.metadata()
+      |> Map.put(:native_processor_version, "fixture-poppler-changed")
+      |> Map.put(:config_hash, "sha256:fixture-pdf-quality-changed")
+    end
+  end
+
   setup do
     BrusselsWtf.Archive.Memory.reset()
     BrusselsWtf.Processors.Stub.reset()
@@ -45,12 +60,14 @@ defmodule BrusselsWtf.ReviewInboxAndActionsTest do
     original_version = Ingestion.get_source_version!(context.version.id)
     assert {:ok, original_bytes} = BrusselsWtf.Archive.get(original_version.object_key)
 
+    metadata = BrusselsWtf.PDF.Processor.metadata()
+
     failed_run =
       Ingestion.record_processing_run!(%{
         source_version_id: context.version.id,
-        processor_name: "native-extraction",
-        processor_version: "1",
-        config_hash: "original-fixture",
+        processor_name: metadata.native_processor_name,
+        processor_version: metadata.native_processor_version,
+        config_hash: metadata.config_hash,
         status: :failed,
         output: %{"error" => "quality failure"}
       })
@@ -102,6 +119,8 @@ defmodule BrusselsWtf.ReviewInboxAndActionsTest do
 
     retry_run = Enum.find(detail.source_version.processing_runs, &(&1.status == :queued))
     assert %{id: retry_run_id, processor_name: "poppler-native-text"} = retry_run
+    assert retry_run.generation_key == "review:#{hd(detail.actions).id}"
+    assert retry_run.id != failed_run.id
 
     assert_enqueued(
       worker: BrusselsWtf.Workers.ExtractSource,
@@ -137,6 +156,46 @@ defmodule BrusselsWtf.ReviewInboxAndActionsTest do
     assert unchanged_version.sha256 == original_version.sha256
     assert unchanged_version.object_key == original_version.object_key
     assert BrusselsWtf.Archive.get(unchanged_version.object_key) == {:ok, original_bytes}
+  end
+
+  test "retry execution fails closed if deployed processor provenance changed", %{actor: actor} do
+    context = build_case!(generation: "provenance-race")
+    original_processor = Application.fetch_env!(:brussels_wtf, :pdf_processor)
+    on_exit(fn -> Application.put_env(:brussels_wtf, :pdf_processor, original_processor) end)
+
+    Review.retry_review_case!(
+      context.review_case,
+      %{note: "retry current processor"},
+      actor: actor
+    )
+
+    [run] =
+      context.version.id
+      |> Ingestion.get_source_version!()
+      |> Ash.load!(:processing_runs)
+      |> Map.fetch!(:processing_runs)
+
+    Application.put_env(:brussels_wtf, :pdf_processor, ChangedPdfProcessor)
+
+    assert :ok =
+             perform_job(
+               BrusselsWtf.Workers.ExtractSource,
+               %{source_version_id: context.version.id, processing_run_id: run.id},
+               attempt: 1
+             )
+
+    failed = Ingestion.get_processing_run!(run.id) |> Ash.load!([:attempts, :derived_artifacts])
+    assert failed.status == :failed
+    assert failed.failure_classification == "configuration_mismatch"
+    assert failed.derived_artifacts == []
+
+    assert [%{failure_classification: "configuration_mismatch", diagnostics: diagnostics}] =
+             failed.attempts
+
+    assert diagnostics["detail"] == %{
+             "kind" => "processor_provenance_mismatch",
+             "detail" => "native_extraction"
+           }
   end
 
   test "a terminal reviewer retry opens a case for the failed generation", %{actor: actor} do
