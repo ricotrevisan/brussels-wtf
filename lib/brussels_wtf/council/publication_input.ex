@@ -5,6 +5,7 @@ defmodule BrusselsWtf.Council.PublicationInput do
 
   def build(meeting) do
     %{
+      "commune_slug" => meeting.commune.slug,
       "meeting_identifier" => meeting.municipal_identifier,
       "scheduled_on" => Date.to_iso8601(meeting.scheduled_on),
       "items" =>
@@ -20,10 +21,18 @@ defmodule BrusselsWtf.Council.PublicationInput do
   def validate(%{"items" => items}) do
     failures =
       Enum.flat_map(items, fn item ->
-        case item["claims"] do
-          [] -> [error(:missing_claim, item["key"])]
-          claims -> Enum.flat_map(claims, &validate_claim(&1, item["key"]))
-        end
+        state_failures =
+          if item["procedural_state"] == "proposal" and item["outcome"] == "unknown",
+            do: [],
+            else: [error(:unsupported_publication_state, item["key"])]
+
+        claim_failures =
+          case item["claims"] do
+            [] -> [error(:missing_claim, item["key"])]
+            claims -> Enum.flat_map(claims, &validate_claim(&1, item["key"]))
+          end
+
+        state_failures ++ claim_failures
       end)
 
     if failures == [], do: :ok, else: {:error, {:publication_gate, failures}}
@@ -67,6 +76,8 @@ defmodule BrusselsWtf.Council.PublicationInput do
       "location" => evidence.location,
       "retrieved_at" => DateTime.to_iso8601(evidence.retrieved_at),
       "source_sha256" => evidence.source_version && evidence.source_version.sha256,
+      "source_origin_url" =>
+        evidence.source_version && evidence.source_version.source_record.origin_url,
       "synthetic" => evidence.synthetic
     }
   end
@@ -88,28 +99,75 @@ defmodule BrusselsWtf.Council.PublicationInput do
     end)
   end
 
+  defp validate_claim(%{"evidence" => []} = claim, item_key) do
+    [error(:missing_evidence, item_key, claim["key"])]
+  end
+
   defp validate_claim(claim, item_key) do
     if Enum.any?(claim["evidence"], &official_evidence?/1) do
       []
     else
-      [error(:missing_official_evidence, item_key, claim["key"])]
+      claim["evidence"]
+      |> Enum.flat_map(&evidence_failures(&1, item_key, claim["key"]))
+      |> Enum.uniq()
     end
   end
+
+  defp evidence_failures(evidence, item_key, claim_key) do
+    []
+    |> maybe_error(evidence["synthetic"], :synthetic_evidence, item_key, claim_key)
+    |> maybe_error(
+      not present?(evidence["excerpt"]),
+      :missing_evidence_excerpt,
+      item_key,
+      claim_key
+    )
+    |> maybe_error(
+      not present?(evidence["location"]),
+      :missing_evidence_location,
+      item_key,
+      claim_key
+    )
+    |> maybe_error(
+      not present?(evidence["source_sha256"]),
+      :missing_evidence_checksum,
+      item_key,
+      claim_key
+    )
+    |> maybe_error(not present?(evidence["citation_url"]), :missing_citation, item_key, claim_key)
+    |> maybe_error(
+      present?(evidence["citation_url"]) and not valid_citation?(evidence),
+      :unofficial_citation,
+      item_key,
+      claim_key
+    )
+  end
+
+  defp maybe_error(failures, true, code, item_key, claim_key),
+    do: failures ++ [error(code, item_key, claim_key)]
+
+  defp maybe_error(failures, false, _code, _item_key, _claim_key), do: failures
 
   defp official_evidence?(evidence) do
     not evidence["synthetic"] and present?(evidence["excerpt"]) and
       present?(evidence["location"]) and present?(evidence["source_sha256"]) and
-      valid_citation?(evidence["citation_url"])
+      valid_citation?(evidence)
   end
 
-  defp valid_citation?(url) when is_binary(url) do
-    case URI.parse(url) do
-      %URI{scheme: scheme, host: host} when scheme in @fetchable_schemes -> present?(host)
-      _ -> false
+  defp valid_citation?(evidence) do
+    citation = evidence["citation_url"]
+    origin = evidence["source_origin_url"]
+
+    with true <- is_binary(citation),
+         true <- citation == origin,
+         %URI{scheme: scheme, host: host} <- URI.parse(citation),
+         true <- scheme in @fetchable_schemes do
+      present?(host)
+    else
+      _other -> false
     end
   end
 
-  defp valid_citation?(_url), do: false
   defp present?(value) when is_binary(value), do: String.trim(value) != ""
   defp present?(_value), do: false
   defp item_key(item), do: item.authoritative_identifier || item.continuity_key

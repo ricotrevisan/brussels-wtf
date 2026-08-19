@@ -149,6 +149,15 @@ defmodule BrusselsWtf.Seeds.PublicTimeline do
     }
   ]
 
+  @doc "Publishes a synthetic page only when synthetic seeds are explicitly enabled."
+  def publish_for_seed!(page) do
+    unless Application.get_env(:brussels_wtf, :allow_synthetic_seeds, false) do
+      raise "synthetic public timeline seeds are disabled in this environment"
+    end
+
+    Ash.Seed.update!(page, %{publication_status: :published})
+  end
+
   @spec run!() :: :ok
   def run! do
     unless Application.get_env(:brussels_wtf, :allow_synthetic_seeds, false) do
@@ -249,6 +258,6 @@ defmodule BrusselsWtf.Seeds.PublicTimeline do
       })
     end)
 
-    Council.publish_meeting_page!(page)
+    publish_for_seed!(page)
   end
 end

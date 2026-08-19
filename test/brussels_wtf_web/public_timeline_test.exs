@@ -122,7 +122,7 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
       provenance: []
     })
 
-    BrusselsWtf.Council.publish_meeting_page!(page)
+    BrusselsWtf.Seeds.PublicTimeline.publish_for_seed!(page)
 
     response = get(conn, "/meetings/locale-gap/incomplete?lang=fr")
     html = html_response(response, 200)
@@ -216,7 +216,7 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
       })
     end
 
-    BrusselsWtf.Council.publish_meeting_page!(page)
+    BrusselsWtf.Seeds.PublicTimeline.publish_for_seed!(page)
 
     document =
       conn

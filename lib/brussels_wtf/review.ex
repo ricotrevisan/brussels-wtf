@@ -46,11 +46,20 @@ defmodule BrusselsWtf.Review do
     complete_review_retry!(review_case)
   end
 
-  def list_blocking_publication_cases!(meeting_id) do
+  def list_blocking_publication_cases!(meeting) do
+    affected_ids =
+      [meeting.id, meeting.meeting_page.id] ++
+        Enum.flat_map(meeting.agenda_items, fn item ->
+          [item.id] ++
+            Enum.flat_map(item.proposals, fn proposal ->
+              [proposal.id | Enum.map(proposal.evidence, & &1.id)]
+            end)
+        end)
+
     BrusselsWtf.Review.Case
     |> Ash.Query.filter(
       status == :open and kind in [:normalization, :evidence] and
-        source_record.council_meeting_id == ^meeting_id
+        (source_record.council_meeting_id == ^meeting.id or affected_record_id in ^affected_ids)
     )
     |> Ash.Query.sort(inserted_at: :asc, id: :asc)
     |> Ash.read!(authorize?: false, domain: __MODULE__)

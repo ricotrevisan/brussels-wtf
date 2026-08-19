@@ -3,19 +3,23 @@ defmodule BrusselsWtf.Processors.RecordedCoverage do
 
   @behaviour BrusselsWtf.Processors.Coverage
 
+  @expected_source_wording "Octroi d’une subvention de projet relative à une projection en plein air du film « La venue de l’avenir »."
+  @expected_proposal "Octroyer une subvention de 700,00 EUR et une aide non numéraire évaluée à 5.158,00 EUR à l’asbl Libération Films Animation."
+  @expected_citation "https://www.ixelles.be/uploads/conseil/projets/268.pdf"
+
   @page %{
     "fr" => %{
-      "title" => "Subvention proposée pour « Bruxelles fait son cinéma »",
+      "title" => "Subvention proposée pour une projection de « La venue de l’avenir »",
       "summary" =>
         "Le Conseil doit examiner une subvention à Libération Films Animation. L’issue reste inconnue."
     },
     "nl" => %{
-      "title" => "Voorgestelde subsidie voor ‘Bruxelles fait son cinéma’",
+      "title" => "Voorgestelde subsidie voor een vertoning van ‘La venue de l’avenir’",
       "summary" =>
         "De gemeenteraad moet een subsidie aan Libération Films Animation bespreken. De uitkomst is nog onbekend."
     },
     "en" => %{
-      "title" => "Proposed grant for ‘Bruxelles fait son cinéma’",
+      "title" => "Proposed grant for a screening of ‘La venue de l’avenir’",
       "summary" =>
         "The council is due to consider a grant to Libération Films Animation. The outcome remains unknown."
     }
@@ -23,21 +27,21 @@ defmodule BrusselsWtf.Processors.RecordedCoverage do
 
   @items %{
     "fr" => %{
-      "title" => "Subvention proposée pour « Bruxelles fait son cinéma »",
+      "title" => "Subvention proposée pour une projection de « La venue de l’avenir »",
       "summary" =>
         "Une subvention de 700,00 EUR et une aide non numéraire de 5.158,00 EUR sont proposées pour Libération Films Animation.",
       "proposal_summary" =>
         "Le Conseil doit examiner la subvention et l’aide proposées. L’issue reste inconnue."
     },
     "nl" => %{
-      "title" => "Voorgestelde subsidie voor ‘Bruxelles fait son cinéma’",
+      "title" => "Voorgestelde subsidie voor een vertoning van ‘La venue de l’avenir’",
       "summary" =>
         "Een subsidie van 700,00 EUR en niet-financiële steun van 5.158,00 EUR worden voorgesteld voor Libération Films Animation.",
       "proposal_summary" =>
         "De gemeenteraad moet de voorgestelde subsidie en steun bespreken. De uitkomst is nog onbekend."
     },
     "en" => %{
-      "title" => "Proposed grant for ‘Bruxelles fait son cinéma’",
+      "title" => "Proposed grant for a screening of ‘La venue de l’avenir’",
       "summary" =>
         "A grant of EUR 700.00 and non-cash support valued at EUR 5,158.00 are proposed for Libération Films Animation.",
       "proposal_summary" =>
@@ -46,8 +50,28 @@ defmodule BrusselsWtf.Processors.RecordedCoverage do
   }
 
   @impl true
-  def generate_fr(%{"meeting_identifier" => "268", "items" => [%{"key" => "4"} = item]} = input) do
-    {:ok, bundle(input, item, "fr")}
+  def generate_fr(
+        %{
+          "commune_slug" => "ixelles",
+          "meeting_identifier" => "268",
+          "items" => [
+            %{
+              "key" => "4",
+              "procedural_state" => "proposal",
+              "outcome" => "unknown",
+              "source_wording" => @expected_source_wording,
+              "claims" => [
+                %{"text" => @expected_proposal, "evidence" => evidence}
+              ]
+            } = item
+          ]
+        } = input
+      ) do
+    if Enum.any?(evidence, &(&1["citation_url"] == @expected_citation)) do
+      {:ok, bundle(input, item, "fr")}
+    else
+      {:error, :recorded_coverage_not_available}
+    end
   end
 
   def generate_fr(_input), do: {:error, :recorded_coverage_not_available}
@@ -58,7 +82,10 @@ defmodule BrusselsWtf.Processors.RecordedCoverage do
     {:ok,
      %{
        "meeting_identifier" => canonical["meeting_identifier"],
-       "page" => Map.fetch!(@page, locale),
+       "page" =>
+         @page
+         |> Map.fetch!(locale)
+         |> Map.put("claim_refs", item["claim_refs"]),
        "items" => %{
          "4" => %{
            "claim_refs" => item["claim_refs"],
@@ -87,7 +114,10 @@ defmodule BrusselsWtf.Processors.RecordedCoverage do
   defp bundle(input, item, locale) do
     %{
       "meeting_identifier" => input["meeting_identifier"],
-      "page" => Map.fetch!(@page, locale),
+      "page" =>
+        @page
+        |> Map.fetch!(locale)
+        |> Map.put("claim_refs", Enum.map(item["claims"], & &1["key"])),
       "items" => %{
         item["key"] => %{
           "claim_refs" => Enum.map(item["claims"], & &1["key"]),

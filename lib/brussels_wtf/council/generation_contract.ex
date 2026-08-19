@@ -7,8 +7,13 @@ defmodule BrusselsWtf.Council.GenerationContract do
     expected_items = MapSet.new(Enum.map(input["items"], & &1["key"]))
     actual_items = MapSet.new(Map.keys(Map.get(bundle, "items", %{})))
 
+    expected_page_claims =
+      input["items"]
+      |> Enum.flat_map(& &1["claims"])
+      |> MapSet.new(& &1["key"])
+
     failures =
-      validate_page(bundle["page"], locale) ++
+      validate_page(bundle["page"], locale, expected_page_claims) ++
         validate_item_keys(expected_items, actual_items) ++
         Enum.flat_map(input["items"], &validate_item(&1, bundle, locale))
 
@@ -38,16 +43,25 @@ defmodule BrusselsWtf.Council.GenerationContract do
   end
 
   defp validate_page(
-         %{"title" => title, "summary" => summary},
-         locale
+         %{"title" => title, "summary" => summary, "claim_refs" => claim_refs},
+         locale,
+         expected_claims
        )
-       when is_binary(title) and is_binary(summary) do
-    if Enum.all?([title, summary], &present?/1),
-      do: [],
-      else: [error(:blank_page_variant, nil, nil, locale)]
+       when is_binary(title) and is_binary(summary) and is_list(claim_refs) do
+    cond do
+      not Enum.all?([title, summary], &present?/1) ->
+        [error(:blank_page_variant, nil, nil, locale)]
+
+      MapSet.new(claim_refs) != expected_claims ->
+        [error(:unsupported_page_claim_reference, nil, nil, locale)]
+
+      true ->
+        []
+    end
   end
 
-  defp validate_page(_page, locale), do: [error(:missing_page_variant, nil, nil, locale)]
+  defp validate_page(_page, locale, _expected_claims),
+    do: [error(:missing_page_variant, nil, nil, locale)]
 
   defp validate_item(item, bundle, locale) do
     generated = get_in(bundle, ["items", item["key"]]) || %{}

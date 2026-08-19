@@ -1,15 +1,15 @@
 {
   "page": {
     "fr": {
-      "title": "Subvention proposée pour « Bruxelles fait son cinéma »",
+      "title": "Subvention proposée pour une projection de « La venue de l’avenir »",
       "summary": "Le Conseil doit examiner une subvention à Libération Films Animation. L’issue reste inconnue."
     },
     "nl": {
-      "title": "Voorgestelde subsidie voor ‘Bruxelles fait son cinéma’",
+      "title": "Voorgestelde subsidie voor een vertoning van ‘La venue de l’avenir’",
       "summary": "De gemeenteraad moet een subsidie aan Libération Films Animation bespreken. De uitkomst is nog onbekend."
     },
     "en": {
-      "title": "Proposed grant for ‘Bruxelles fait son cinéma’",
+      "title": "Proposed grant for a screening of ‘La venue de l’avenir’",
       "summary": "The council is due to consider a grant to Libération Films Animation. The outcome remains unknown."
     }
   },
@@ -20,17 +20,17 @@
       ],
       "variants": {
         "fr": {
-          "title": "Subvention proposée pour « Bruxelles fait son cinéma »",
+          "title": "Subvention proposée pour une projection de « La venue de l’avenir »",
           "summary": "Une subvention de 700,00 EUR et une aide non numéraire de 5.158,00 EUR sont proposées pour Libération Films Animation.",
           "proposal_summary": "Le Conseil doit examiner la subvention et l’aide proposées. L’issue reste inconnue."
         },
         "nl": {
-          "title": "Voorgestelde subsidie voor ‘Bruxelles fait son cinéma’",
+          "title": "Voorgestelde subsidie voor een vertoning van ‘La venue de l’avenir’",
           "summary": "Een subsidie van 700,00 EUR en niet-financiële steun van 5.158,00 EUR worden voorgesteld voor Libération Films Animation.",
           "proposal_summary": "De gemeenteraad moet de voorgestelde subsidie en steun bespreken. De uitkomst is nog onbekend."
         },
         "en": {
-          "title": "Proposed grant for ‘Bruxelles fait son cinéma’",
+          "title": "Proposed grant for a screening of ‘La venue de l’avenir’",
           "summary": "A grant of EUR 700.00 and non-cash support valued at EUR 5,158.00 are proposed for Libération Films Animation.",
           "proposal_summary": "The council is due to consider the proposed grant and support. The outcome remains unknown."
         }

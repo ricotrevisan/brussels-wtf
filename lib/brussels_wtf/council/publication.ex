@@ -5,6 +5,7 @@ defmodule BrusselsWtf.Council.Publication do
   alias BrusselsWtf.Council.CoverageExecution
   alias BrusselsWtf.Council.GenerationContract
   alias BrusselsWtf.Council.PublicationInput
+  alias BrusselsWtf.Council.Provenance
   alias BrusselsWtf.Processors.Coverage
 
   @locales ["fr", "nl", "en"]
@@ -60,19 +61,34 @@ defmodule BrusselsWtf.Council.Publication do
           %{ready?: true} ->
             now = BrusselsWtf.Clock.utc_now()
 
+            {_revision, revision_notifications} =
+              Council.record_publication_revision!(
+                %{
+                  meeting_page_id: fresh_meeting.meeting_page.id,
+                  publication_input_hash: input_hash,
+                  published_at: now,
+                  canonical_run_id: runs["fr"].id,
+                  nl_run_id: runs["nl"].id,
+                  en_run_id: runs["en"].id,
+                  content: output
+                },
+                return_notifications?: true
+              )
+
             {_page, publish_notifications} =
               Council.publish_meeting_page!(
                 fresh_meeting.meeting_page,
                 %{
                   revision_published_at: now,
                   publication_input_hash: input_hash,
+                  gate_input_hash: input_hash,
                   last_gate_failures: [],
                   gate_checked_at: now
                 },
                 return_notifications?: true
               )
 
-            variant_notifications ++ publish_notifications
+            variant_notifications ++ revision_notifications ++ publish_notifications
 
           %{ready?: false, failures: failures} ->
             BrusselsWtf.Repo.rollback({:publication_gate, failures})
@@ -113,7 +129,7 @@ defmodule BrusselsWtf.Council.Publication do
               locale: locale,
               title: page_variant["title"],
               summary: page_variant["summary"],
-              provenance: provenance(run, canonical)
+              provenance: Provenance.labels(run, canonical)
             },
             return_notifications?: true
           )
@@ -138,7 +154,7 @@ defmodule BrusselsWtf.Council.Publication do
                 title: variant["title"],
                 summary: variant["summary"],
                 proposal_summary: variant["proposal_summary"],
-                provenance: provenance(run, canonical)
+                provenance: Provenance.labels(run, canonical)
               },
               return_notifications?: true
             )
@@ -241,15 +257,14 @@ defmodule BrusselsWtf.Council.Publication do
     meeting_id
     |> Council.get_meeting!()
     |> Ash.load!([
+      :commune,
       :meeting_page,
-      agenda_items: [proposals: [:source_version, evidence: [:source_version]]]
+      agenda_items: [
+        proposals: [
+          source_version: [:source_record],
+          evidence: [source_version: [:source_record]]
+        ]
+      ]
     ])
   end
-
-  defp provenance(%{method: :ai_generation}, _canonical), do: [:ai_generated]
-
-  defp provenance(%{method: :machine_translation}, canonical),
-    do: Enum.uniq(provenance(canonical, canonical) ++ [:machine_translated])
-
-  defp provenance(%{method: :deterministic}, _canonical), do: []
 end

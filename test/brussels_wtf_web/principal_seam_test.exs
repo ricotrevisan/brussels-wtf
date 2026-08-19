@@ -137,8 +137,8 @@ defmodule BrusselsWtfWeb.PrincipalSeamTest do
     assert timeline =~ "#{scenario.expected.path}?lang=en#agenda-item-4"
 
     for {locale, title} <- [
-          {"fr", "Subvention proposée pour « Bruxelles fait son cinéma »"},
-          {"nl", "Voorgestelde subsidie voor ‘Bruxelles fait son cinéma’"},
+          {"fr", "Subvention proposée pour une projection de « La venue de l’avenir »"},
+          {"nl", "Voorgestelde subsidie voor een vertoning van ‘La venue de l’avenir’"},
           {"en", scenario.expected.title_en}
         ] do
       html =
@@ -310,7 +310,7 @@ replacement captured at the same locator"
     end)
 
     page = meeting |> Ash.load!(:meeting_page) |> Map.fetch!(:meeting_page)
-    BrusselsWtf.Council.publish_meeting_page!(page)
+    BrusselsWtf.Seeds.PublicTimeline.publish_for_seed!(page)
 
     html =
       build_conn()

@@ -58,12 +58,25 @@ defmodule BrusselsWtf.Council.MeetingPage do
     end
 
     update :publish do
+      require_atomic? false
+      argument :gate_input_hash, :string, allow_nil?: false
+
       accept [
         :revision_published_at,
         :publication_input_hash,
         :last_gate_failures,
         :gate_checked_at
       ]
+
+      validate fn changeset, _context ->
+        case BrusselsWtf.Council.PublicationGate.evaluate(
+               changeset.data.id,
+               Ash.Changeset.get_argument(changeset, :gate_input_hash)
+             ) do
+          %{ready?: true} -> :ok
+          %{ready?: false} -> {:error, "publication gate did not pass"}
+        end
+      end
 
       change set_attribute(:publication_status, :published)
     end
@@ -164,6 +177,7 @@ defmodule BrusselsWtf.Council.MeetingPage do
 
     has_many :locale_variants, BrusselsWtf.Council.LocaleVariant
     has_many :coverage_runs, BrusselsWtf.Council.CoverageRun
+    has_many :publication_revisions, BrusselsWtf.Council.PublicationRevision
   end
 
   identities do

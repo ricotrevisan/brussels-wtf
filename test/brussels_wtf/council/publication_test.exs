@@ -10,7 +10,11 @@ defmodule BrusselsWtf.Council.PublicationTest do
 
     @impl true
     def generate_fr(_input),
-      do: {:error, :provider_unavailable, %{"request_units" => 1}}
+      do:
+        {:error,
+         {:provider_unavailable,
+          %{retryable: true, stage: :canonical, private_message: "must not persist"}},
+         %{"request_units" => 1}}
 
     @impl true
     def translate(_canonical, _locale), do: {:error, :should_not_run}
@@ -70,6 +74,17 @@ defmodule BrusselsWtf.Council.PublicationTest do
                "locale" => "nl"
              }
            ]
+
+    assert {:error, _gate_error} =
+             Council.publish_meeting_page(page, %{
+               revision_published_at: BrusselsWtf.Clock.utc_now(),
+               publication_input_hash: page.publication_input_hash,
+               gate_input_hash: page.publication_input_hash,
+               last_gate_failures: [],
+               gate_checked_at: BrusselsWtf.Clock.utc_now()
+             })
+
+    assert Council.get_meeting_page!(page.id).publication_status == :draft
   end
 
   test "a missing page locale is reported without partial publication" do
@@ -99,7 +114,7 @@ defmodule BrusselsWtf.Council.PublicationTest do
     assert %{
              ready?: false,
              failures: [
-               %{code: :missing_official_evidence, item_key: "4", claim_key: claim_key}
+               %{code: :missing_evidence, item_key: "4", claim_key: claim_key}
              ]
            } = Council.publication_readiness!(page.id)
 
@@ -117,10 +132,9 @@ defmodule BrusselsWtf.Council.PublicationTest do
     BrusselsWtf.Processors.Stub.put_locales("268", unsupported)
     page = poll_and_page!()
 
-    assert %{
-             ready?: false,
-             failures: [%{code: :unsupported_claim_reference, item_key: "4"}]
-           } = Council.publication_readiness!(page.id)
+    assert %{ready?: false, failures: failures} = Council.publication_readiness!(page.id)
+    assert Enum.any?(failures, &(&1.code == :unsupported_page_claim_reference))
+    assert Enum.any?(failures, &(&1.code == :unsupported_claim_reference and &1.item_key == "4"))
 
     meeting = Council.get_ingested_meeting!("ixelles", "268")
     [item] = meeting.agenda_items
@@ -176,6 +190,15 @@ defmodule BrusselsWtf.Council.PublicationTest do
     after_run_ids = Council.list_locale_variants!(page.id) |> MapSet.new(& &1.coverage_run_id)
     assert MapSet.disjoint?(before_run_ids, after_run_ids)
     assert MapSet.size(after_run_ids) == 3
+
+    assert [first, second] = Council.list_publication_revisions!(page.id)
+    refute get_in(first.content, ["items", "4", "variants", "en", "title"]) =~ "SENTINEL"
+
+    assert get_in(second.content, ["items", "4", "variants", "en", "title"]) ==
+             "PUBLISHED-REVISION-SENTINEL"
+
+    assert MapSet.new([second.canonical_run_id, second.nl_run_id, second.en_run_id]) ==
+             after_run_ids
   end
 
   test "processor failures retain every execution and become actionable after bounded retry" do
@@ -203,8 +226,18 @@ defmodule BrusselsWtf.Council.PublicationTest do
     assert page.id
            |> Council.list_coverage_runs!()
            |> Enum.map(&{&1.status, &1.failure_details, &1.usage}) == [
-             {:failed, %{"classification" => "provider_unavailable"}, %{"request_units" => 1}},
-             {:failed, %{"classification" => "provider_unavailable"}, %{"request_units" => 1}}
+             {:failed,
+              %{
+                "classification" => "provider_unavailable",
+                "retryable" => true,
+                "stage" => "canonical"
+              }, %{"request_units" => 1}},
+             {:failed,
+              %{
+                "classification" => "provider_unavailable",
+                "retryable" => true,
+                "stage" => "canonical"
+              }, %{"request_units" => 1}}
            ]
 
     assert Council.get_meeting_page!(page.id).publication_status == :draft
@@ -226,18 +259,13 @@ defmodule BrusselsWtf.Council.PublicationTest do
 
     meeting = Council.get_ingested_meeting!("ixelles", "268")
 
-    history =
-      BrusselsWtf.Ingestion.source_history!(scenario.commune.id, scenario.sources.projects.url)
-
-    [version] = history.versions
+    [item] = meeting.agenda_items
 
     Review.open_review_case!(%{
       kind: :normalization,
       commune_id: scenario.commune.id,
-      affected_record_id: version.id,
-      affected_record_type: "source_version",
-      source_record_id: history.source_record.id,
-      source_version_id: version.id,
+      affected_record_id: item.id,
+      affected_record_type: "agenda_item",
       processing_generation: "blocking-normalization",
       urgency: :high,
       summary: "Normalization requires review"

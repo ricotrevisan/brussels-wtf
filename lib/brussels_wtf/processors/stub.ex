@@ -64,9 +64,20 @@ defmodule BrusselsWtf.Processors.Stub do
   end
 
   defp locale_bundle(output, meeting_identifier, locale) do
+    page_claim_refs =
+      output["items"]
+      |> Map.values()
+      |> Enum.flat_map(& &1["claim_refs"])
+      |> Enum.uniq()
+      |> Enum.sort()
+
     %{
       "meeting_identifier" => meeting_identifier,
-      "page" => get_in(output, ["page", locale]),
+      "page" =>
+        case get_in(output, ["page", locale]) do
+          nil -> nil
+          page -> Map.put(page, "claim_refs", page_claim_refs)
+        end,
       "items" =>
         Map.new(output["items"], fn {item_key, item} ->
           {item_key,

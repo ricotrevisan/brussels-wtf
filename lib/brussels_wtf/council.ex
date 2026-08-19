@@ -61,6 +61,11 @@ defmodule BrusselsWtf.Council do
       define :list_coverage_runs, action: :for_page, args: [:meeting_page_id]
     end
 
+    resource BrusselsWtf.Council.PublicationRevision do
+      define :record_publication_revision, action: :record
+      define :list_publication_revisions, action: :for_page, args: [:meeting_page_id]
+    end
+
     resource BrusselsWtf.Council.MeetingPage do
       define :generate_meeting_coverage,
         action: :generate_coverage,

@@ -11,7 +11,7 @@
 5. The named publication-gate action checks complete page and item variants, normalized claim references, official evidence and citations, applicable provenance, a coherent current run chain, and the absence of open normalization or evidence review cases for the meeting.
 6. The page becomes public only after the complete revision passes. No reviewer approval is required.
 
-The variant upserts and page publication happen in one database transaction. A failed or interrupted initial generation leaves a private draft. A failed later revision preserves the complete prior public revision. A complete later generation atomically replaces all locale variants and updates the published revision.
+The variant upserts and page publication happen in one database transaction. A failed or interrupted initial generation leaves a private draft. A failed later revision preserves the complete prior public revision. A complete later generation atomically replaces all locale variants and updates the published revision. Every successful publication also appends an immutable revision snapshot linked by foreign keys to the exact French, Dutch, and English coverage runs; those runs retain its normalized evidence input.
 
 ## Failures and retry
 
@@ -19,7 +19,12 @@ A gate failure preserves the last complete publication state, stores typed failu
 
 - `missing_page_variant`
 - `missing_coverage_variant`
-- `missing_official_evidence`
+- `missing_evidence`
+- `missing_citation`
+- `unofficial_citation`
+- `missing_evidence_excerpt`
+- `missing_evidence_location`
+- `missing_evidence_checksum`
 - `unsupported_claim_reference`
 - `missing_provenance`
 - `stale_generation`
@@ -29,4 +34,4 @@ Processor failures retain one coverage-run record per execution. Oban retries th
 
 ## Processor configuration
 
-Coverage generation is selected through the `:brussels_wtf, :coverage_processor` application configuration, independently of extraction and normalization. Production uses a deterministic recorded contract for the initial Ixelles proposal. Tests use a fixture-backed stub and make no paid or nondeterministic calls. A later benchmark may replace the provider through the same processor seam without changing the publication contract.
+Coverage generation is selected through the `:brussels_wtf, :coverage_processor` application configuration, independently of extraction and normalization. Production uses a deterministic recorded contract for the initial Ixelles proposal. That contract matches the commune, meeting, normalized wording, claim text, state, and official citation before returning its recorded copy; source drift fails closed instead of receiving stale prose. Tests use a fixture-backed stub and make no paid or nondeterministic calls. A later benchmark may replace the provider through the same processor seam without changing the publication contract.

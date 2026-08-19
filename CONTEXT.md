@@ -80,6 +80,10 @@ The council's documented final disposition of an agenda item, including approval
 
 The publication unit for one council meeting. It contains individually addressable coverage items and moves as a whole between `draft` and `published`. Upcoming coverage and later final outcomes update the same page while preserving dated revisions.
 
+## Publication revision
+
+An immutable dated snapshot of one complete meeting-page publication. It records the exact canonical and translated coverage runs plus the rendered content, so replacing the current variants never erases what readers previously saw or the evidence input retained by those runs.
+
 ## Coverage item
 
 A public explanation of one agenda item within a meeting page. It states whether the underlying material is a proposal or final decision and may link to a continuing dossier.

@@ -85,7 +85,7 @@ defmodule BrusselsWtf.Council.CoverageExecution do
           metadata,
           metadata.usage,
           duration_ms,
-          classify_failure(reason)
+          failure_details(reason)
         )
 
       {:error, reason, usage} when is_map(usage) ->
@@ -99,7 +99,7 @@ defmodule BrusselsWtf.Council.CoverageExecution do
           metadata,
           usage,
           duration_ms,
-          classify_failure(reason)
+          failure_details(reason)
         )
 
       _unexpected ->
@@ -113,7 +113,7 @@ defmodule BrusselsWtf.Council.CoverageExecution do
           metadata,
           metadata.usage,
           duration_ms,
-          "invalid_processor_response"
+          %{"classification" => "invalid_processor_response"}
         )
     end
   end
@@ -166,7 +166,7 @@ defmodule BrusselsWtf.Council.CoverageExecution do
          metadata,
          usage,
          duration_ms,
-         classification
+         failure_details
        ) do
     run =
       record_failure(
@@ -179,12 +179,16 @@ defmodule BrusselsWtf.Council.CoverageExecution do
         metadata,
         usage,
         duration_ms,
-        classification
+        failure_details
       )
 
     {:error,
      {:coverage_processor_failure,
-      %{run_id: run.id, classification: classification, locale: locale}}}
+      %{
+        run_id: run.id,
+        classification: failure_details["classification"],
+        locale: locale
+      }}}
   end
 
   defp record(
@@ -231,17 +235,15 @@ defmodule BrusselsWtf.Council.CoverageExecution do
          metadata,
          usage,
          duration,
-         classification
+         failure_details
        ) do
-    failure = %{"classification" => classification}
-
     Council.record_coverage_run!(%{
       meeting_page_id: page.id,
       parent_run_id: parent_run_id,
       operation: operation,
       locale: locale,
       input_hash: PublicationInput.hash(input),
-      output_hash: PublicationInput.hash(failure),
+      output_hash: PublicationInput.hash(failure_details),
       processor_name: metadata.processor_name,
       processor_version: metadata.processor_version,
       config_hash: metadata.config_hash,
@@ -253,9 +255,30 @@ defmodule BrusselsWtf.Council.CoverageExecution do
       output: %{},
       usage: usage,
       duration_ms: duration,
-      failure_details: failure
+      failure_details: failure_details
     })
   end
+
+  defp failure_details(reason) do
+    classification = classify_failure(reason)
+
+    safe_details =
+      case reason do
+        {_kind, details} when is_map(details) ->
+          details
+          |> Map.take([:retryable, "retryable", :http_status, "http_status", :stage, "stage"])
+          |> Map.new(fn {key, value} -> {to_string(key), safe_detail(value)} end)
+
+        _reason ->
+          %{}
+      end
+
+    Map.put(safe_details, "classification", classification)
+  end
+
+  defp safe_detail(value) when is_boolean(value) or is_integer(value), do: value
+  defp safe_detail(value) when is_atom(value), do: Atom.to_string(value)
+  defp safe_detail(_value), do: "redacted"
 
   defp classify_failure(reason) when is_atom(reason), do: Atom.to_string(reason)
   defp classify_failure({kind, _details}) when is_atom(kind), do: Atom.to_string(kind)
