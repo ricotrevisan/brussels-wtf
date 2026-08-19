@@ -4,7 +4,8 @@ defmodule BrusselsWtfWeb.ReviewArtifactController do
   def source_version(conn, %{"id" => id, "token" => token}) do
     with :ok <- BrusselsWtfWeb.ReviewPreview.verify(token, "source-version", id),
          {:ok, version} <- BrusselsWtf.Ingestion.get_source_version(id),
-         {:ok, bytes} <- BrusselsWtf.Archive.get(version.object_key) do
+         {:ok, bytes} <- BrusselsWtf.Archive.get(version.object_key),
+         true <- BrusselsWtf.Digest.sha256(bytes) == version.sha256 do
       private_response(conn, version.media_type, "source-#{version.sha256}", bytes)
     else
       _ -> send_resp(conn, 404, "Not found")
