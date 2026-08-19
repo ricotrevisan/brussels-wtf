@@ -223,20 +223,32 @@ defmodule BrusselsWtf.Council.PublicationTest do
     refute Council.list_locale_variants!(page.id) |> Enum.any?(&(&1.title == "BYPASS"))
   end
 
-  test "gate-ready pages require a matching immutable revision" do
+  test "gate-ready runs cannot publish live content that differs from its revision" do
     BrusselsWtf.Test.Harness.load("ixelles/proposal")
     page = poll_and_page!()
     staged_page = Council.stage_meeting_page_revision!(page)
+    [revision] = Council.list_publication_revisions!(page.id)
+    [english] = Council.list_locale_variants!(page.id) |> Enum.filter(&(&1.locale == "en"))
+
+    Council.upsert_locale_variant!(%{
+      meeting_page_id: page.id,
+      coverage_run_id: english.coverage_run_id,
+      locale: english.locale,
+      title: "UNRECORDED-CONTENT-BYPASS",
+      summary: english.summary,
+      provenance: english.provenance
+    })
 
     assert Council.evaluate_publication_gate!(page.id, page.publication_input_hash).ready?
 
     assert {:error, _error} =
              Council.publish_meeting_page(staged_page, %{
-               revision_published_at: DateTime.add(BrusselsWtf.Clock.utc_now(), 1, :second),
+               revision_published_at: revision.published_at,
                publication_input_hash: page.publication_input_hash,
                gate_input_hash: page.publication_input_hash,
                last_gate_failures: [],
-               gate_checked_at: BrusselsWtf.Clock.utc_now()
+               gate_checked_at: BrusselsWtf.Clock.utc_now(),
+               current_revision_id: revision.id
              })
 
     assert Council.get_meeting_page!(page.id).publication_status == :draft

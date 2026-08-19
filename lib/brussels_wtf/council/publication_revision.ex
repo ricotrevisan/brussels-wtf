@@ -86,22 +86,88 @@ defmodule BrusselsWtf.Council.PublicationRevision do
     revision =
       __MODULE__
       |> Ash.get!(revision_id, authorize?: false, domain: BrusselsWtf.Council)
+      |> Ash.load!([:canonical_run, :nl_run, :en_run])
 
     page =
       page_id
       |> BrusselsWtf.Council.get_meeting_page!()
-      |> Ash.load!(locale_variants: [:coverage_run])
+      |> Ash.load!([
+        :locale_variants,
+        council_meeting: [agenda_items: [:coverage_variants]]
+      ])
 
-    run_ids = Map.new(page.locale_variants, &{&1.locale, &1.coverage_run_id})
+    revision_runs = %{
+      "fr" => revision.canonical_run,
+      "nl" => revision.nl_run,
+      "en" => revision.en_run
+    }
 
     revision.meeting_page_id == page_id and revision.publication_input_hash == input_hash and
       is_struct(published_at, DateTime) and
       DateTime.compare(revision.published_at, published_at) == :eq and
-      run_ids == %{
-        "fr" => revision.canonical_run_id,
-        "nl" => revision.nl_run_id,
-        "en" => revision.en_run_id
-      }
+      variants_match_runs?(page, revision_runs) and
+      public_content(page) == revision_content(revision.content)
+  end
+
+  defp variants_match_runs?(page, runs) do
+    variants =
+      page.locale_variants ++
+        Enum.flat_map(page.council_meeting.agenda_items, & &1.coverage_variants)
+
+    canonical = runs["fr"]
+
+    Enum.all?(variants, fn variant ->
+      run = runs[variant.locale]
+
+      variant.coverage_run_id == run.id and
+        MapSet.new(variant.provenance) ==
+          MapSet.new(BrusselsWtf.Council.Provenance.labels(run, canonical))
+    end)
+  end
+
+  defp public_content(page) do
+    %{
+      "page" =>
+        Map.new(page.locale_variants, fn variant ->
+          {variant.locale, %{"title" => variant.title, "summary" => variant.summary}}
+        end),
+      "items" =>
+        Map.new(page.council_meeting.agenda_items, fn item ->
+          item_key = item.authoritative_identifier || item.continuity_key
+
+          {item_key,
+           %{
+             "variants" =>
+               Map.new(item.coverage_variants, fn variant ->
+                 {variant.locale,
+                  %{
+                    "title" => variant.title,
+                    "summary" => variant.summary,
+                    "proposal_summary" => variant.proposal_summary
+                  }}
+               end)
+           }}
+        end)
+    }
+  end
+
+  defp revision_content(content) do
+    %{
+      "page" =>
+        Map.new(content["page"], fn {locale, variant} ->
+          {locale, Map.take(variant, ["title", "summary"])}
+        end),
+      "items" =>
+        Map.new(content["items"], fn {item_key, item} ->
+          {item_key,
+           %{
+             "variants" =>
+               Map.new(item["variants"], fn {locale, variant} ->
+                 {locale, Map.take(variant, ["title", "summary", "proposal_summary"])}
+               end)
+           }}
+        end)
+    }
   end
 
   defp valid_translation?(run, canonical, locale, page_id) do
