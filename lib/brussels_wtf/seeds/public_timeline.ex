@@ -155,7 +155,10 @@ defmodule BrusselsWtf.Seeds.PublicTimeline do
       raise "synthetic public timeline seeds are disabled in this environment"
     end
 
-    Ash.Seed.update!(page, %{publication_status: :published})
+    page
+    |> Map.fetch!(:id)
+    |> Council.get_meeting_page!()
+    |> Ash.Seed.update!(%{publication_status: :published})
   end
 
   @spec run!() :: :ok
@@ -220,6 +223,18 @@ defmodule BrusselsWtf.Seeds.PublicTimeline do
     dossier = Council.upsert_dossier!(%{slug: dossier_slug, title: dossier_title})
     Council.upsert_dossier_link!(%{agenda_item_id: item.id, dossier_id: dossier.id})
 
+    page =
+      Council.upsert_meeting_page!(%{
+        council_meeting_id: meeting.id,
+        citation_url: citation_url,
+        procedural_state: record.state,
+        revision_published_at: @revision_at
+      })
+
+    if page.publication_status == :published do
+      Council.stage_meeting_page_revision!(page)
+    end
+
     Enum.each(record.locales, fn {locale, variant} ->
       provenance =
         if locale == "fr", do: [:ai_generated], else: [:ai_generated, :machine_translated]
@@ -236,14 +251,6 @@ defmodule BrusselsWtf.Seeds.PublicTimeline do
         provenance: provenance
       })
     end)
-
-    page =
-      Council.upsert_meeting_page!(%{
-        council_meeting_id: meeting.id,
-        citation_url: citation_url,
-        procedural_state: record.state,
-        revision_published_at: @revision_at
-      })
 
     Enum.each(record.locales, fn {locale, variant} ->
       provenance =

@@ -55,13 +55,19 @@ defmodule BrusselsWtf.Council.Publication do
           BrusselsWtf.Repo.rollback(:stale_publication_input)
         end
 
+        {staged_page, stage_notifications} =
+          Council.stage_meeting_page_revision!(
+            fresh_meeting.meeting_page,
+            return_notifications?: true
+          )
+
         variant_notifications = persist_variants(fresh_meeting, output, runs)
 
         case Council.evaluate_publication_gate!(fresh_meeting.meeting_page.id, input_hash) do
           %{ready?: true} ->
             now = BrusselsWtf.Clock.utc_now()
 
-            {_revision, revision_notifications} =
+            {revision, revision_notifications} =
               Council.record_publication_revision!(
                 %{
                   meeting_page_id: fresh_meeting.meeting_page.id,
@@ -77,18 +83,22 @@ defmodule BrusselsWtf.Council.Publication do
 
             {_page, publish_notifications} =
               Council.publish_meeting_page!(
-                fresh_meeting.meeting_page,
+                staged_page,
                 %{
                   revision_published_at: now,
                   publication_input_hash: input_hash,
                   gate_input_hash: input_hash,
                   last_gate_failures: [],
-                  gate_checked_at: now
+                  gate_checked_at: now,
+                  current_revision_id: revision.id
                 },
                 return_notifications?: true
               )
 
-            variant_notifications ++ revision_notifications ++ publish_notifications
+            stage_notifications ++
+              variant_notifications ++
+              revision_notifications ++
+              publish_notifications
 
           %{ready?: false, failures: failures} ->
             BrusselsWtf.Repo.rollback({:publication_gate, failures})

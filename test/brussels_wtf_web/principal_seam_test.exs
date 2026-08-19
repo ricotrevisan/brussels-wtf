@@ -298,6 +298,9 @@ replacement captured at the same locator"
     assert [%{location: ^corrected_location}] =
              BrusselsWtfWeb.PublicEvidence.for_item(projected_item)
 
+    page = meeting |> Ash.load!(:meeting_page) |> Map.fetch!(:meeting_page)
+    BrusselsWtf.Council.stage_meeting_page_revision!(page)
+
     Enum.each(["fr", "nl", "en"], fn locale ->
       BrusselsWtf.Council.upsert_coverage_variant!(%{
         agenda_item_id: item.id,
@@ -309,7 +312,6 @@ replacement captured at the same locator"
       })
     end)
 
-    page = meeting |> Ash.load!(:meeting_page) |> Map.fetch!(:meeting_page)
     BrusselsWtf.Seeds.PublicTimeline.publish_for_seed!(page)
 
     html =

@@ -11,7 +11,7 @@
 5. The named publication-gate action checks complete page and item variants, normalized claim references, official evidence and citations, applicable provenance, a coherent current run chain, and the absence of open normalization or evidence review cases for the meeting.
 6. The page becomes public only after the complete revision passes. No reviewer approval is required.
 
-The variant upserts and page publication happen in one database transaction. A failed or interrupted initial generation leaves a private draft. A failed later revision preserves the complete prior public revision. A complete later generation atomically replaces all locale variants and updates the published revision. Every successful publication also appends an immutable revision snapshot linked by foreign keys to the exact French, Dutch, and English coverage runs; those runs retain its normalized evidence input.
+The variant upserts and page publication happen in one database transaction. Published variants reject direct mutation; the transaction first stages the page as a draft, writes the complete replacement, records its immutable revision, and only then invokes the gated publish action. That action requires the revision content, timestamp, input hash, and exact run trio to match the gated live variants. A failed or interrupted initial generation leaves a private draft. A failed later revision preserves the complete prior public revision. A complete later generation atomically replaces all locale variants and updates the published revision. Every successful publication also appends an immutable revision snapshot linked by foreign keys to the exact French, Dutch, and English coverage runs; those runs retain its normalized evidence input.
 
 ## Failures and retry
 

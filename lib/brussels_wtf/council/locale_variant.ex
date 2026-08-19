@@ -21,6 +21,10 @@ defmodule BrusselsWtf.Council.LocaleVariant do
       accept [:meeting_page_id, :coverage_run_id, :locale, :title, :summary, :provenance]
       upsert? true
       upsert_identity :unique_locale
+
+      validate fn changeset, _context ->
+        BrusselsWtf.Council.VariantMutation.validate_locale(changeset)
+      end
     end
 
     read :for_page do

@@ -77,6 +77,7 @@ defmodule BrusselsWtf.Council do
 
       define :get_meeting_page, action: :read, get_by: [:id]
       define :upsert_meeting_page, action: :upsert
+      define :stage_meeting_page_revision, action: :stage_revision
       define :record_publication_gate_failure, action: :record_gate_failure
       define :publish_meeting_page, action: :publish
       define :list_published_meeting_pages, action: :published

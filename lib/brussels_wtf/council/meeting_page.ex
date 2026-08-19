@@ -53,6 +53,10 @@ defmodule BrusselsWtf.Council.MeetingPage do
       upsert_identity :one_page_per_meeting
     end
 
+    update :stage_revision do
+      change set_attribute(:publication_status, :draft)
+    end
+
     update :record_gate_failure do
       accept [:publication_input_hash, :last_gate_failures, :gate_checked_at]
     end
@@ -65,17 +69,30 @@ defmodule BrusselsWtf.Council.MeetingPage do
         :revision_published_at,
         :publication_input_hash,
         :last_gate_failures,
-        :gate_checked_at
+        :gate_checked_at,
+        :current_revision_id
       ]
 
       validate fn changeset, _context ->
-        case BrusselsWtf.Council.PublicationGate.evaluate(
-               changeset.data.id,
-               Ash.Changeset.get_argument(changeset, :gate_input_hash)
-             ) do
-          %{ready?: true} -> :ok
-          %{ready?: false} -> {:error, "publication gate did not pass"}
-        end
+        gate_input_hash = Ash.Changeset.get_argument(changeset, :gate_input_hash)
+        publication_input_hash = Ash.Changeset.get_attribute(changeset, :publication_input_hash)
+        revision_id = Ash.Changeset.get_attribute(changeset, :current_revision_id)
+
+        gate_ready? =
+          BrusselsWtf.Council.PublicationGate.evaluate(changeset.data.id, gate_input_hash).ready?
+
+        revision_ready? =
+          is_binary(revision_id) and gate_input_hash == publication_input_hash and
+            BrusselsWtf.Council.PublicationRevision.valid_for_publish?(
+              revision_id,
+              changeset.data.id,
+              gate_input_hash,
+              Ash.Changeset.get_attribute(changeset, :revision_published_at)
+            )
+
+        if gate_ready? and revision_ready?,
+          do: :ok,
+          else: {:error, "publication gate and matching revision are required"}
       end
 
       change set_attribute(:publication_status, :published)
@@ -178,6 +195,8 @@ defmodule BrusselsWtf.Council.MeetingPage do
     has_many :locale_variants, BrusselsWtf.Council.LocaleVariant
     has_many :coverage_runs, BrusselsWtf.Council.CoverageRun
     has_many :publication_revisions, BrusselsWtf.Council.PublicationRevision
+
+    belongs_to :current_revision, BrusselsWtf.Council.PublicationRevision, public?: true
   end
 
   identities do

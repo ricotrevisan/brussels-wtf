@@ -150,6 +150,8 @@ defmodule BrusselsWtf.Council.PublicationTest do
     [english] =
       Ash.load!(item, :coverage_variants).coverage_variants |> Enum.filter(&(&1.locale == "en"))
 
+    Council.stage_meeting_page_revision!(page)
+
     Council.upsert_coverage_variant!(%{
       agenda_item_id: item.id,
       coverage_run_id: english.coverage_run_id,
@@ -199,6 +201,62 @@ defmodule BrusselsWtf.Council.PublicationTest do
 
     assert MapSet.new([second.canonical_run_id, second.nl_run_id, second.en_run_id]) ==
              after_run_ids
+
+    assert Council.get_meeting_page!(page.id).current_revision_id == second.id
+  end
+
+  test "published variants cannot change before a revision is staged" do
+    BrusselsWtf.Test.Harness.load("ixelles/proposal")
+    page = poll_and_page!()
+    [variant] = Council.list_locale_variants!(page.id) |> Enum.filter(&(&1.locale == "en"))
+
+    assert {:error, _error} =
+             Council.upsert_locale_variant(%{
+               meeting_page_id: page.id,
+               coverage_run_id: variant.coverage_run_id,
+               locale: "en",
+               title: "BYPASS",
+               summary: variant.summary,
+               provenance: variant.provenance
+             })
+
+    refute Council.list_locale_variants!(page.id) |> Enum.any?(&(&1.title == "BYPASS"))
+  end
+
+  test "gate-ready pages require a matching immutable revision" do
+    BrusselsWtf.Test.Harness.load("ixelles/proposal")
+    page = poll_and_page!()
+    staged_page = Council.stage_meeting_page_revision!(page)
+
+    assert Council.evaluate_publication_gate!(page.id, page.publication_input_hash).ready?
+
+    assert {:error, _error} =
+             Council.publish_meeting_page(staged_page, %{
+               revision_published_at: DateTime.add(BrusselsWtf.Clock.utc_now(), 1, :second),
+               publication_input_hash: page.publication_input_hash,
+               gate_input_hash: page.publication_input_hash,
+               last_gate_failures: [],
+               gate_checked_at: BrusselsWtf.Clock.utc_now()
+             })
+
+    assert Council.get_meeting_page!(page.id).publication_status == :draft
+  end
+
+  test "publication revisions reject content unrelated to their run trio" do
+    BrusselsWtf.Test.Harness.load("ixelles/proposal")
+    page = poll_and_page!()
+    [revision] = Council.list_publication_revisions!(page.id)
+
+    assert {:error, _error} =
+             Council.record_publication_revision(%{
+               meeting_page_id: page.id,
+               publication_input_hash: revision.publication_input_hash,
+               published_at: BrusselsWtf.Clock.utc_now(),
+               canonical_run_id: revision.canonical_run_id,
+               nl_run_id: revision.nl_run_id,
+               en_run_id: revision.en_run_id,
+               content: %{}
+             })
   end
 
   test "processor failures retain every execution and become actionable after bounded retry" do

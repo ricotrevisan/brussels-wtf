@@ -30,6 +30,10 @@ defmodule BrusselsWtf.Council.CoverageVariant do
 
       upsert? true
       upsert_identity :unique_locale
+
+      validate fn changeset, _context ->
+        BrusselsWtf.Council.VariantMutation.validate_coverage(changeset)
+      end
     end
   end
 

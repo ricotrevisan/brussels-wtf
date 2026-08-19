@@ -104,13 +104,9 @@ defmodule BrusselsWtf.Council.PublicationInput do
   end
 
   defp validate_claim(claim, item_key) do
-    if Enum.any?(claim["evidence"], &official_evidence?/1) do
-      []
-    else
-      claim["evidence"]
-      |> Enum.flat_map(&evidence_failures(&1, item_key, claim["key"]))
-      |> Enum.uniq()
-    end
+    claim["evidence"]
+    |> Enum.flat_map(&evidence_failures(&1, item_key, claim["key"]))
+    |> Enum.uniq()
   end
 
   defp evidence_failures(evidence, item_key, claim_key) do
@@ -147,12 +143,6 @@ defmodule BrusselsWtf.Council.PublicationInput do
     do: failures ++ [error(code, item_key, claim_key)]
 
   defp maybe_error(failures, false, _code, _item_key, _claim_key), do: failures
-
-  defp official_evidence?(evidence) do
-    not evidence["synthetic"] and present?(evidence["excerpt"]) and
-      present?(evidence["location"]) and present?(evidence["source_sha256"]) and
-      valid_citation?(evidence)
-  end
 
   defp valid_citation?(evidence) do
     citation = evidence["citation_url"]

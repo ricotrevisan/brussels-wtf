@@ -104,6 +104,33 @@ defmodule BrusselsWtf.Council.PublicationInputTest do
              PublicationInput.validate(input)
   end
 
+  test "every rendered evidence citation must be official" do
+    valid = %{
+      "synthetic" => false,
+      "excerpt" => "official excerpt",
+      "location" => "page 1",
+      "source_sha256" => "abc",
+      "citation_url" => "https://example.test/source.pdf",
+      "source_origin_url" => "https://example.test/source.pdf"
+    }
+
+    invalid = %{valid | "citation_url" => "https://unrelated.example/claim"}
+
+    input = %{
+      "items" => [
+        %{
+          "key" => "4",
+          "procedural_state" => "proposal",
+          "outcome" => "unknown",
+          "claims" => [%{"key" => "claim", "evidence" => [valid, invalid]}]
+        }
+      ]
+    }
+
+    assert {:error, {:publication_gate, [%{code: :unofficial_citation}]}} =
+             PublicationInput.validate(input)
+  end
+
   defp item(key, sha, retrieved_at) do
     source_version = %{
       sha256: sha,
