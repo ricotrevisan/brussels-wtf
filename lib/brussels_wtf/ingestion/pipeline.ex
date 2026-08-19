@@ -643,6 +643,11 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
 
     version = run.source_version
     source_record = version.source_record
+
+    unless run.status == :succeeded and run.quality_measurements["accepted"] do
+      raise "processing run has no accepted extraction quality decision"
+    end
+
     artifact = accepted_text_artifact!(Ash.load!(run, :derived_artifacts))
     {:ok, text} = BrusselsWtf.Archive.get(artifact.object_key)
 
@@ -1186,8 +1191,15 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     kind = if run.processor_role == :ocr, do: "ocr-text", else: "native-text"
 
     case Enum.filter(run.derived_artifacts, &(&1.output_kind == kind)) do
-      [artifact] -> artifact
-      _ -> raise "processing run has no unique accepted text artifact"
+      [artifact] ->
+        if artifact.quality_measurements["accepted"] do
+          artifact
+        else
+          raise "processing run text artifact did not pass quality"
+        end
+
+      _ ->
+        raise "processing run has no unique accepted text artifact"
     end
   end
 

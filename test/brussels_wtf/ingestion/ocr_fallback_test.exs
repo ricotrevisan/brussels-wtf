@@ -81,6 +81,13 @@ defmodule BrusselsWtf.Ingestion.OcrFallbackTest do
     assert_enqueued(worker: BrusselsWtf.Workers.OCRSource, args: %{processing_run_id: ocr.id})
     refute_enqueued(worker: BrusselsWtf.Workers.NormalizeSource)
 
+    assert_raise RuntimeError, "processing run has no accepted extraction quality decision", fn ->
+      BrusselsWtf.Ingestion.Pipeline.normalize(
+        native.id,
+        "https://example.test/forest/agenda.pdf"
+      )
+    end
+
     assert :ok = perform_job(BrusselsWtf.Workers.OCRSource, %{processing_run_id: ocr.id})
 
     completed = Ingestion.get_processing_run!(ocr.id)
