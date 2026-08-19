@@ -268,6 +268,9 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
   end
 
   defp run_native_attempt(version, run, attempt) do
+    attempt_started_at = BrusselsWtf.Clock.utc_now()
+    attempt_started_monotonic = System.monotonic_time()
+
     result =
       with {:ok, bytes} <- BrusselsWtf.Archive.get(version.object_key),
            actual when actual == version.sha256 <- BrusselsWtf.Digest.sha256(bytes),
@@ -291,7 +294,14 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         :ok
 
       {:error, reason} = error ->
-        record_failed_attempt(run, attempt, reason)
+        record_failed_attempt(
+          run,
+          attempt,
+          reason,
+          attempt_started_at,
+          elapsed_milliseconds(attempt_started_monotonic)
+        )
+
         error
     end
   end
@@ -429,6 +439,8 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
   end
 
   defp run_ocr_attempt(run, attempt) do
+    attempt_started_at = BrusselsWtf.Clock.utc_now()
+    attempt_started_monotonic = System.monotonic_time()
     version = run.source_version
     pages = run.inputs["pages"]
 
@@ -461,7 +473,14 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         :ok
 
       {:error, reason} = error ->
-        record_failed_attempt(run, attempt, reason)
+        record_failed_attempt(
+          run,
+          attempt,
+          reason,
+          attempt_started_at,
+          elapsed_milliseconds(attempt_started_monotonic)
+        )
+
         error
     end
   end
@@ -549,6 +568,8 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
   end
 
   defp run_review_retry_attempt(run, attempt) do
+    attempt_started_at = BrusselsWtf.Clock.utc_now()
+    attempt_started_monotonic = System.monotonic_time()
     version = run.source_version
 
     result =
@@ -574,7 +595,14 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         :ok
 
       {:error, reason} = error ->
-        record_failed_attempt(run, attempt, reason)
+        record_failed_attempt(
+          run,
+          attempt,
+          reason,
+          attempt_started_at,
+          elapsed_milliseconds(attempt_started_monotonic)
+        )
+
         error
     end
   end
@@ -1139,17 +1167,17 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     })
   end
 
-  defp record_failed_attempt(run, attempt, reason) do
+  defp record_failed_attempt(run, attempt, reason, started_at, duration_ms) do
     classification = Ingestion.ProcessingFailure.classify(reason)
-    now = BrusselsWtf.Clock.utc_now()
+    completed_at = BrusselsWtf.Clock.utc_now()
 
     Ingestion.record_processing_attempt!(%{
       processing_run_id: run.id,
       attempt: attempt,
       status: :failed,
-      started_at: now,
-      completed_at: now,
-      duration_ms: 0,
+      started_at: started_at,
+      completed_at: completed_at,
+      duration_ms: duration_ms,
       failure_classification: Atom.to_string(classification),
       diagnostics: %{
         "classification" => Atom.to_string(classification),
@@ -1177,6 +1205,10 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
        do: %{"kind" => Atom.to_string(kind), "executable" => executable, "exit_status" => status}
 
   defp safe_failure_detail(_reason), do: %{"detail" => "redacted"}
+
+  defp elapsed_milliseconds(started_monotonic) do
+    System.convert_time_unit(System.monotonic_time() - started_monotonic, :native, :millisecond)
+  end
 
   defp extraction_summary(result, source_sha256) do
     %{
