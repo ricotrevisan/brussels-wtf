@@ -163,8 +163,57 @@ defmodule BrusselsWtf.Ingestion.ScheduledPollingTest do
                1
              )
 
-    assert Ingestion.list_document_locators!(commune.id)
-           |> Enum.all?(&(&1.scheduled_on.year == 2025))
+    locators = Ingestion.list_document_locators!(commune.id)
+    assert MapSet.new(Enum.map(locators, & &1.scheduled_on.year)) == MapSet.new([2025, 2026])
+
+    previous_job_locator_ids =
+      all_enqueued(worker: BrusselsWtf.Workers.FetchLocator)
+      |> Enum.filter(&(&1.args["poll_run_id"] == previous.id))
+      |> Enum.map(& &1.args["locator_id"])
+      |> MapSet.new()
+
+    refute MapSet.size(previous_job_locator_ids) == 0
+
+    assert Enum.all?(locators, fn locator ->
+             if MapSet.member?(previous_job_locator_ids, locator.id) do
+               locator.scheduled_on.year == 2025
+             else
+               true
+             end
+           end)
+
+    previous_year_locators =
+      Enum.filter(locators, fn locator ->
+        locator.scheduled_on.year == 2025 and
+          locator.role in [:agenda, :project, :supplement, :addendum, :minutes, :register]
+      end)
+
+    Enum.each(previous_year_locators, fn locator ->
+      Ingestion.record_observation!(%{
+        source_locator_id: locator.id,
+        poll_run_id: previous.id,
+        check_key: "stopped:#{locator.id}",
+        observed_at: ~U[2026-08-20 12:00:00Z],
+        status: :unchanged,
+        final_url: locator.url
+      })
+
+      Ingestion.schedule_locator_fetch!(locator, %{next_fetch_at: nil})
+    end)
+
+    stopped_check = Ingestion.request_scheduled_poll!("ixelles", :previous_year)
+
+    assert :ok =
+             BrusselsWtf.Ingestion.Pipeline.discover_and_enqueue(
+               commune.id,
+               stopped_check.id,
+               stopped_check.check_key,
+               1
+             )
+
+    refute Enum.any?(all_enqueued(worker: BrusselsWtf.Workers.FetchLocator), fn job ->
+             job.args["poll_run_id"] == stopped_check.id
+           end)
 
     backfill =
       Ingestion.request_backfill!(%{type: :commune, id: commune.id},
@@ -231,6 +280,22 @@ defmodule BrusselsWtf.Ingestion.ScheduledPollingTest do
     assert List.last(Ingestion.list_observations!(project.id)).status == :disappeared
 
     BrusselsWtf.HTTP.Stub.put(commune.index_url, %{status: 200, body: index})
+
+    manual =
+      Ingestion.request_poll_now!(%{type: :commune, id: commune.id},
+        actor: %BrusselsWtf.Review.Actor{id: "rico", role: :reviewer}
+      )
+
+    assert :ok =
+             perform_job(BrusselsWtf.Workers.PollCommune, %{
+               commune_id: commune.id,
+               poll_run_id: manual.id,
+               check_key: manual.check_key,
+               attempt: 1
+             })
+
+    assert is_nil(Ingestion.get_locator!(project.id).next_fetch_at)
+
     scheduled = Ingestion.request_scheduled_poll!("ixelles")
 
     assert :ok =

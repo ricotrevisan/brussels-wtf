@@ -157,7 +157,7 @@ defmodule BrusselsWtf.Ingestion do
       end)
 
       if target_type == :meeting do
-        complete_poll_run!(poll_run, %{completed_at: BrusselsWtf.Clock.utc_now()})
+        mark_poll_run_dispatched!(poll_run, %{completed_at: BrusselsWtf.Clock.utc_now()})
       else
         poll_run
       end
@@ -242,16 +242,33 @@ defmodule BrusselsWtf.Ingestion do
       end)
       |> Enum.map(& &1.id)
 
-    repeated_failures =
-      Enum.count(runs, fn run ->
+    repeated_failure_targets =
+      runs
+      |> Enum.filter(fn run ->
         run.status == :failed and match?(%DateTime{}, run.completed_at) and
           DateTime.diff(now, run.completed_at, :second) <= recent_failure_window
+      end)
+      |> Enum.group_by(&{&1.commune_id, &1.target_type, &1.target_id})
+      |> Enum.flat_map(fn {{commune_id, target_type, target_id}, failed_runs} ->
+        if length(failed_runs) >= 2 do
+          [
+            %{
+              commune_id: commune_id,
+              target_type: target_type,
+              target_id: target_id,
+              failures: length(failed_runs)
+            }
+          ]
+        else
+          []
+        end
       end)
 
     %{
       stale_commune_count: length(stale_commune_ids),
       stale_commune_ids: stale_commune_ids,
-      repeated_failure_count: repeated_failures
+      repeated_failure_count: length(repeated_failure_targets),
+      repeated_failure_targets: repeated_failure_targets
     }
   end
 

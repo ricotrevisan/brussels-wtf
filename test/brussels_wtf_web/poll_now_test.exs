@@ -120,7 +120,7 @@ defmodule BrusselsWtfWeb.PollNowTest do
            } = backfill
 
     assert %{kind: :poll_now, scope: :current, target_type: :index} = index
-    assert %{kind: :poll_now, target_type: :meeting} = meeting_run
+    assert %{kind: :poll_now, target_type: :meeting, status: :dispatched} = meeting_run
 
     assert_enqueued(
       worker: BrusselsWtf.Workers.FetchLocator,

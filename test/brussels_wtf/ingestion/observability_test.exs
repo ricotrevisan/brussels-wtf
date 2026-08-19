@@ -102,4 +102,35 @@ defmodule BrusselsWtf.Ingestion.ObservabilityTest do
     refute log =~ "credential=private"
     refute log =~ "object_key"
   end
+
+  test "health reports only repeated failures and identifies their target", %{
+    locator: locator,
+    run: run
+  } do
+    Ingestion.fail_poll_run!(run, %{
+      completed_at: BrusselsWtf.Clock.utc_now(),
+      error_summary: "first failure"
+    })
+
+    assert Ingestion.poll_health().repeated_failure_count == 0
+
+    second =
+      Ingestion.request_poll_now!(%{type: :locator, id: locator.id},
+        actor: %Actor{id: "rico", role: :reviewer}
+      )
+
+    Ingestion.fail_poll_run!(second, %{
+      completed_at: BrusselsWtf.Clock.utc_now(),
+      error_summary: "second failure"
+    })
+
+    assert %{
+             repeated_failure_count: 1,
+             repeated_failure_targets: [
+               %{target_type: :locator, target_id: target_id, failures: 2}
+             ]
+           } = Ingestion.poll_health()
+
+    assert target_id == locator.id
+  end
 end

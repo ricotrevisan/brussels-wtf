@@ -76,16 +76,21 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
 
             case discover(commune, body) do
               {:ok, discovered} ->
-                discovered = scope_discovered(discovered, poll_run.scope, now)
-
                 record_observation(index_locator, poll_run.id, response, check_key,
                   status: observation_status,
                   sha256: version.sha256,
                   source_version_id: version.id
                 )
 
+                known_urls =
+                  commune.id
+                  |> Ingestion.list_locators!()
+                  |> MapSet.new(& &1.url)
+
                 stored =
                   Enum.map(discovered, fn locator ->
+                    new_locator? = not MapSet.member?(known_urls, locator.url)
+
                     Ingestion.upsert_locator!(%{
                       commune_id: commune.id,
                       url: locator.url,
@@ -97,13 +102,34 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
                       observed_label: locator.observed_label,
                       item_identifier: locator.item_identifier,
                       discovered_at: now,
-                      next_fetch_at: initial_next_fetch_at(locator, now)
+                      next_fetch_at:
+                        initial_next_fetch_at(
+                          locator,
+                          now,
+                          poll_run.kind,
+                          poll_run.scope,
+                          new_locator?
+                        )
                     })
                   end)
 
-                stored = Enum.map(stored, &reactivate_if_rediscovered(&1, now))
-                mark_disappeared(commune.id, poll_run.id, check_key, stored, now)
-                enqueue_document_fetches(commune.id, poll_run, check_key, stored)
+                stored =
+                  Enum.map(
+                    stored,
+                    &reactivate_if_rediscovered(&1, now, poll_run.kind, poll_run.scope)
+                  )
+
+                mark_disappeared(
+                  commune.id,
+                  poll_run.id,
+                  check_key,
+                  stored,
+                  now,
+                  poll_run.scope
+                )
+
+                fetchable = scope_discovered(stored, poll_run.scope, now)
+                enqueue_document_fetches(commune.id, poll_run, check_key, fetchable)
                 :ok
 
               {:error, reason} ->
@@ -435,9 +461,10 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
           commune_id
           |> Ingestion.list_document_locators!()
           |> previous_year_locators(BrusselsWtf.Clock.utc_now())
+          |> Enum.filter(&due_now?/1)
 
         {:scheduled, :previous_year, locators} ->
-          locators
+          Enum.filter(locators, &due_now?/1)
 
         {:scheduled, :current, nil} ->
           Ingestion.list_due_locators!(BrusselsWtf.Clock.utc_now())
@@ -490,18 +517,33 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     end)
   end
 
-  defp initial_next_fetch_at(locator, now) do
+  defp initial_next_fetch_at(_locator, now, :scheduled, :previous_year, true), do: now
+
+  defp initial_next_fetch_at(locator, now, :scheduled, _scope, _new_locator?) do
     case BrusselsWtf.Ingestion.PollSchedule.next_fetch_at(locator, now) do
       :stop -> nil
       _next -> now
     end
   end
 
-  defp reactivate_if_rediscovered(locator, now) do
-    if disappeared?(locator) do
-      Ingestion.schedule_locator_fetch!(locator, %{next_fetch_at: now})
-    else
-      locator
+  defp initial_next_fetch_at(_locator, _now, _manual_kind, _scope, _new_locator?), do: nil
+
+  defp reactivate_if_rediscovered(locator, _now, kind, _scope)
+       when kind in [:poll_now, :backfill],
+       do: locator
+
+  defp reactivate_if_rediscovered(locator, now, :scheduled, scope) do
+    latest_observation = locator.id |> Ingestion.list_observations!() |> List.last()
+
+    cond do
+      match?(%{status: :disappeared}, latest_observation) ->
+        Ingestion.schedule_locator_fetch!(locator, %{next_fetch_at: now})
+
+      is_nil(latest_observation) and scope == :previous_year ->
+        Ingestion.schedule_locator_fetch!(locator, %{next_fetch_at: now})
+
+      true ->
+        locator
     end
   end
 
@@ -608,11 +650,12 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     end)
   end
 
-  defp mark_disappeared(commune_id, poll_run_id, check_key, discovered, now) do
+  defp mark_disappeared(commune_id, poll_run_id, check_key, discovered, now, scope) do
     discovered_ids = MapSet.new(Enum.map(discovered, & &1.id))
 
     commune_id
     |> Ingestion.list_document_locators!()
+    |> scope_discovered(scope, now)
     |> Enum.reject(&MapSet.member?(discovered_ids, &1.id))
     |> Enum.each(fn locator ->
       observation =
