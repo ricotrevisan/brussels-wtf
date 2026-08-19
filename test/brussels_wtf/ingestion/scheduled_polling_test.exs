@@ -278,6 +278,7 @@ defmodule BrusselsWtf.Ingestion.ScheduledPollingTest do
              })
 
     assert List.last(Ingestion.list_observations!(project.id)).status == :disappeared
+    standing_schedule = Ingestion.get_locator!(project.id).next_fetch_at
 
     BrusselsWtf.HTTP.Stub.put(commune.index_url, %{status: 200, body: index})
 
@@ -294,7 +295,7 @@ defmodule BrusselsWtf.Ingestion.ScheduledPollingTest do
                attempt: 1
              })
 
-    assert is_nil(Ingestion.get_locator!(project.id).next_fetch_at)
+    assert Ingestion.get_locator!(project.id).next_fetch_at == standing_schedule
 
     scheduled = Ingestion.request_scheduled_poll!("ixelles")
 
@@ -310,6 +311,31 @@ defmodule BrusselsWtf.Ingestion.ScheduledPollingTest do
       worker: BrusselsWtf.Workers.FetchLocator,
       args: %{locator_id: project.id, poll_run_id: scheduled.id}
     )
+  end
+
+  test "poll-now initializes policy state only for genuinely new active locators", %{
+    commune: commune
+  } do
+    index = File.read!("test/support/fixtures/ixelles/proposal/index.html")
+    BrusselsWtf.HTTP.Stub.put(commune.index_url, %{status: 200, body: index})
+
+    manual =
+      Ingestion.request_poll_now!(%{type: :commune, id: commune.id},
+        actor: %BrusselsWtf.Review.Actor{id: "rico", role: :reviewer}
+      )
+
+    assert :ok =
+             BrusselsWtf.Ingestion.Pipeline.discover_and_enqueue(
+               commune.id,
+               manual.id,
+               manual.check_key,
+               1
+             )
+
+    assert commune.id
+           |> Ingestion.list_document_locators!()
+           |> Enum.reject(&(&1.role == :recording))
+           |> Enum.all?(&match?(%DateTime{}, &1.next_fetch_at))
   end
 
   defp locator!(commune, suffix, next_fetch_at) do

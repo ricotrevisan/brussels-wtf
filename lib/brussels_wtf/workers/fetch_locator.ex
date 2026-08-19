@@ -108,6 +108,10 @@ defmodule BrusselsWtf.Workers.FetchLocator do
       error_summary: review_summary(classification)
     })
 
+    if run.kind == :scheduled do
+      Ingestion.schedule_locator_fetch!(locator, %{next_fetch_at: nil})
+    end
+
     BrusselsWtf.Ingestion.Observability.review_case_created(%{
       poll_run_id: poll_run_id,
       source_locator_id: locator_id,

@@ -142,4 +142,32 @@ defmodule BrusselsWtf.Ingestion.FiniteRetryTest do
       args: %{locator_id: locator.id, poll_run_id: run.id, attempt: 3}
     )
   end
+
+  test "a terminal scheduled failure stops the standing locator schedule", %{
+    locator: locator
+  } do
+    run =
+      Ingestion.start_poll_run!(%{
+        commune_id: locator.commune_id,
+        started_at: BrusselsWtf.Clock.utc_now(),
+        kind: :scheduled,
+        requester_id: "system",
+        target_type: :locator,
+        target_id: locator.id,
+        check_key: "scheduled-terminal",
+        status: :queued
+      })
+
+    BrusselsWtf.HTTP.Stub.put(locator.url, %{status: 415, body: "unsupported"})
+
+    assert :ok =
+             perform_job(FetchLocator, %{
+               locator_id: locator.id,
+               poll_run_id: run.id,
+               check_key: run.check_key,
+               attempt: 1
+             })
+
+    assert is_nil(Ingestion.get_locator!(locator.id).next_fetch_at)
+  end
 end

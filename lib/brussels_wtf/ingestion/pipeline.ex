@@ -526,6 +526,13 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     end
   end
 
+  defp initial_next_fetch_at(locator, now, :poll_now, _scope, true) do
+    case BrusselsWtf.Ingestion.PollSchedule.next_fetch_at(locator, now) do
+      :stop -> nil
+      _next -> now
+    end
+  end
+
   defp initial_next_fetch_at(_locator, _now, _manual_kind, _scope, _new_locator?), do: nil
 
   defp reactivate_if_rediscovered(locator, _now, kind, _scope)
