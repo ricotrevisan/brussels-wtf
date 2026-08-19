@@ -262,7 +262,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
 
     case run.status do
       :succeeded -> reconcile_native_success(version, run)
-      :failed -> :ok
+      :failed -> reconcile_failed_review(run)
       :queued -> run_native_attempt(version, run, attempt)
     end
   end
@@ -431,6 +431,18 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     )
   end
 
+  defp reconcile_failed_review(run) do
+    run = Ash.load!(run, :source_version)
+
+    BrusselsWtf.Ingestion.ExtractionReview.open_for_version(
+      run.source_version.id,
+      BrusselsWtf.Ingestion.ProcessingFailure.from_persisted(run.failure_classification),
+      run.id
+    )
+
+    :ok
+  end
+
   defp reconcile_native_success(version, run) do
     run = Ash.load!(run, :derived_artifacts)
     artifact = Enum.find(run.derived_artifacts, &(&1.output_kind == "native-text"))
@@ -528,7 +540,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
 
     case run.status do
       :succeeded -> reconcile_ocr_success(run)
-      :failed -> :ok
+      :failed -> reconcile_failed_review(run)
       :queued -> run_ocr_attempt(run, attempt)
     end
   end
@@ -702,7 +714,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
 
     case run.status do
       :succeeded -> reconcile_native_success(run.source_version, run)
-      :failed -> :ok
+      :failed -> reconcile_failed_review(run)
       :queued -> run_review_retry_attempt(run, attempt)
     end
   end

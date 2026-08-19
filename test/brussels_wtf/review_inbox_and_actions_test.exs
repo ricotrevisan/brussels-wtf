@@ -158,6 +158,34 @@ defmodule BrusselsWtf.ReviewInboxAndActionsTest do
     assert BrusselsWtf.Archive.get(unchanged_version.object_key) == {:ok, original_bytes}
   end
 
+  test "a retried failed run reconciles a missing terminal review case", %{actor: actor} do
+    context = build_case!(generation: "preexisting-case")
+    metadata = BrusselsWtf.PDF.Processor.metadata()
+
+    run =
+      Ingestion.create_review_processing_run!(%{
+        source_version_id: context.version.id,
+        generation_key: "review:missing-case",
+        processor_name: metadata.native_processor_name,
+        processor_version: metadata.native_processor_version,
+        config_hash: metadata.config_hash,
+        status: :queued
+      })
+
+    Ingestion.Pipeline.fail_processing_run(run, :resource_limit)
+
+    refute Enum.any?(
+             Review.list_review_cases!(%{status: :open}, actor: actor),
+             &String.ends_with?(&1.processing_generation, run.id)
+           )
+
+    assert :ok = Ingestion.Pipeline.retry_extraction(run.id, 2)
+    assert :ok = Ingestion.Pipeline.retry_extraction(run.id, 3)
+
+    cases = Review.list_review_cases!(%{status: :open}, actor: actor)
+    assert Enum.count(cases, &String.ends_with?(&1.processing_generation, run.id)) == 1
+  end
+
   test "retry execution fails closed if deployed processor provenance changed", %{actor: actor} do
     context = build_case!(generation: "provenance-race")
     original_processor = Application.fetch_env!(:brussels_wtf, :pdf_processor)

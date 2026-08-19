@@ -94,6 +94,56 @@ defmodule BrusselsWtf.Ingestion.ExtractionGenerationTest do
     assert first_run.id != second_run.id
   end
 
+  test "same-config generations retain distinct output bytes", %{versions: [version, _other]} do
+    runs =
+      for generation <- ["review:first", "review:second"] do
+        Ingestion.record_processing_run!(%{
+          source_version_id: version.id,
+          generation_key: generation,
+          processor_name: "same-config-processor",
+          processor_version: "1",
+          config_hash: "sha256:same-config",
+          status: :succeeded
+        })
+      end
+
+    artifacts =
+      Enum.zip(runs, ["first output", "second output"])
+      |> Enum.map(fn {run, output} ->
+        {:ok, archived} = BrusselsWtf.Archive.store(output, :derived)
+
+        artifact =
+          Ingestion.upsert_derived_artifact!(%{
+            source_version_id: version.id,
+            processing_run_id: run.id,
+            input_sha256: version.sha256,
+            output_sha256: archived.sha256,
+            processor_name: run.processor_name,
+            processor_version: run.processor_version,
+            config_hash: run.config_hash,
+            output_kind: "native-text",
+            object_key: archived.object_key,
+            media_type: "text/plain",
+            byte_size: byte_size(output),
+            quality_measurements: %{"accepted" => true}
+          })
+
+        Ingestion.link_processing_run_artifact!(%{
+          processing_run_id: run.id,
+          derived_artifact_id: artifact.id,
+          role: :native_output
+        })
+
+        artifact
+      end)
+
+    assert [first, second] = artifacts
+    assert first.id != second.id
+    assert first.output_sha256 != second.output_sha256
+    assert BrusselsWtf.Archive.get(first.object_key) == {:ok, "first output"}
+    assert BrusselsWtf.Archive.get(second.object_key) == {:ok, "second output"}
+  end
+
   test "a changed processor configuration appends a new generation without rewriting the old one",
        %{
          versions: [version, _other]

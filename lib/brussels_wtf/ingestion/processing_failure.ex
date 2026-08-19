@@ -30,6 +30,20 @@ defmodule BrusselsWtf.Ingestion.ProcessingFailure do
   def classify({:processor_failed, _details}), do: :processing_failure
   def classify(_reason), do: :processing_failure
 
+  @persisted %{
+    "repeated_quality_failure" => :repeated_quality_failure,
+    "unsupported_media" => :unsupported_media,
+    "invalid_content" => :invalid_content,
+    "corruption" => :corruption,
+    "resource_limit" => :resource_limit,
+    "authentication_failure" => :authentication_failure,
+    "configuration_mismatch" => :configuration_mismatch,
+    "processor_unavailable" => :processor_unavailable,
+    "processor_failure" => :processor_failure
+  }
+
+  def from_persisted(value), do: Map.get(@persisted, value, :processor_failure)
+
   def deterministic?(classification), do: classification in @deterministic
   def terminal(:processing_failure), do: :processor_failure
   def terminal(classification), do: classification

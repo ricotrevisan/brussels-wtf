@@ -88,6 +88,7 @@ defmodule BrusselsWtf.Ingestion.DerivedArtifact do
   identities do
     identity :unique_processor_output, [
       :input_sha256,
+      :output_sha256,
       :processor_name,
       :processor_version,
       :config_hash,
