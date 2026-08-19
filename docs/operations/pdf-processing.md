@@ -4,7 +4,7 @@ Issue #21 introduces a Poppler-first extraction contract. Every PDF is checked b
 
 ## Calibrated quality contract
 
-The versioned corpus is in `test/support/pdf_contract/manifest.json`. It contains agent-authored CC0 structural fixtures for Ixelles, Uccle, Forest, and the City of Brussels, plus image-only and malformed hazards. It does not reproduce municipal text. The pinned production-image contract is authoritative because developer machines need not contain Poppler or OCR.
+The representative calibration corpus is in `test/support/pdf_calibration/manifest.json`. It retains attributed public administrative PDFs from Ixelles, Uccle, Forest, and the City of Brussels, with capture hashes, manual page labels, source origins, and a repository-suitability disposition. The separate `test/support/pdf_contract` corpus contains agent-authored CC0 image-only, partial-scan, rotated, malformed, and oversized hazards. The pinned production-image contract is authoritative because developer machines need not contain Poppler or OCR.
 
 The `pdf-extraction-v1` thresholds are explicit in `config/config.exs`:
 
@@ -14,7 +14,7 @@ The `pdf-extraction-v1` thresholds are explicit in `config/config.exs`:
 - control-character ratio no greater than 0.01;
 - replacement-character ratio no greater than 0.005.
 
-A single rejected page rejects native extraction for the document. Only rejected page numbers are sent to OCRmyPDF with Tesseract `fra+nld`; accepted pages are retained and are not re-OCRed. Normalization reads the checksum-verified accepted text artifact, never an unarchived processor response.
+A single rejected page rejects native extraction for the document. Only rejected page numbers are sent to OCRmyPDF with Tesseract `fra+nld` and `--redo-ocr`; accepted pages outside that selected set are retained and are not re-OCRed. Normalization reads the checksum-verified accepted text artifact, never an unarchived processor response.
 
 ## Isolation and limits
 

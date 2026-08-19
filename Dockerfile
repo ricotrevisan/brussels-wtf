@@ -57,5 +57,5 @@ COPY --from=builder --chown=nobody:root /app/_build/prod/rel/brussels_wtf ./
 USER nobody
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD curl --fail --silent --show-error "http://127.0.0.1:${PORT}/health/ready" || exit 1
+  CMD if [ "${PROCESS_ROLE:-app}" = "ocr" ]; then kill -0 1; else curl --fail --silent --show-error "http://127.0.0.1:${PORT}/health/ready"; fi
 CMD ["sh", "-c", "case ${PROCESS_ROLE:-app} in app) /app/bin/migrate && /app/bin/validate && /app/bin/server ;; ocr) /app/bin/validate && /app/bin/ocr_worker ;; *) echo invalid-process-role >&2; exit 64 ;; esac"]

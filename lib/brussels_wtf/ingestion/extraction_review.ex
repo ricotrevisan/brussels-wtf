@@ -5,7 +5,7 @@ defmodule BrusselsWtf.Ingestion.ExtractionReview do
 
   def open_for_version(source_version_id, classification, processing_run_id \\ nil) do
     version = source_version_id |> Ingestion.get_source_version!() |> Ash.load!(:source_record)
-    generation = processing_run_id || "#{version.id}:#{classification}"
+    generation = processing_run_id
 
     review_case =
       BrusselsWtf.Review.open_review_case!(%{
@@ -42,5 +42,6 @@ defmodule BrusselsWtf.Ingestion.ExtractionReview do
 
   defp summary(:resource_limit), do: "PDF processing exceeded a calibrated resource limit"
   defp summary(:processor_unavailable), do: "The configured PDF processor is unavailable"
+  defp summary(:processor_failure), do: "The PDF processor failed repeatedly"
   defp summary(_classification), do: "PDF processing failed repeatedly and requires review"
 end

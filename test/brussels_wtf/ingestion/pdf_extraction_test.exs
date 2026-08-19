@@ -104,4 +104,33 @@ defmodule BrusselsWtf.Ingestion.PdfExtractionTest do
       args: %{processing_run_id: run.id}
     )
   end
+
+  test "a transient native attempt can succeed without changing the processing identity", %{
+    version: version
+  } do
+    BrusselsWtf.Processors.Stub.put(version.sha256, %{extract: {:error, :temporary_unavailable}})
+
+    assert {:error, :temporary_unavailable} =
+             BrusselsWtf.Ingestion.Pipeline.extract(version.id, 1)
+
+    BrusselsWtf.Processors.Stub.put(version.sha256, %{
+      extract: %{
+        "text" =>
+          "Conseil communal Gemeenteraad corrected official proposal with sufficient public text"
+      }
+    })
+
+    assert :ok = BrusselsWtf.Ingestion.Pipeline.extract(version.id, 2)
+
+    [run] =
+      version.id
+      |> Ingestion.get_source_version!()
+      |> Ash.load!(:processing_runs)
+      |> Map.fetch!(:processing_runs)
+
+    assert run.status == :succeeded
+
+    assert [%{attempt: 1, status: :failed}, %{attempt: 2, status: :succeeded}] =
+             Ash.load!(run, :attempts).attempts |> Enum.sort_by(& &1.attempt)
+  end
 end

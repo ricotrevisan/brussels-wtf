@@ -119,9 +119,10 @@ defmodule BrusselsWtf.Ingestion.ExtractionGenerationTest do
       |> Ingestion.get_source_version!()
       |> Ash.load!(:processing_runs)
       |> Map.fetch!(:processing_runs)
-      |> Enum.sort_by(& &1.inserted_at)
 
-    assert [unchanged, revised] = runs
+    unchanged = Enum.find(runs, &(&1.processor_version == "fixture-poppler-24.02"))
+    revised = Enum.find(runs, &(&1.processor_version == "fixture-poppler-24.03"))
+    assert length(runs) == 2
     assert unchanged.id == first.id
     assert unchanged.processor_version == "fixture-poppler-24.02"
     assert revised.processor_version == "fixture-poppler-24.03"

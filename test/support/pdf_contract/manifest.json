@@ -14,7 +14,7 @@
   "fixtures": [
     {
       "file": "city-rotated.pdf",
-      "sha256": "c5ab01b72bde79e8e34f4ad8be3f97fd11bcd5d6b912d1bb24b929b717a7db94",
+      "sha256": "79e827fc08304d3db57c32086cc74353c045ac22fe68344aa9b0d62ce2c52a47",
       "commune": "city-of-brussels",
       "profile": "rotated",
       "manual_native_accepted_pages": []

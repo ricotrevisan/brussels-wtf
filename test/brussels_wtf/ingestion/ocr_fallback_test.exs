@@ -151,4 +151,45 @@ defmodule BrusselsWtf.Ingestion.OcrFallbackTest do
 
     assert length(cases) == 1
   end
+
+  test "a transient OCR attempt can complete the queued generation on retry", %{version: version} do
+    assert :ok = BrusselsWtf.Ingestion.Pipeline.extract(version.id)
+
+    [run] =
+      version.id
+      |> Ingestion.get_source_version!()
+      |> Ash.load!(:processing_runs)
+      |> Map.fetch!(:processing_runs)
+      |> Enum.filter(&(&1.processor_role == :ocr))
+
+    {:ok, native} = BrusselsWtf.Processors.Stub.pdf_fixture(version.sha256, :extract)
+
+    BrusselsWtf.Processors.Stub.put(version.sha256, %{
+      extract: native,
+      ocr: {:error, :temporary_ocr_failure}
+    })
+
+    assert {:error, :temporary_ocr_failure} = BrusselsWtf.Ingestion.Pipeline.ocr(run.id, 1)
+
+    BrusselsWtf.Processors.Stub.put(version.sha256, %{
+      extract: native,
+      ocr: %{
+        "page_texts" => [
+          "Conseil communal proposition avec suffisamment de texte officiel page un",
+          "Page deux numérisée proposition officielle français Nederlands complète",
+          "Gemeenteraad officieel voorstel met voldoende digitale tekst pagina drie"
+        ],
+        "searchable_pdf" => "%PDF retry searchable fixture"
+      }
+    })
+
+    assert :ok = BrusselsWtf.Ingestion.Pipeline.ocr(run.id, 2)
+    completed = Ingestion.get_processing_run!(run.id) |> Ash.load!(:attempts)
+    assert completed.status == :succeeded
+
+    assert Enum.map(Enum.sort_by(completed.attempts, & &1.attempt), &{&1.attempt, &1.status}) == [
+             {1, :failed},
+             {2, :succeeded}
+           ]
+  end
 end

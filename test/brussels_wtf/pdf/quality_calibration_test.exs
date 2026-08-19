@@ -1,7 +1,7 @@
 defmodule BrusselsWtf.PDF.QualityCalibrationTest do
   use ExUnit.Case, async: true
 
-  @manifest Path.expand("../../support/pdf_contract/manifest.json", __DIR__)
+  @manifest Path.expand("../../support/pdf_calibration/manifest.json", __DIR__)
 
   test "production thresholds are versioned against all four commune profiles" do
     manifest = @manifest |> File.read!() |> Jason.decode!()
@@ -17,7 +17,12 @@ defmodule BrusselsWtf.PDF.QualityCalibrationTest do
       |> Map.new(fn {key, value} -> {String.to_existing_atom(key), value} end)
 
     assert BrusselsWtf.PDF.Quality.thresholds() == calibrated
-    assert manifest["licensing"] =~ "CC0"
+    assert manifest["licensing_disposition"] =~ "municipal administrative documents"
+
+    assert Enum.all?(
+             manifest["fixtures"],
+             &String.starts_with?(&1["official_origin"], "https://")
+           )
   end
 
   test "one poor page rejects a partially readable document" do

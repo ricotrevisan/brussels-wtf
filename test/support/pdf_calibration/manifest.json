@@ -1,0 +1,108 @@
+{
+  "schema": "brussels-wtf-pdf-calibration-v1",
+  "captured_at": "2026-08-19",
+  "licensing_disposition": "Publicly issued municipal administrative documents retained as attributed test evidence under the Belgian/EU public-sector information reuse framework; no private submission data was observed.",
+  "calibration": {
+    "thresholds": {
+      "min_characters": 40,
+      "min_words": 6,
+      "min_alphanumeric_ratio": 0.5,
+      "max_control_ratio": 0.01,
+      "max_replacement_ratio": 0.005
+    },
+    "method": "Manual page review plus executable Poppler measurements in the pinned production image. All native text pages in these four representative documents are readable and must pass; image-only, partial-scan, rotated, malformed, and oversized routing is calibrated in the separate CC0 hazard corpus."
+  },
+  "fixtures": [
+    {
+      "file": "ixelles.pdf",
+      "commune": "ixelles",
+      "official_origin": "https://www.ixelles.be/uploads/conseil/odj/268.pdf",
+      "sha256": "f412ee4ddc45b454691fff79b190e36de0ae60fe6b696ae7861c82557b38fd4b",
+      "byte_size": 216552,
+      "manual_native_accepted_pages": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25
+      ],
+      "expected_page_count": 25,
+      "expected_text_sha256": "ae6f22364d7e56326fb4619e716b6f96807518dbf3c1eb1ebaa15d1a04608160"
+    },
+    {
+      "file": "uccle.pdf",
+      "commune": "uccle",
+      "official_origin": "https://www.uccle.be/sites/default/files/filemanager/Legal/CC-GR/CC-2026-04-23-ODJ_U1180_fr_nl.pdf",
+      "sha256": "6f925fc048dd877a76bd164993964bc1e84365a65463e5976faa83ead9c83280",
+      "byte_size": 75524,
+      "manual_native_accepted_pages": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "expected_page_count": 7,
+      "expected_text_sha256": "94ea3d3f53e2970dbc09e49e637728ffa81a3210741787cdefc4efbd73a30824"
+    },
+    {
+      "file": "forest.pdf",
+      "commune": "forest",
+      "official_origin": "https://forest.brussels/sites/default/files/publications/pdf/2024-12/Taxe%20relative%20aux%20centimes%20additionnels%20communaux%20au%20pr%C3%A9compte%20immobilier.pdf",
+      "sha256": "bc41f2ac9df89965eabb9912bb6e8b4ce78354edf0be50410dc77b5ab64d5137",
+      "byte_size": 61203,
+      "manual_native_accepted_pages": [
+        1,
+        2
+      ],
+      "expected_page_count": 2,
+      "expected_text_sha256": "1e772edb84bed6798966842e241c36d873a1beb0dbb2084724e6d9e62201252c"
+    },
+    {
+      "file": "city-of-brussels.pdf",
+      "commune": "city-of-brussels",
+      "official_origin": "https://www.brussel.be/sites/default/files/DO29062026.pdf",
+      "sha256": "ccea45462714ac81fab1fa9be34812d97297db82a0c3ea7ed4087132e4ef0bd2",
+      "byte_size": 483244,
+      "manual_native_accepted_pages": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13
+      ],
+      "expected_page_count": 13,
+      "expected_text_sha256": "8220a3ccc81f4193ad30fa147b8d711aa33b707aceccd23f269648f90f104029"
+    }
+  ]
+}

@@ -5,7 +5,7 @@ defmodule BrusselsWtf.PDF.PopplerOcr do
   alias BrusselsWtf.PDF.Quality
 
   @native_flags ["-layout"]
-  @ocr_flags ["--output-type", "pdf", "--rotate-pages", "--skip-text", "--jobs", "1"]
+  @ocr_flags ["--output-type", "pdf", "--rotate-pages", "--redo-ocr", "--jobs", "1"]
 
   @impl true
   def native(meta, bytes) do

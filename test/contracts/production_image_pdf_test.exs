@@ -4,6 +4,26 @@ defmodule BrusselsWtf.Contracts.ProductionImagePdfTest do
   @moduletag :external
   @image System.get_env("PRODUCTION_IMAGE", "brussels-wtf:issue21")
   @fixtures Path.expand("../support/pdf_contract", __DIR__)
+  @calibration Path.expand("../support/pdf_calibration", __DIR__)
+
+  test "real representative PDFs from all four communes match calibrated native labels" do
+    manifest = @calibration |> Path.join("manifest.json") |> File.read!() |> Jason.decode!()
+
+    assert MapSet.new(Enum.map(manifest["fixtures"], & &1["commune"])) ==
+             MapSet.new(["ixelles", "uccle", "forest", "city-of-brussels"])
+
+    for fixture <- manifest["fixtures"] do
+      bytes = File.read!(Path.join(@calibration, fixture["file"]))
+      assert BrusselsWtf.Digest.sha256(bytes) == fixture["sha256"]
+
+      result = contract(fixture["file"], fixture_root: @calibration)
+      assert result["status"] == "ok"
+      assert result["page_count"] == fixture["expected_page_count"]
+      assert result["quality_measurements"]["accepted"]
+      assert result["quality_measurements"]["rejected_pages"] == []
+      assert result["text_sha256"] == fixture["expected_text_sha256"]
+    end
+  end
 
   test "pinned production image applies calibrated native decisions for all four communes" do
     manifest = @fixtures |> Path.join("manifest.json") |> File.read!() |> Jason.decode!()
@@ -48,6 +68,10 @@ defmodule BrusselsWtf.Contracts.ProductionImagePdfTest do
     assert result["quality_measurements"]["rejected_pages"] == []
     assert is_binary(result["pdf_sha256"])
     assert is_binary(result["text_sha256"])
+
+    rotated = contract("city-rotated.pdf", mode: "ocr", pages: "1")
+    assert rotated["status"] == "ok"
+    assert rotated["quality_measurements"]["accepted"]
   end
 
   test "byte and wall-time limits fail with safe deterministic classifications" do

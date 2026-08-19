@@ -58,15 +58,14 @@ defmodule BrusselsWtf.Ingestion.ProcessingFailureTest do
     assert [review_case] = Review.list_review_cases!(%{kind: :extraction}, actor: actor)
     assert review_case.source_version_id == version.id
 
-    assert review_case.processing_generation ==
-             "extraction:#{version.id}:repeated_quality_failure"
-
     assert review_case.summary =~ "quality"
 
-    assert [%{status: :failed, output: %{"classification" => "repeated_quality_failure"}}] =
+    assert [%{status: :failed, output: %{"classification" => "repeated_quality_failure"}} = run] =
              version.id
              |> Ingestion.get_source_version!()
              |> Ash.load!(:processing_runs)
              |> Map.fetch!(:processing_runs)
+
+    assert review_case.processing_generation == "extraction:#{run.id}"
   end
 end

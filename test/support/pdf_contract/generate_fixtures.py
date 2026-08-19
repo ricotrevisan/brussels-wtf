@@ -3,6 +3,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.utils import ImageReader
 from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
+from pypdf import PdfReader, PdfWriter
 
 ROOT=Path(__file__).parent
 fr="Conseil communal ordre du jour proposition publique decision officielle seance ouverte aux citoyens"
@@ -34,6 +35,10 @@ def pdf(name, pages):
 pdf(Path('ixelles-born-digital.pdf'),[{'lines':['IXELLES / ELSENE',fr,nl]}])
 pdf(Path('uccle-bilingual.pdf'),[{'lines':['UCCLE / UKKEL',fr,nl,fr,nl]}])
 pdf(Path('forest-partial-scan.pdf'),[{'lines':['FOREST / VORST',fr,nl]},{'image':fr+' / '+nl}])
-pdf(Path('city-rotated.pdf'),[{'rotate':90,'lines':['VILLE DE BRUXELLES / STAD BRUSSEL',fr,nl]}])
+pdf(Path('city-unrotated.pdf'),[{'image':fr+' / '+nl}])
+reader=PdfReader(str(ROOT/'city-unrotated.pdf')); writer=PdfWriter()
+writer.add_page(reader.pages[0].rotate(90)); writer.write(str(ROOT/'city-rotated.pdf'))
+(ROOT/'city-unrotated.pdf').unlink()
+
 pdf(Path('scanned-bilingual.pdf'),[{'image':fr+' / '+nl}])
 (ROOT/'malformed.pdf').write_bytes(b'%PDF-1.7\nnot a valid xref table\n%%EOF\n')

@@ -27,6 +27,6 @@ defmodule BrusselsWtf.Ingestion.ProcessingFailure do
   def classify(_reason), do: :processing_failure
 
   def deterministic?(classification), do: classification in @deterministic
-  def terminal(:processing_failure), do: :processor_unavailable
+  def terminal(:processing_failure), do: :processor_failure
   def terminal(classification), do: classification
 end
