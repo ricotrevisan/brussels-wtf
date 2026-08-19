@@ -2,6 +2,7 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
   use BrusselsWtfWeb.ConnCase, async: false
 
   setup do
+    BrusselsWtf.HTTP.Stub.reset()
     BrusselsWtf.Seeds.PublicTimeline.run!()
     :ok
   end

@@ -360,7 +360,6 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     version = run.source_version
     source_record = version.source_record
     {:ok, normalized} = BrusselsWtf.Processors.normalize(run.output)
-    {:ok, locales} = BrusselsWtf.Processors.generate_locales(run.output)
 
     meeting =
       Council.upsert_meeting!(%{
@@ -400,22 +399,15 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
       record_proposals(candidate["proposals"], item, version, citation_url)
     end)
 
-    page =
-      Council.upsert_meeting_page!(%{
-        council_meeting_id: meeting.id,
-        citation_url: citation_url,
-        procedural_state: :unknown
-      })
+    Council.upsert_meeting_page!(%{
+      council_meeting_id: meeting.id,
+      citation_url: citation_url,
+      procedural_state: :unknown
+    })
 
-    Enum.each(locales, fn {locale, variant} ->
-      Council.upsert_locale_variant!(%{
-        meeting_page_id: page.id,
-        locale: to_string(locale),
-        title: variant["title"],
-        summary: variant["summary"],
-        provenance: provenance_for(locale)
-      })
-    end)
+    %{meeting_id: meeting.id}
+    |> Workers.PublishMeeting.new()
+    |> Oban.insert!()
 
     :ok
   end
@@ -861,9 +853,4 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
   defp language("nl"), do: :nl
   defp language("en"), do: :en
   defp language(_), do: :bilingual
-
-  defp provenance_for(locale) when locale in ["nl", :nl, "en", :en],
-    do: [:ai_generated, :machine_translated]
-
-  defp provenance_for(_locale), do: [:ai_generated]
 end

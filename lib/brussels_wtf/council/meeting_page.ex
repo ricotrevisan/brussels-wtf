@@ -23,8 +23,18 @@ defmodule BrusselsWtf.Council.MeetingPage do
       upsert_identity :one_page_per_meeting
     end
 
+    update :record_gate_failure do
+      accept [:publication_input_hash, :last_gate_failures, :gate_checked_at]
+    end
+
     update :publish do
-      accept []
+      accept [
+        :revision_published_at,
+        :publication_input_hash,
+        :last_gate_failures,
+        :gate_checked_at
+      ]
+
       change set_attribute(:publication_status, :published)
     end
 
@@ -96,6 +106,16 @@ defmodule BrusselsWtf.Council.MeetingPage do
       public? true
     end
 
+    attribute :publication_input_hash, :string, public?: true
+
+    attribute :last_gate_failures, {:array, :map} do
+      allow_nil? false
+      public? true
+      default []
+    end
+
+    attribute :gate_checked_at, :utc_datetime_usec, public?: true
+
     attribute :procedural_state, :atom do
       allow_nil? false
       public? true
@@ -113,6 +133,7 @@ defmodule BrusselsWtf.Council.MeetingPage do
     end
 
     has_many :locale_variants, BrusselsWtf.Council.LocaleVariant
+    has_many :coverage_runs, BrusselsWtf.Council.CoverageRun
   end
 
   identities do

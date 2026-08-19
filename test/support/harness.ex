@@ -68,6 +68,9 @@ defmodule BrusselsWtf.Test.Harness do
       end)
       |> Map.new()
 
+    coverage = File.read!(Path.join(dir, scenario["coverage_fixture_path"])) |> Jason.decode!()
+    BrusselsWtf.Processors.Stub.put_locales(scenario["meeting_identifier"], coverage)
+
     commune =
       Ingestion.create_commune!(%{
         slug: scenario["commune"],
@@ -80,6 +83,7 @@ defmodule BrusselsWtf.Test.Harness do
       index_url: scenario["index_url"],
       index_body: index,
       sources: sources,
+      coverage: coverage,
       expected: atomize_keys(scenario["expected"])
     }
 

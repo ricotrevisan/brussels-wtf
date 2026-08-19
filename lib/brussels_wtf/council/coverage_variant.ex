@@ -19,6 +19,7 @@ defmodule BrusselsWtf.Council.CoverageVariant do
 
       accept [
         :agenda_item_id,
+        :coverage_run_id,
         :locale,
         :title,
         :summary,
@@ -34,7 +35,13 @@ defmodule BrusselsWtf.Council.CoverageVariant do
 
   attributes do
     uuid_v7_primary_key :id
-    attribute :locale, :string, allow_nil?: false, public?: true
+
+    attribute :locale, :string do
+      allow_nil? false
+      public? true
+      constraints match: ~r/^(fr|nl|en)$/
+    end
+
     attribute :title, :string, allow_nil?: false, public?: true
     attribute :summary, :string, allow_nil?: false, public?: true
     attribute :proposal_summary, :string, public?: true
@@ -52,6 +59,7 @@ defmodule BrusselsWtf.Council.CoverageVariant do
 
   relationships do
     belongs_to :agenda_item, BrusselsWtf.Council.AgendaItem, allow_nil?: false, public?: true
+    belongs_to :coverage_run, BrusselsWtf.Council.CoverageRun, public?: true
   end
 
   identities do

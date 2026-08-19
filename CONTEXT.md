@@ -32,6 +32,18 @@ One execution of a named, versioned processor and configuration against a source
 
 An immutable processor output such as extracted text, OCR text, normalized structure, or a transcript. It retains its input hash, processor provenance, output hash, and private object key.
 
+## Publication input
+
+A deterministic projection of the current normalized meeting, its publishable claims, and their official evidence. Content generation may use only this projection; its hash identifies the exact generation being gated.
+
+## Coverage run
+
+One immutable execution of canonical French generation or Dutch/English translation for a meeting page. It retains its publication-input or parent-output hash, processor provenance, output hash, timing, usage, and failure details. Translation runs identify their canonical French parent.
+
+## Generated claim reference
+
+A stable reference from generated coverage to a claim present in the publication input. References do not create facts; unknown or unsupported references fail the publication gate.
+
 ## Review case
 
 An actionable acquisition, extraction, normalization, or evidence ambiguity that requires Rico's attention. It is domain work, not merely a failed background job, and resolving it never mutates raw source versions.

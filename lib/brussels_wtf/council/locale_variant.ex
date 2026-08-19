@@ -18,7 +18,7 @@ defmodule BrusselsWtf.Council.LocaleVariant do
 
     create :upsert do
       primary? true
-      accept [:meeting_page_id, :locale, :title, :summary, :provenance]
+      accept [:meeting_page_id, :coverage_run_id, :locale, :title, :summary, :provenance]
       upsert? true
       upsert_identity :unique_locale
     end
@@ -35,6 +35,7 @@ defmodule BrusselsWtf.Council.LocaleVariant do
     attribute :locale, :string do
       allow_nil? false
       public? true
+      constraints match: ~r/^(fr|nl|en)$/
     end
 
     attribute :title, :string do
@@ -58,6 +59,8 @@ defmodule BrusselsWtf.Council.LocaleVariant do
   end
 
   relationships do
+    belongs_to :coverage_run, BrusselsWtf.Council.CoverageRun, public?: true
+
     belongs_to :meeting_page, BrusselsWtf.Council.MeetingPage do
       allow_nil? false
       public? true

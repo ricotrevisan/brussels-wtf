@@ -106,10 +106,56 @@ defmodule BrusselsWtfWeb.PrincipalSeamTest do
              BrusselsWtfWeb.PublicEvidence.for_item(projected_item)
 
     page = meeting |> Ash.load!(:meeting_page) |> Map.fetch!(:meeting_page)
-    assert page.publication_status == :draft
+    assert page.publication_status == :published
 
-    conn = get(conn, scenario.expected.path <> "?lang=en")
-    assert html_response(conn, 404) =~ "Not Found"
+    generation_runs = BrusselsWtf.Council.list_coverage_runs!(page.id)
+    assert length(generation_runs) == 3
+
+    canonical = Enum.find(generation_runs, &(&1.operation == :canonical_generation))
+    translations = Enum.filter(generation_runs, &(&1.operation == :translation))
+
+    assert canonical.locale == "fr"
+    assert canonical.parent_run_id == nil
+    assert canonical.status == :succeeded
+    assert canonical.processor_name == "recorded-coverage-generator"
+    assert canonical.processor_version == "fixture-contract-1"
+    assert canonical.provider_category == "recorded_fixture"
+    assert canonical.input_hash =~ "sha256:"
+    assert canonical.output_hash =~ "sha256:"
+    assert is_map(canonical.output)
+
+    assert MapSet.new(Enum.map(translations, & &1.locale)) == MapSet.new(["nl", "en"])
+    assert Enum.all?(translations, &(&1.parent_run_id == canonical.id))
+    assert Enum.all?(translations, &(&1.input["canonical_output_hash"] == canonical.output_hash))
+    assert Enum.all?(translations, &(&1.input_hash != canonical.input_hash))
+
+    timeline = conn |> get("/?lang=en") |> html_response(200)
+    assert timeline =~ scenario.expected.title_en
+    assert timeline =~ "Coming up"
+    assert timeline =~ "Proposal"
+    assert timeline =~ "Outcome unknown"
+    assert timeline =~ "#{scenario.expected.path}?lang=en#agenda-item-4"
+
+    for {locale, title} <- [
+          {"fr", "Subvention proposée pour « Bruxelles fait son cinéma »"},
+          {"nl", "Voorgestelde subsidie voor ‘Bruxelles fait son cinéma’"},
+          {"en", scenario.expected.title_en}
+        ] do
+      html =
+        build_conn()
+        |> get(scenario.expected.path <> "?lang=#{locale}")
+        |> html_response(200)
+
+      assert html =~ title
+      assert html =~ "agenda-item-4"
+      assert html =~ "Rico Trevisan"
+      assert html =~ "AI-generated"
+      assert html =~ scenario.expected.citation_url
+      assert html =~ "Notes explicatives publiques, page 6/483"
+      assert html =~ project_hash
+
+      if locale in ["nl", "en"], do: assert(html =~ "machine-translated")
+    end
   end
 
   test "unchanged, changed, and failed checks append observations without overwriting bytes" do

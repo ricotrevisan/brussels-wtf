@@ -14,6 +14,11 @@ defmodule BrusselsWtf.Processors.Stub do
     Agent.update(__MODULE__, &Map.put(&1, sha256, outputs))
   end
 
+  def put_locales(meeting_identifier, output)
+      when is_binary(meeting_identifier) and is_map(output) do
+    Agent.update(__MODULE__, &Map.put(&1, {:locales, meeting_identifier}, output))
+  end
+
   @impl true
   def extract(%{sha256: sha256}, _bytes), do: fetch(sha256, :extract)
 
@@ -22,8 +27,53 @@ defmodule BrusselsWtf.Processors.Stub do
   def normalize(%{sha256: sha256}), do: fetch(sha256, :normalize)
 
   @impl true
-  def generate_locales(%{"sha256" => sha256}), do: fetch(sha256, :locales)
-  def generate_locales(%{sha256: sha256}), do: fetch(sha256, :locales)
+  def coverage_metadata do
+    %{
+      processor_name: "recorded-coverage-generator",
+      processor_version: "fixture-contract-1",
+      config_hash: "sha256:fixture-coverage-contract-1",
+      provider_category: "recorded_fixture",
+      model: "recorded-ixelles-proposal",
+      usage: %{"fixture" => true}
+    }
+  end
+
+  @impl true
+  def generate_fr(%{"meeting_identifier" => meeting_identifier}) do
+    with {:ok, output} <- generation_fixture(meeting_identifier) do
+      {:ok, locale_bundle(output, meeting_identifier, "fr")}
+    end
+  end
+
+  @impl true
+  def translate(%{"meeting_identifier" => meeting_identifier}, locale)
+      when locale in ["nl", "en"] do
+    with {:ok, output} <- generation_fixture(meeting_identifier) do
+      {:ok, locale_bundle(output, meeting_identifier, locale)}
+    end
+  end
+
+  defp generation_fixture(meeting_identifier) do
+    case Agent.get(__MODULE__, &Map.get(&1, {:locales, meeting_identifier})) do
+      nil -> {:error, {:missing_generation_fixture, meeting_identifier}}
+      output -> {:ok, output}
+    end
+  end
+
+  defp locale_bundle(output, meeting_identifier, locale) do
+    %{
+      "meeting_identifier" => meeting_identifier,
+      "page" => get_in(output, ["page", locale]),
+      "items" =>
+        Map.new(output["items"], fn {item_key, item} ->
+          {item_key,
+           %{
+             "claim_refs" => item["claim_refs"],
+             "variant" => get_in(item, ["variants", locale])
+           }}
+        end)
+    }
+  end
 
   defp fetch(sha256, key) do
     case Agent.get(__MODULE__, &get_in(&1, [sha256, key])) do

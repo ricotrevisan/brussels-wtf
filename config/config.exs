@@ -107,7 +107,8 @@ config :brussels_wtf, Oban,
     fetch: 2,
     extract: 1,
     ocr: 1,
-    normalize: 1
+    normalize: 1,
+    publish: 1
   ]
 
 # Configure the endpoint

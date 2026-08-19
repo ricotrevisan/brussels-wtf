@@ -193,6 +193,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       provenance: variant.provenance,
       state: state,
       disposition: decision && decision.disposition,
+      outcome: item.outcome,
       evidences: BrusselsWtfWeb.PublicEvidence.for_item(item),
       dossiers: Enum.map(item.dossier_links, & &1.dossier),
       href:
@@ -243,6 +244,10 @@ defmodule BrusselsWtfWeb.TimelinePage do
     do: text(locale, :decision) <> ": " <> disposition_label(locale, disposition)
 
   defp status_label(locale, %{state: :unknown}), do: text(locale, :outcome_unknown)
+
+  defp status_label(locale, %{state: :proposal, outcome: :unknown}),
+    do: text(locale, :proposal) <> " · " <> text(locale, :outcome_unknown)
+
   defp status_label(locale, _entry), do: text(locale, :proposal)
 
   defp disposition_label("fr", :approved), do: "approuvée"
