@@ -43,6 +43,16 @@ defmodule BrusselsWtf.Contracts.ProductionImagePdfTest do
     unsupported_ocr_input = contract("malformed.pdf", mode: "ocr", pages: "1")
 
     assert ixelles["process_role"] == "app"
+
+    assert ixelles["process_queues"] == %{
+             "poll" => 1,
+             "fetch" => 2,
+             "extract" => 1,
+             "normalize" => 1,
+             "publish" => 1
+           }
+
+    assert ixelles["oban_plugins_enabled"]
     assert ixelles["ocr_concurrency"] == nil
     assert ixelles["quality_measurements"]["accepted"]
     assert uccle["quality_measurements"]["accepted"]
@@ -78,6 +88,8 @@ defmodule BrusselsWtf.Contracts.ProductionImagePdfTest do
 
     assert result["status"] == "ok"
     assert result["process_role"] == "ocr"
+    assert result["process_queues"] == %{"ocr" => 1}
+    refute result["oban_plugins_enabled"]
     assert result["ocr_concurrency"] == 1
     assert result["quality_measurements"]["accepted"]
     assert result["quality_measurements"]["rejected_pages"] == []

@@ -35,6 +35,8 @@ defmodule BrusselsWtf.PDF.Contract do
                 else: nil
               ),
             process_role: Atom.to_string(Application.get_env(:brussels_wtf, :process_role, :app)),
+            process_queues: configured_process_queues(),
+            oban_plugins_enabled: configured_oban_plugins_enabled?(),
             ocr_concurrency: configured_ocr_concurrency()
           }
 
@@ -45,9 +47,25 @@ defmodule BrusselsWtf.PDF.Contract do
     IO.puts("PDF_CONTRACT_JSON=" <> Jason.encode!(safe))
   end
 
+  defp configured_process_queues do
+    Application.get_env(:brussels_wtf, :process_role, :app)
+    |> BrusselsWtf.Application.oban_config()
+    |> Keyword.fetch!(:queues)
+    |> Map.new(fn {queue, concurrency} -> {Atom.to_string(queue), concurrency} end)
+  end
+
+  defp configured_oban_plugins_enabled? do
+    Application.get_env(:brussels_wtf, :process_role, :app)
+    |> BrusselsWtf.Application.oban_config()
+    |> Keyword.fetch!(:plugins)
+    |> Kernel.!=(false)
+  end
+
   defp configured_ocr_concurrency do
-    role = Application.get_env(:brussels_wtf, :process_role, :app)
-    BrusselsWtf.ProcessRole.oban(role) |> Keyword.fetch!(:queues) |> Keyword.get(:ocr)
+    Application.get_env(:brussels_wtf, :process_role, :app)
+    |> BrusselsWtf.Application.oban_config()
+    |> Keyword.fetch!(:queues)
+    |> Keyword.get(:ocr)
   end
 
   defp parse_pages(value),

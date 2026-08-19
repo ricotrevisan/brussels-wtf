@@ -50,12 +50,12 @@ if config_env() == :prod do
       _ -> raise "PROCESS_ROLE must be app or ocr"
     end
 
-  config :brussels_wtf, Oban, BrusselsWtf.ProcessRole.oban(role)
-
   if role == :ocr do
     config :brussels_wtf, BrusselsWtfWeb.Endpoint, server: false
   end
 
+  # BrusselsWtf.Application applies this role as one exact Oban child config,
+  # avoiding recursive keyword-list leakage from the build configuration.
   config :brussels_wtf, :process_role, role
 
   config :brussels_wtf, :pdf_limits, %{

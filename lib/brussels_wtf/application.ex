@@ -7,6 +7,9 @@ defmodule BrusselsWtf.Application do
 
   @impl true
   def start(_type, _args) do
+    oban_config = oban_config()
+    Application.put_env(:brussels_wtf, Oban, oban_config, persistent: true)
+
     children =
       [
         BrusselsWtfWeb.Telemetry,
@@ -18,7 +21,7 @@ defmodule BrusselsWtf.Application do
         [
           {Task.Supervisor, name: BrusselsWtf.Readiness.TaskSupervisor},
           BrusselsWtf.Readiness.Monitor,
-          {Oban, Application.fetch_env!(:brussels_wtf, Oban)},
+          {Oban, oban_config},
           BrusselsWtfWeb.Endpoint
         ]
 
@@ -27,6 +30,15 @@ defmodule BrusselsWtf.Application do
     opts = [strategy: :one_for_one, name: BrusselsWtf.Supervisor]
     Supervisor.start_link(children, opts)
   end
+
+  @doc false
+  def oban_config(role \\ Application.get_env(:brussels_wtf, :process_role))
+
+  def oban_config(role) when role in [:app, :ocr] do
+    BrusselsWtf.ProcessRole.oban(role, Application.fetch_env!(:brussels_wtf, Oban))
+  end
+
+  def oban_config(nil), do: Application.fetch_env!(:brussels_wtf, Oban)
 
   # Tell Phoenix to update the endpoint configuration
   # whenever the application is updated.
