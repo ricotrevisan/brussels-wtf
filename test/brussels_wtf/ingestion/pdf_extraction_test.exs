@@ -94,6 +94,7 @@ defmodule BrusselsWtf.Ingestion.PdfExtractionTest do
     assert artifact.input_sha256 == version.sha256
     assert artifact.output_kind == "native-text"
     assert artifact.media_type == "text/plain; charset=utf-8"
+    assert String.starts_with?(artifact.object_key, "derived/sha256/")
     assert {:ok, text} = BrusselsWtf.Archive.get(artifact.object_key)
     assert text =~ "Gemeenteraad"
     assert BrusselsWtf.Digest.sha256(text) == artifact.output_sha256

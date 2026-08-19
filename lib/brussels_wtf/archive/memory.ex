@@ -18,8 +18,8 @@ defmodule BrusselsWtf.Archive.Memory do
   def reset, do: Agent.update(__MODULE__, fn _ -> %{} end)
 
   @impl true
-  def put(sha256, bytes) do
-    key = BrusselsWtf.Archive.object_key(sha256)
+  def put(namespace, sha256, bytes) do
+    key = BrusselsWtf.Archive.object_key(sha256, namespace)
 
     Agent.get_and_update(__MODULE__, fn objects ->
       case Map.fetch(objects, key) do

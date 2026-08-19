@@ -266,7 +266,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
              %{sha256: version.sha256, media_type: version.media_type},
              bytes
            ),
-         {:ok, archived_text} <- BrusselsWtf.Archive.store(result.text) do
+         {:ok, archived_text} <- BrusselsWtf.Archive.store(result.text, :derived) do
       record_native_result(version, result, archived_text, attempt)
     else
       actual when is_binary(actual) ->
@@ -412,7 +412,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
              ),
            true <- extracted.quality_measurements["accepted"],
            {:ok, archived_pdf} <- BrusselsWtf.Archive.store(extracted.searchable_pdf),
-           {:ok, archived_text} <- BrusselsWtf.Archive.store(extracted.text) do
+           {:ok, archived_text} <- BrusselsWtf.Archive.store(extracted.text, :derived) do
         complete_ocr(run, extracted, archived_pdf, archived_text, attempt)
       else
         false ->
@@ -520,7 +520,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
                %{sha256: version.sha256, media_type: version.media_type},
                bytes
              ),
-           {:ok, archived_text} <- BrusselsWtf.Archive.store(extracted.text) do
+           {:ok, archived_text} <- BrusselsWtf.Archive.store(extracted.text, :derived) do
         complete_review_extraction(run, extracted, archived_text, attempt)
       else
         actual when is_binary(actual) ->

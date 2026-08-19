@@ -15,7 +15,7 @@ defmodule BrusselsWtf.Archive.Unconfigured do
   end
 
   @impl true
-  def put(_sha256, _bytes), do: {:error, :source_archive_not_configured}
+  def put(_namespace, _sha256, _bytes), do: {:error, :source_archive_not_configured}
 
   @impl true
   def get(_object_key), do: {:error, :source_archive_not_configured}

@@ -11,13 +11,14 @@ defmodule BrusselsWtf.Archive.S3 do
   alias BrusselsWtf.Digest
 
   @sha256_pattern ~r/\A[0-9a-f]{64}\z/
-  @object_key_pattern ~r/\Araw\/sha256\/([0-9a-f]{2})\/([0-9a-f]{64})\z/
+  @object_key_pattern ~r/\A(?:raw|derived)\/sha256\/([0-9a-f]{2})\/([0-9a-f]{64})\z/
 
   @impl true
-  def put(sha256, bytes) when is_binary(sha256) and is_binary(bytes) do
+  def put(namespace, sha256, bytes)
+      when namespace in [:raw, :derived] and is_binary(sha256) and is_binary(bytes) do
     safely(fn ->
       with :ok <- validate_content(sha256, bytes) do
-        put_once(Archive.object_key(sha256), sha256, bytes)
+        put_once(Archive.object_key(sha256, namespace), sha256, bytes)
       end
     end)
   end

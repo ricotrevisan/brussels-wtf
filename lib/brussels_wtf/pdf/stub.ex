@@ -18,9 +18,12 @@ defmodule BrusselsWtf.PDF.Stub do
 
       {:ok,
        %{
-         output: Map.put(extracted, "language_signals", Quality.language_signals(page_texts)),
+         output:
+           extracted
+           |> Map.put("page_count", length(page_texts))
+           |> Map.put("language_signals", Quality.language_signals(page_texts)),
          text: Enum.join(page_texts, ""),
-         page_count: Map.get(extracted, "page_count", length(page_texts)),
+         page_count: length(page_texts),
          quality_measurements: quality,
          diagnostics: %{"pdfinfo_status" => 0, "pdftotext_status" => 0},
          tool_versions: metadata().tool_versions,

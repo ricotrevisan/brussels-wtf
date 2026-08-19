@@ -3,7 +3,9 @@ defmodule BrusselsWtf.ArchiveTest do
 
   defmodule CorruptArchive do
     @behaviour BrusselsWtf.Archive
-    def put(sha256, _bytes), do: {:ok, BrusselsWtf.Archive.object_key(sha256)}
+    def put(namespace, sha256, _bytes),
+      do: {:ok, BrusselsWtf.Archive.object_key(sha256, namespace)}
+
     def get(_key), do: {:ok, "different bytes"}
     def ready?, do: :ok
   end
@@ -37,5 +39,15 @@ defmodule BrusselsWtf.ArchiveTest do
   test "an unconfigured production archive refuses startup visibly" do
     assert {:error, :source_archive_not_configured} =
              BrusselsWtf.Archive.Unconfigured.start_link([])
+  end
+
+  test "derived processor bytes use a namespace distinct from raw evidence" do
+    Application.put_env(:brussels_wtf, :archive, BrusselsWtf.Archive.Memory)
+    bytes = "derived text"
+
+    assert {:ok, %{object_key: "derived/sha256/" <> _} = archived} =
+             BrusselsWtf.Archive.store(bytes, :derived)
+
+    assert BrusselsWtf.Archive.get(archived.object_key) == {:ok, bytes}
   end
 end
