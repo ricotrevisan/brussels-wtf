@@ -45,6 +45,32 @@ defmodule BrusselsWtf.ReviewInboxAndActionsTest do
     original_version = Ingestion.get_source_version!(context.version.id)
     assert {:ok, original_bytes} = BrusselsWtf.Archive.get(original_version.object_key)
 
+    failed_run =
+      Ingestion.record_processing_run!(%{
+        source_version_id: context.version.id,
+        processor_name: "native-extraction",
+        processor_version: "1",
+        config_hash: "original-fixture",
+        status: :failed,
+        output: %{"error" => "quality failure"}
+      })
+
+    assert_raise Ash.Error.Invalid, fn ->
+      Review.retry_review_case!(
+        context.review_case,
+        %{
+          note: "duplicate processing identity",
+          processor_name: "native-extraction",
+          processor_version: "1",
+          config_hash: "original-fixture"
+        },
+        actor: actor
+      )
+    end
+
+    assert Ingestion.get_processing_run!(failed_run.id).status == :failed
+    assert Review.get_review_case!(context.review_case.id, actor: actor).actions == []
+
     assert_raise Ash.Error.Forbidden, fn ->
       Review.retry_review_case!(context.review_case, %{
         note: "try the corrected extractor",
@@ -80,8 +106,8 @@ defmodule BrusselsWtf.ReviewInboxAndActionsTest do
              }
            ] = detail.actions
 
-    assert [%{id: retry_run_id, processor_name: "native-extraction", status: :queued}] =
-             detail.source_version.processing_runs
+    retry_run = Enum.find(detail.source_version.processing_runs, &(&1.status == :queued))
+    assert %{id: retry_run_id, processor_name: "native-extraction"} = retry_run
 
     assert_enqueued(
       worker: BrusselsWtf.Workers.ExtractSource,
@@ -101,13 +127,37 @@ defmodule BrusselsWtf.ReviewInboxAndActionsTest do
     completed = Review.get_review_case!(updated.id, actor: actor)
     assert completed.status == :resolved
 
-    assert [%{status: :succeeded, output: %{"text" => "corrected extraction"}}] =
-             completed.source_version.processing_runs
+    completed_retry =
+      Enum.find(completed.source_version.processing_runs, &(&1.id == retry_run_id))
+
+    assert %{status: :succeeded, output: %{"text" => "corrected extraction"}} = completed_retry
+    assert Ingestion.get_processing_run!(failed_run.id).status == :failed
 
     unchanged_version = Ingestion.get_source_version!(context.version.id)
     assert unchanged_version.sha256 == original_version.sha256
     assert unchanged_version.object_key == original_version.object_key
     assert BrusselsWtf.Archive.get(unchanged_version.object_key) == {:ok, original_bytes}
+  end
+
+  test "source-specific revisions fail instead of auditing a no-op", %{actor: actor} do
+    review_case =
+      Review.open_review_case!(%{
+        kind: :normalization,
+        affected_record_id: Ecto.UUID.generate(),
+        affected_record_type: "agenda_item",
+        processing_generation: "no-source",
+        summary: "No source record is attached"
+      })
+
+    assert_raise Ash.Error.Invalid, fn ->
+      Review.reclassify_review_case!(
+        review_case,
+        %{note: "cannot apply", classification: :minutes},
+        actor: actor
+      )
+    end
+
+    assert Review.get_review_case!(review_case.id, actor: actor).actions == []
   end
 
   test "reclassify, relink, correct, and mark unsupported retain their typed dispositions", %{

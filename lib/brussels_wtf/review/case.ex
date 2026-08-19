@@ -115,7 +115,10 @@ defmodule BrusselsWtf.Review.Case do
       require_atomic? false
       argument :note, :string, allow_nil?: false
       argument :target_record_id, :uuid, allow_nil?: false
-      argument :target_record_type, :string, allow_nil?: false
+
+      argument :target_record_type, :atom,
+        allow_nil?: false,
+        constraints: [one_of: [:council_meeting]]
 
       change {BrusselsWtf.Review.Changes.AuditAction,
               action: :relink, effect: :domain_revision, disposition: :relinked}

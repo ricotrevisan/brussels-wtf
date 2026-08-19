@@ -10,6 +10,12 @@ defmodule BrusselsWtf.Review.Changes.AuditAction do
 
     changeset =
       cond do
+        action in [:reclassify, :relink] and is_nil(changeset.data.source_record_id) ->
+          Ash.Changeset.add_error(changeset,
+            field: :source_record_id,
+            message: "is required for this review action"
+          )
+
         action == :retry and changeset.data.disposition == :unsupported ->
           Ash.Changeset.add_error(changeset,
             field: :disposition,
@@ -94,7 +100,7 @@ defmodule BrusselsWtf.Review.Changes.AuditAction do
   defp append_effect!(%{source_version_id: version_id}, audit, :retry, note, details, _actor)
        when is_binary(version_id) do
     run =
-      BrusselsWtf.Ingestion.record_processing_run!(%{
+      BrusselsWtf.Ingestion.create_review_processing_run!(%{
         source_version_id: version_id,
         processor_name: Map.fetch!(details, "processor_name"),
         processor_version: Map.fetch!(details, "processor_version"),
@@ -157,7 +163,7 @@ defmodule BrusselsWtf.Review.Changes.AuditAction do
 
   defp apply_domain_revision!(%{source_record_id: source_record_id}, :relink, %{
          "target_record_id" => target_record_id,
-         "target_record_type" => "council_meeting"
+         "target_record_type" => :council_meeting
        })
        when is_binary(source_record_id) do
     source_record = BrusselsWtf.Ingestion.get_source_record!(source_record_id)

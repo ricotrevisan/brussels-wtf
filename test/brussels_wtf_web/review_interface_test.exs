@@ -29,6 +29,10 @@ defmodule BrusselsWtfWeb.ReviewInterfaceTest do
     assert body =~ "Ixelles"
     assert body =~ "gen-1"
 
+    inbox_document = LazyHTML.from_document(body)
+    assert LazyHTML.text(inbox_document["thead"]) =~ "Affected record"
+    assert LazyHTML.text(inbox_document["thead"]) =~ "Status / disposition"
+
     detail = get(recycle(inbox), ~p"/review/cases/#{context.review_case.id}")
     body = html_response(detail, 200)
     assert body =~ context.url

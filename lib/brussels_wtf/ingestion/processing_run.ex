@@ -21,6 +21,17 @@ defmodule BrusselsWtf.Ingestion.ProcessingRun do
       accept [:status, :output]
     end
 
+    create :review_retry do
+      accept [
+        :source_version_id,
+        :processor_name,
+        :processor_version,
+        :config_hash,
+        :status,
+        :output
+      ]
+    end
+
     create :upsert do
       primary? true
 

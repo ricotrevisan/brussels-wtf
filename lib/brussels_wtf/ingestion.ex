@@ -49,6 +49,7 @@ defmodule BrusselsWtf.Ingestion do
     resource BrusselsWtf.Ingestion.ProcessingRun do
       define :get_processing_run, action: :read, get_by: [:id]
       define :record_processing_run, action: :upsert
+      define :create_review_processing_run, action: :review_retry
       define :complete_processing_run, action: :complete
     end
   end

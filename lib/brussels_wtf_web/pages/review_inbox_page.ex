@@ -102,9 +102,9 @@ defmodule BrusselsWtfWeb.ReviewInboxPage do
         <table class="table">
           <thead>
             <tr>
-              <th>Case</th><th>Commune</th><th>Generation</th><th>Urgency</th><th>Status</th><th>
-                Age
-              </th>
+              <th>Case</th><th>Commune</th><th>Affected record</th><th>Generation</th><th>Urgency</th><th>
+                Status / disposition
+              </th><th>Age</th>
             </tr>
           </thead>
           <tbody>

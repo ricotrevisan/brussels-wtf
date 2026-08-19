@@ -249,8 +249,10 @@ defmodule BrusselsWtfWeb.ReviewCasePage do
         <ol class="mt-5 space-y-3">
           <li :for={action <- @review_case.actions} class="border-l-4 border-primary pl-3">
             <strong>{humanize(action.action)}</strong>
-            by {action.actor_id} · {humanize(action.disposition)}
-            <p>{action.note}</p><time class="text-sm">{DateTime.to_iso8601(action.inserted_at)}</time>
+            by {action.actor_id} · {humanize(action.disposition)} · effect {humanize(action.effect)}
+            <p>{action.note}</p>
+            <pre class="mt-1 whitespace-pre-wrap text-xs">{inspect(action.details, pretty: true)}</pre>
+            <time class="text-sm">{DateTime.to_iso8601(action.inserted_at)}</time>
           </li>
           <li :for={note <- @review_case.notes} class="border-l-4 border-base-300 pl-3">
             <strong>Note by {note.actor_id}</strong><p>{note.body}</p><time class="text-sm">{DateTime.to_iso8601(
@@ -258,6 +260,19 @@ defmodule BrusselsWtfWeb.ReviewCasePage do
             )}</time>
           </li>
         </ol>
+        <h3 class="mt-6 font-semibold">Appended revisions</h3>
+        <ul class="mt-2 space-y-2">
+          <li :for={revision <- @review_case.revisions}>
+            {humanize(revision.kind)} · {revision.note}<pre class="whitespace-pre-wrap text-xs">{inspect(revision.details, pretty: true)}</pre>
+          </li>
+        </ul>
+        <h3 class="mt-6 font-semibold">Durable exclusions</h3>
+        <ul class="mt-2 space-y-2">
+          <li :for={exclusion <- @review_case.exclusions}>
+            {exclusion.reason} · generation
+            <code>{exclusion.processing_generation}</code><pre class="whitespace-pre-wrap text-xs">{inspect(exclusion.details, pretty: true)}</pre>
+          </li>
+        </ul>
       </section>
     </main>
     """
