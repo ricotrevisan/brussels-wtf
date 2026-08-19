@@ -12,7 +12,7 @@ defmodule BrusselsWtf.HTTP.Req do
     request = %{
       headers: request_headers(opts),
       max_body_bytes: Keyword.get(opts, :max_body_bytes, configured_max_body_bytes()),
-      receive_timeout: Keyword.get(opts, :receive_timeout, @default_receive_timeout)
+      receive_timeout: Keyword.get(opts, :receive_timeout, configured_receive_timeout())
     }
 
     follow(url, [], @max_redirects, request)
@@ -151,5 +151,9 @@ defmodule BrusselsWtf.HTTP.Req do
 
   defp configured_max_body_bytes do
     Application.get_env(:brussels_wtf, :http_max_body_bytes, @default_max_body_bytes)
+  end
+
+  defp configured_receive_timeout do
+    Application.get_env(:brussels_wtf, :http_receive_timeout, @default_receive_timeout)
   end
 end

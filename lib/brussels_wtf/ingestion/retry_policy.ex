@@ -16,6 +16,12 @@ defmodule BrusselsWtf.Ingestion.RetryPolicy do
     end
   end
 
+  defp classify({:transport, {:body_too_large, _limit}}, _opts),
+    do: {:review, :invalid_content}
+
+  defp classify({:transport, :too_many_redirects}, _opts),
+    do: {:review, :invalid_content}
+
   defp classify({:transport, _reason}, _opts), do: {:transient, %{}}
 
   defp classify({:deterministic, classification}, _opts),

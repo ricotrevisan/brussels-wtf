@@ -13,18 +13,24 @@ defmodule BrusselsWtf.Workers.FetchLocator do
   alias BrusselsWtf.Ingestion
 
   @impl true
-  def perform(%Oban.Job{
-        args:
-          %{
-            "locator_id" => locator_id,
-            "poll_run_id" => poll_run_id,
-            "check_key" => base_check_key
-          } = args
-      }) do
+  def perform(
+        %Oban.Job{
+          args:
+            %{
+              "locator_id" => locator_id,
+              "poll_run_id" => poll_run_id,
+              "check_key" => base_check_key
+            } = args
+        } = job
+      ) do
     started_monotonic = System.monotonic_time()
     attempt = Map.get(args, "attempt", 1)
     check_key = "#{base_check_key}:locator:#{locator_id}:attempt:#{attempt}"
-    Ingestion.mark_poll_run_running!(Ingestion.get_poll_run!(poll_run_id))
+    run = Ingestion.get_poll_run!(poll_run_id)
+
+    if run.target_type == :locator do
+      Ingestion.mark_poll_run_running!(run)
+    end
 
     outcome =
       case BrusselsWtf.Ingestion.Pipeline.retrieve(
@@ -40,13 +46,14 @@ defmodule BrusselsWtf.Workers.FetchLocator do
           terminal_review(locator_id, poll_run_id, base_check_key, classification, attempt)
 
         result when result in [:ok, :complete, :disappeared] ->
-          complete_attempt(locator_id, poll_run_id)
+          complete_attempt(locator_id, poll_run_id, result)
       end
 
     BrusselsWtf.Ingestion.Observability.poll_stopped(
       Ingestion.get_poll_run!(poll_run_id),
       outcome,
-      started_monotonic
+      started_monotonic,
+      BrusselsWtf.Ingestion.Observability.queue_age(job)
     )
 
     :ok
@@ -62,7 +69,11 @@ defmodule BrusselsWtf.Workers.FetchLocator do
     |> __MODULE__.new(schedule_in: delay_seconds)
     |> Oban.insert!()
 
-    Ingestion.mark_poll_run_retrying!(Ingestion.get_poll_run!(poll_run_id))
+    run = Ingestion.get_poll_run!(poll_run_id)
+
+    if run.target_type == :locator do
+      Ingestion.mark_poll_run_retrying!(run)
+    end
 
     BrusselsWtf.Ingestion.Observability.retry_scheduled(
       %{poll_run_id: poll_run_id, source_locator_id: locator_id, attempt: attempt},
@@ -107,7 +118,7 @@ defmodule BrusselsWtf.Workers.FetchLocator do
     :failed
   end
 
-  defp complete_attempt(locator_id, poll_run_id) do
+  defp complete_attempt(locator_id, poll_run_id, result) do
     run = Ingestion.get_poll_run!(poll_run_id)
     now = BrusselsWtf.Clock.utc_now()
 
@@ -115,9 +126,15 @@ defmodule BrusselsWtf.Workers.FetchLocator do
       locator = Ingestion.get_locator!(locator_id)
 
       next_fetch_at =
-        case BrusselsWtf.Ingestion.PollSchedule.next_fetch_at(locator, now) do
-          :stop -> nil
-          %DateTime{} = next -> next
+        case result do
+          :disappeared ->
+            nil
+
+          _other ->
+            case BrusselsWtf.Ingestion.PollSchedule.next_fetch_at(locator, now) do
+              :stop -> nil
+              %DateTime{} = next -> next
+            end
         end
 
       Ingestion.schedule_locator_fetch!(locator, %{
@@ -126,7 +143,10 @@ defmodule BrusselsWtf.Workers.FetchLocator do
       })
     end
 
-    Ingestion.complete_poll_run!(run, %{completed_at: now})
+    if run.target_type == :locator do
+      Ingestion.complete_poll_run!(run, %{completed_at: now})
+    end
+
     :completed
   end
 

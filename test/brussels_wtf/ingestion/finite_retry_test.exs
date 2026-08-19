@@ -117,4 +117,29 @@ defmodule BrusselsWtf.Ingestion.FiniteRetryTest do
       args: %{locator_id: locator.id, poll_run_id: run.id, attempt: 2}
     )
   end
+
+  test "a newly discovered 404 remains retryable throughout its finite attempt chain", %{
+    locator: locator,
+    run: run
+  } do
+    BrusselsWtf.HTTP.Stub.put(locator.url, %{status: 404, body: "missing"})
+
+    for attempt <- 1..2 do
+      assert :ok =
+               perform_job(FetchLocator, %{
+                 locator_id: locator.id,
+                 poll_run_id: run.id,
+                 check_key: run.check_key,
+                 attempt: attempt
+               })
+    end
+
+    assert Enum.map(Ingestion.list_observations!(locator.id), & &1.status) ==
+             [:failure, :failure]
+
+    assert_enqueued(
+      worker: FetchLocator,
+      args: %{locator_id: locator.id, poll_run_id: run.id, attempt: 3}
+    )
+  end
 end

@@ -4,7 +4,7 @@ defmodule BrusselsWtf.Workers.PollCommune do
   use Oban.Worker,
     queue: :poll,
     max_attempts: 1,
-    unique: [period: :infinity, fields: [:worker, :args], states: :all]
+    unique: [period: :infinity, fields: [:worker, :args], states: :incomplete]
 
   alias BrusselsWtf.Ingestion
 
@@ -16,23 +16,23 @@ defmodule BrusselsWtf.Workers.PollCommune do
           "scope" => "previous-year"
         }
       }) do
-    Ingestion.request_scheduled_poll!(commune_slug, :previous_year)
-    :ok
+    request_scheduled_if_available(commune_slug, :previous_year)
   end
 
   def perform(%Oban.Job{args: %{"commune_slug" => commune_slug, "kind" => "scheduled"}}) do
-    Ingestion.request_scheduled_poll!(commune_slug)
-    :ok
+    request_scheduled_if_available(commune_slug, :current)
   end
 
-  def perform(%Oban.Job{
-        args:
-          %{
-            "commune_id" => commune_id,
-            "poll_run_id" => poll_run_id,
-            "check_key" => base_check_key
-          } = args
-      }) do
+  def perform(
+        %Oban.Job{
+          args:
+            %{
+              "commune_id" => commune_id,
+              "poll_run_id" => poll_run_id,
+              "check_key" => base_check_key
+            } = args
+        } = job
+      ) do
     started_monotonic = System.monotonic_time()
     attempt = Map.get(args, "attempt", 1)
     check_key = "#{base_check_key}:index:attempt:#{attempt}"
@@ -53,20 +53,33 @@ defmodule BrusselsWtf.Workers.PollCommune do
           terminal_review(commune_id, poll_run_id, base_check_key, classification, attempt)
 
         result when result in [:ok, :complete, :disappeared] ->
-          Ingestion.complete_poll_run!(Ingestion.get_poll_run!(poll_run_id), %{
+          Ingestion.mark_poll_run_dispatched!(Ingestion.get_poll_run!(poll_run_id), %{
             completed_at: BrusselsWtf.Clock.utc_now()
           })
 
-          :completed
+          :dispatched
       end
 
     BrusselsWtf.Ingestion.Observability.poll_stopped(
       Ingestion.get_poll_run!(poll_run_id),
       outcome,
-      started_monotonic
+      started_monotonic,
+      BrusselsWtf.Ingestion.Observability.queue_age(job)
     )
 
     :ok
+  end
+
+  defp request_scheduled_if_available(commune_slug, scope) do
+    case BrusselsWtf.Communes.adapter(commune_slug) do
+      {:ok, _adapter} ->
+        Ingestion.request_scheduled_poll!(commune_slug, scope)
+        :ok
+
+      {:error, :adapter_not_implemented} ->
+        BrusselsWtf.Ingestion.Observability.adapter_unavailable(commune_slug)
+        :ok
+    end
   end
 
   defp enqueue_retry(commune_id, poll_run_id, check_key, attempt, delay_seconds) do

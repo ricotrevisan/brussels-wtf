@@ -37,7 +37,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         discovered_at: now
       })
 
-    newly_discovered? = Ingestion.list_observations!(index_locator.id) == []
+    newly_discovered? = newly_discovered?(index_locator.id)
 
     case BrusselsWtf.HTTP.get(commune.index_url, conditional_options(index_locator.id)) do
       {:ok, %{status: 304} = response} ->
@@ -65,8 +65,19 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
       {:ok, %{status: status, body: body} = response} when status in 200..299 ->
         case archive_index(index_locator, response, body, now) do
           {:ok, version, observation_status} ->
+            if observation_status == :success do
+              BrusselsWtf.Ingestion.Observability.archive_stored(
+                poll_run.id,
+                index_locator.id,
+                version.id,
+                byte_size(body)
+              )
+            end
+
             case discover(commune, body) do
               {:ok, discovered} ->
+                discovered = scope_discovered(discovered, poll_run.scope, now)
+
                 record_observation(index_locator, poll_run.id, response, check_key,
                   status: observation_status,
                   sha256: version.sha256,
@@ -90,6 +101,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
                     })
                   end)
 
+                stored = Enum.map(stored, &reactivate_if_rediscovered(&1, now))
                 mark_disappeared(commune.id, poll_run.id, check_key, stored, now)
                 enqueue_document_fetches(commune.id, poll_run, check_key, stored)
                 :ok
@@ -152,7 +164,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
   def retrieve(locator_id, poll_run_id, check_key, attempt \\ 1) do
     locator = Ingestion.get_locator!(locator_id)
     now = BrusselsWtf.Clock.utc_now()
-    newly_discovered? = Ingestion.list_observations!(locator.id) == []
+    newly_discovered? = newly_discovered?(locator.id)
 
     result =
       case BrusselsWtf.HTTP.get(locator.url, conditional_options(locator.id)) do
@@ -418,23 +430,33 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
 
   defp enqueue_document_fetches(commune_id, poll_run, check_key, discovered \\ nil) do
     locators =
-      case {poll_run.kind, discovered} do
-        {:scheduled, nil} ->
+      case {poll_run.kind, poll_run.scope, discovered} do
+        {:scheduled, :previous_year, nil} ->
+          commune_id
+          |> Ingestion.list_document_locators!()
+          |> previous_year_locators(BrusselsWtf.Clock.utc_now())
+
+        {:scheduled, :previous_year, locators} ->
+          locators
+
+        {:scheduled, :current, nil} ->
           Ingestion.list_due_locators!(BrusselsWtf.Clock.utc_now())
           |> Enum.filter(&(&1.commune_id == commune_id))
 
-        {:scheduled, locators} ->
+        {:scheduled, :current, locators} ->
           Enum.filter(locators, &due_now?/1)
 
-        {_manual_kind, nil} ->
+        {_manual_kind, _scope, nil} ->
           Ingestion.list_document_locators!(commune_id)
 
-        {_manual_kind, locators} ->
+        {_manual_kind, _scope, locators} ->
           locators
       end
 
+    locators =
+      if is_nil(discovered), do: Enum.reject(locators, &disappeared?/1), else: locators
+
     locators
-    |> Enum.reject(&disappeared?/1)
     |> Enum.filter(&(&1.role in [:agenda, :project, :supplement, :addendum, :minutes, :register]))
     |> Enum.each(fn locator ->
       %{
@@ -454,10 +476,32 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     DateTime.compare(next_fetch_at, BrusselsWtf.Clock.utc_now()) in [:lt, :eq]
   end
 
+  defp scope_discovered(discovered, :previous_year, now),
+    do: previous_year_locators(discovered, now)
+
+  defp scope_discovered(discovered, _scope, _now), do: discovered
+
+  defp previous_year_locators(locators, now) do
+    previous_year = DateTime.to_date(now).year - 1
+
+    Enum.filter(locators, fn
+      %{scheduled_on: %Date{year: ^previous_year}} -> true
+      _locator -> false
+    end)
+  end
+
   defp initial_next_fetch_at(locator, now) do
     case BrusselsWtf.Ingestion.PollSchedule.next_fetch_at(locator, now) do
       :stop -> nil
       _next -> now
+    end
+  end
+
+  defp reactivate_if_rediscovered(locator, now) do
+    if disappeared?(locator) do
+      Ingestion.schedule_locator_fetch!(locator, %{next_fetch_at: now})
+    else
+      locator
     end
   end
 
@@ -493,12 +537,14 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
             first_retrieved_at: now
           })
 
-        BrusselsWtf.Ingestion.Observability.archive_stored(
-          poll_run_id,
-          locator.id,
-          version.id,
-          byte_size(body)
-        )
+        unless existed? do
+          BrusselsWtf.Ingestion.Observability.archive_stored(
+            poll_run_id,
+            locator.id,
+            version.id,
+            byte_size(body)
+          )
+        end
 
         record_observation(locator, poll_run_id, response, check_key,
           status: if(existed?, do: :unchanged, else: :success),
@@ -569,32 +615,39 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     |> Ingestion.list_document_locators!()
     |> Enum.reject(&MapSet.member?(discovered_ids, &1.id))
     |> Enum.each(fn locator ->
-      Ingestion.record_observation!(%{
-        source_locator_id: locator.id,
-        poll_run_id: poll_run_id,
-        check_key: scheduled_check_key(check_key, locator.id),
-        observed_at: now,
-        status: :disappeared,
-        final_url: locator.url,
-        error_kind: "disappeared_from_index",
-        error_message: "locator was absent from the authoritative index observation"
-      })
+      observation =
+        Ingestion.record_observation!(%{
+          source_locator_id: locator.id,
+          poll_run_id: poll_run_id,
+          check_key: scheduled_check_key(check_key, locator.id),
+          observed_at: now,
+          status: :disappeared,
+          final_url: locator.url,
+          error_kind: "disappeared_from_index",
+          error_message: "locator was absent from the authoritative index observation"
+        })
+
+      BrusselsWtf.Ingestion.Observability.retrieval(observation)
     end)
   end
 
   defp record_transport_failure(locator, poll_run_id, check_key, failure, now) do
-    Ingestion.record_observation!(%{
-      source_locator_id: locator.id,
-      poll_run_id: poll_run_id,
-      check_key: check_key || scheduled_check_key(poll_run_id, locator.id),
-      observed_at: now,
-      status: :failure,
-      final_url: Map.get(failure, :final_url, locator.url),
-      response_headers: normalize_headers(Map.get(failure, :response_headers, %{})),
-      redirect_chain: normalize_redirects(Map.get(failure, :redirect_chain, [])),
-      error_kind: error_kind(failure.reason),
-      error_message: safe_error(failure.reason)
-    })
+    observation =
+      Ingestion.record_observation!(%{
+        source_locator_id: locator.id,
+        poll_run_id: poll_run_id,
+        check_key: check_key || scheduled_check_key(poll_run_id, locator.id),
+        observed_at: now,
+        status: :failure,
+        final_url: Map.get(failure, :final_url, locator.url),
+        response_headers: normalize_headers(Map.get(failure, :response_headers, %{})),
+        redirect_chain: normalize_redirects(Map.get(failure, :redirect_chain, [])),
+        error_kind: error_kind(failure.reason),
+        error_message: safe_error(failure.reason)
+      })
+
+    BrusselsWtf.Ingestion.Observability.retrieval(observation)
+    observation
   end
 
   defp record_observation(locator, poll_run_id, response, check_key, attrs) do
@@ -700,6 +753,12 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     end
   end
 
+  defp newly_discovered?(locator_id) do
+    locator_id
+    |> Ingestion.list_observations!()
+    |> Enum.all?(&(&1.status not in [:success, :unchanged]))
+  end
+
   defp changed_observation?(locator_id, check_key) do
     locator_id
     |> Ingestion.list_observations!()
@@ -719,7 +778,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     do: reason |> inspect(limit: 20, printable_limit: 500) |> String.slice(0, 1_000)
 
   defp record_extraction_failure(version, reason) do
-    classification = processing_failure_classification(reason)
+    classification = BrusselsWtf.Ingestion.ProcessingFailure.classify(reason)
 
     Ingestion.record_processing_run!(%{
       source_version_id: version.id,
@@ -732,19 +791,6 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         "error" => safe_error(reason)
       }
     })
-  end
-
-  defp processing_failure_classification(reason) do
-    case reason do
-      :repeated_quality_failure -> :repeated_quality_failure
-      {:quality_failure, _details} -> :repeated_quality_failure
-      :unsupported_media -> :unsupported_media
-      {:unsupported_media, _details} -> :unsupported_media
-      :invalid_content -> :invalid_content
-      {:invalid_content, _details} -> :invalid_content
-      {:archived_hash_mismatch, _expected, _actual} -> :corruption
-      _ -> :processing_failure
-    end
   end
 
   defp current_version_order(version) do

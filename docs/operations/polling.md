@@ -1,6 +1,6 @@
 # Municipal polling operations
 
-Issue #20 makes polling requests durable before Oban executes them. PostgreSQL owns locator due times; cron only starts fixed commune and delayed-record index checks.
+[#20: Schedule polling with finite retries and observability](https://github.com/RicoTrevisan/brussels-wtf/issues/20) makes polling requests durable before Oban executes them. PostgreSQL owns locator due times; cron only starts fixed commune and delayed-record index checks.
 
 ## Fixed schedules
 
@@ -9,6 +9,8 @@ Issue #20 makes polling requests durable before Oban executes them. PostgreSQL o
 - Meeting locators: every six hours from 30 days before through 30 days after the meeting.
 - Older meeting locators: daily through day 180, stopping earlier when a final record has not changed for 30 days.
 - Historical backfill: never scheduled; it is an explicit authenticated operation.
+
+Cron entries exist for all four communes. A cron wrapper records an `adapter unavailable` metric and exits safely until that commune's explicit adapter is implemented; it does not create recurring failed polls or review cases.
 
 `source_locators.next_fetch_at` is authoritative. No locator URL is represented by a dynamic cron entry.
 

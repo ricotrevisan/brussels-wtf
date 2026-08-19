@@ -15,6 +15,7 @@ defmodule BrusselsWtf.Ingestion.Observability do
     :source_version_id,
     :review_case_id,
     :commune_id,
+    :commune_slug,
     :status,
     :classification,
     :attempt,
@@ -63,6 +64,15 @@ defmodule BrusselsWtf.Ingestion.Observability do
     )
   end
 
+  def adapter_unavailable(commune_slug) do
+    emit(
+      [:brussels_wtf, :ingestion, :adapter, :unavailable],
+      %{count: 1},
+      %{commune_slug: commune_slug, status: :skipped},
+      "ingestion_adapter_unavailable"
+    )
+  end
+
   def review_case_created(metadata) do
     emit(
       [:brussels_wtf, :ingestion, :review_case, :created],
@@ -72,15 +82,7 @@ defmodule BrusselsWtf.Ingestion.Observability do
     )
   end
 
-  def poll_stopped(run, status, started_monotonic) do
-    now = BrusselsWtf.Clock.utc_now()
-
-    queue_age =
-      case run.inserted_at do
-        %DateTime{} = inserted_at -> max(DateTime.diff(now, inserted_at, :millisecond), 0)
-        _ -> 0
-      end
-
+  def poll_stopped(run, status, started_monotonic, queue_age) do
     emit(
       [:brussels_wtf, :ingestion, :poll, :stop],
       %{
@@ -91,6 +93,12 @@ defmodule BrusselsWtf.Ingestion.Observability do
       %{poll_run_id: run.id, commune_id: run.commune_id, status: status},
       "ingestion_poll_completed"
     )
+  end
+
+  def queue_age(%Oban.Job{} = job) do
+    started_at = job.attempted_at || BrusselsWtf.Clock.utc_now()
+    queued_at = job.scheduled_at || job.inserted_at || started_at
+    max(DateTime.diff(started_at, queued_at, :millisecond), 0)
   end
 
   def measure_health do

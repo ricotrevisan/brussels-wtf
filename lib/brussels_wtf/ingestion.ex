@@ -19,6 +19,7 @@ defmodule BrusselsWtf.Ingestion do
       define :list_poll_runs, action: :read
       define :mark_poll_run_running, action: :mark_running
       define :mark_poll_run_retrying, action: :mark_retrying
+      define :mark_poll_run_dispatched, action: :mark_dispatched
       define :complete_poll_run, action: :complete
       define :fail_poll_run, action: :fail
     end
@@ -73,7 +74,7 @@ defmodule BrusselsWtf.Ingestion do
           BrusselsWtf.Ingestion.PollRun.t()
   def request_poll_now!(target, opts) when is_map(target) and is_list(opts) do
     actor = Keyword.fetch!(opts, :actor)
-    request_poll!(target, :poll_now, actor)
+    request_poll!(target, :poll_now, actor, :current)
   end
 
   @doc "Persists and enqueues an explicit authenticated historical backfill."
@@ -81,7 +82,7 @@ defmodule BrusselsWtf.Ingestion do
           BrusselsWtf.Ingestion.PollRun.t()
   def request_backfill!(target, opts) when is_map(target) and is_list(opts) do
     actor = Keyword.fetch!(opts, :actor)
-    request_poll!(target, :backfill, actor)
+    request_poll!(target, :backfill, actor, :backfill)
   end
 
   @doc "Enqueues one fixed scheduled commune poll from cron."
@@ -89,7 +90,12 @@ defmodule BrusselsWtf.Ingestion do
     commune = ensure_configured_commune!(commune_slug)
     target_type = if scope == :previous_year, do: :index, else: :commune
 
-    request_poll!(%{type: target_type, id: commune.id}, :scheduled, %{id: "system", role: :system})
+    request_poll!(
+      %{type: target_type, id: commune.id},
+      :scheduled,
+      %{id: "system", role: :system},
+      scope
+    )
   end
 
   @doc false
@@ -108,7 +114,7 @@ defmodule BrusselsWtf.Ingestion do
     end
   end
 
-  defp request_poll!(target, kind, actor) do
+  defp request_poll!(target, kind, actor, scope) do
     authorize_poll_request!(kind, actor)
     {target_type, target_id, commune, jobs} = resolve_poll_target!(target)
     check_key = "poll:#{Ecto.UUID.generate()}"
@@ -123,6 +129,7 @@ defmodule BrusselsWtf.Ingestion do
         target_type: target_type,
         target_id: target_id,
         check_key: check_key,
+        scope: scope,
         status: :queued
       })
 
@@ -149,7 +156,11 @@ defmodule BrusselsWtf.Ingestion do
           |> Oban.insert!()
       end)
 
-      poll_run
+      if target_type == :meeting do
+        complete_poll_run!(poll_run, %{completed_at: BrusselsWtf.Clock.utc_now()})
+      else
+        poll_run
+      end
     rescue
       error ->
         fail_poll_run!(poll_run, %{
@@ -182,7 +193,15 @@ defmodule BrusselsWtf.Ingestion do
       |> Enum.filter(&(&1.meeting_identifier == meeting.municipal_identifier))
       |> Enum.map(&{:locator, &1.id})
 
-    {:meeting, id, commune, jobs}
+    case jobs do
+      [] ->
+        raise Ash.Error.Query.NotFound,
+          resource: BrusselsWtf.Ingestion.SourceLocator,
+          primary_key: %{meeting_id: id}
+
+      _jobs ->
+        {:meeting, id, commune, jobs}
+    end
   end
 
   defp ensure_configured_commune!(slug) do
@@ -215,7 +234,8 @@ defmodule BrusselsWtf.Ingestion do
       list_communes!()
       |> Enum.reject(fn commune ->
         Enum.any?(runs, fn run ->
-          run.commune_id == commune.id and run.kind == :scheduled and run.status == :completed and
+          run.commune_id == commune.id and run.kind == :scheduled and
+            run.status in [:dispatched, :completed] and
             match?(%DateTime{}, run.completed_at) and
             DateTime.diff(now, run.completed_at, :second) <= stale_after
         end)

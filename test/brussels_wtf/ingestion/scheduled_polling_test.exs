@@ -5,6 +5,8 @@ defmodule BrusselsWtf.Ingestion.ScheduledPollingTest do
   alias BrusselsWtf.Ingestion
 
   setup do
+    BrusselsWtf.HTTP.Stub.reset()
+    BrusselsWtf.Archive.Memory.reset()
     BrusselsWtf.Clock.Controlled.set(~U[2026-08-20 12:00:00Z])
 
     commune =
@@ -100,15 +102,14 @@ defmodule BrusselsWtf.Ingestion.ScheduledPollingTest do
     assert health.repeated_failure_count == 0
   end
 
-  test "a fixed cron request establishes its configured commune and durable run" do
+  test "a fixed cron request creates durable current and previous-year runs", %{
+    commune: commune
+  } do
     assert :ok =
              perform_job(BrusselsWtf.Workers.PollCommune, %{
-               commune_slug: "uccle",
+               commune_slug: "ixelles",
                kind: "scheduled"
              })
-
-    commune = Ingestion.get_commune_by_slug!("uccle")
-    assert commune.name == "Uccle"
 
     assert [
              %{
@@ -116,11 +117,134 @@ defmodule BrusselsWtf.Ingestion.ScheduledPollingTest do
                kind: :scheduled,
                requester_id: "system",
                target_type: :commune,
+               scope: :current,
                status: :queued
              }
            ] = Ingestion.list_poll_runs!()
 
     assert commune_id == commune.id
+
+    assert :ok =
+             perform_job(BrusselsWtf.Workers.PollCommune, %{
+               commune_slug: "ixelles",
+               kind: "scheduled",
+               scope: "previous-year"
+             })
+
+    assert Enum.any?(Ingestion.list_poll_runs!(), fn run ->
+             run.commune_id == commune.id and run.target_type == :index and
+               run.scope == :previous_year
+           end)
+  end
+
+  test "fixed cron skips a commune until its explicit adapter is implemented" do
+    assert :ok =
+             perform_job(BrusselsWtf.Workers.PollCommune, %{
+               commune_slug: "uccle",
+               kind: "scheduled"
+             })
+
+    assert Ingestion.list_poll_runs!() == []
+  end
+
+  test "previous-year and backfill scopes select distinct index work", %{commune: commune} do
+    current = File.read!("test/support/fixtures/ixelles/proposal/index.html")
+    previous = String.replace(current, "[2026]", "[2025]")
+    index = current <> previous
+
+    BrusselsWtf.HTTP.Stub.put(commune.index_url, %{status: 200, body: index})
+    previous = Ingestion.request_scheduled_poll!("ixelles", :previous_year)
+
+    assert :ok =
+             BrusselsWtf.Ingestion.Pipeline.discover_and_enqueue(
+               commune.id,
+               previous.id,
+               previous.check_key,
+               1
+             )
+
+    assert Ingestion.list_document_locators!(commune.id)
+           |> Enum.all?(&(&1.scheduled_on.year == 2025))
+
+    backfill =
+      Ingestion.request_backfill!(%{type: :commune, id: commune.id},
+        actor: %BrusselsWtf.Review.Actor{id: "rico", role: :reviewer}
+      )
+
+    assert :ok =
+             BrusselsWtf.Ingestion.Pipeline.discover_and_enqueue(
+               commune.id,
+               backfill.id,
+               backfill.check_key,
+               1
+             )
+
+    assert Ingestion.list_document_locators!(commune.id)
+           |> Enum.map(& &1.scheduled_on.year)
+           |> MapSet.new() == MapSet.new([2025, 2026])
+  end
+
+  test "a scheduled index rediscovery reactivates a disappeared locator", %{commune: commune} do
+    index = File.read!("test/support/fixtures/ixelles/proposal/index.html")
+    BrusselsWtf.HTTP.Stub.put(commune.index_url, %{status: 200, body: index})
+
+    first =
+      Ingestion.request_poll_now!(%{type: :commune, id: commune.id},
+        actor: %BrusselsWtf.Review.Actor{id: "rico", role: :reviewer}
+      )
+
+    assert :ok =
+             perform_job(BrusselsWtf.Workers.PollCommune, %{
+               commune_id: commune.id,
+               poll_run_id: first.id,
+               check_key: first.check_key,
+               attempt: 1
+             })
+
+    project =
+      commune.id
+      |> Ingestion.list_document_locators!()
+      |> Enum.find(&(&1.role == :project and &1.meeting_identifier == "268"))
+
+    missing_project =
+      Regex.replace(
+        ~r/<a href="\.\.\/uploads\/conseil\/projets\/268\.pdf".*?<\/a> \(2618 Ko\)/s,
+        index,
+        ""
+      )
+
+    BrusselsWtf.HTTP.Stub.put(commune.index_url, %{status: 200, body: missing_project})
+
+    second =
+      Ingestion.request_poll_now!(%{type: :commune, id: commune.id},
+        actor: %BrusselsWtf.Review.Actor{id: "rico", role: :reviewer}
+      )
+
+    assert :ok =
+             perform_job(BrusselsWtf.Workers.PollCommune, %{
+               commune_id: commune.id,
+               poll_run_id: second.id,
+               check_key: second.check_key,
+               attempt: 1
+             })
+
+    assert List.last(Ingestion.list_observations!(project.id)).status == :disappeared
+
+    BrusselsWtf.HTTP.Stub.put(commune.index_url, %{status: 200, body: index})
+    scheduled = Ingestion.request_scheduled_poll!("ixelles")
+
+    assert :ok =
+             perform_job(BrusselsWtf.Workers.PollCommune, %{
+               commune_id: commune.id,
+               poll_run_id: scheduled.id,
+               check_key: scheduled.check_key,
+               attempt: 1
+             })
+
+    assert_enqueued(
+      worker: BrusselsWtf.Workers.FetchLocator,
+      args: %{locator_id: project.id, poll_run_id: scheduled.id}
+    )
   end
 
   defp locator!(commune, suffix, next_fetch_at) do

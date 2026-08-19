@@ -71,4 +71,12 @@ defmodule BrusselsWtf.Ingestion.RetryPolicyTest do
     assert delay in 540..660
     refute delay == 600
   end
+
+  test "deterministic HTTP adapter limits do not consume transport retries" do
+    assert RetryPolicy.decision({:transport, {:body_too_large, 1_024}}, 1, now: @now) ==
+             {:review, :invalid_content}
+
+    assert RetryPolicy.decision({:transport, :too_many_redirects}, 1, now: @now) ==
+             {:review, :invalid_content}
+  end
 end

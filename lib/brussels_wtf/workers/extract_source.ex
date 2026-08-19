@@ -23,10 +23,15 @@ defmodule BrusselsWtf.Workers.ExtractSource do
         :ok
 
       {:error, reason} = error ->
-        classification = classify(reason)
+        classification = BrusselsWtf.Ingestion.ProcessingFailure.classify(reason)
 
-        if deterministic?(classification) or attempt >= max_attempts do
-          open_terminal_case(source_version_id, terminal_classification(classification))
+        if BrusselsWtf.Ingestion.ProcessingFailure.deterministic?(classification) or
+             attempt >= max_attempts do
+          open_terminal_case(
+            source_version_id,
+            BrusselsWtf.Ingestion.ProcessingFailure.terminal(classification)
+          )
+
           :ok
         else
           error
@@ -61,27 +66,6 @@ defmodule BrusselsWtf.Workers.ExtractSource do
       classification: classification
     })
   end
-
-  defp classify(:repeated_quality_failure), do: :repeated_quality_failure
-  defp classify({:quality_failure, _details}), do: :repeated_quality_failure
-  defp classify(:unsupported_media), do: :unsupported_media
-  defp classify({:unsupported_media, _details}), do: :unsupported_media
-  defp classify(:invalid_content), do: :invalid_content
-  defp classify({:invalid_content, _details}), do: :invalid_content
-  defp classify({:archived_hash_mismatch, _expected, _actual}), do: :corruption
-  defp classify(_reason), do: :processing_failure
-
-  defp deterministic?(classification),
-    do:
-      classification in [
-        :repeated_quality_failure,
-        :unsupported_media,
-        :invalid_content,
-        :corruption
-      ]
-
-  defp terminal_classification(:processing_failure), do: :repeated_quality_failure
-  defp terminal_classification(classification), do: classification
 
   defp summary(:repeated_quality_failure),
     do: "Native extraction quality failed repeatedly and requires review"

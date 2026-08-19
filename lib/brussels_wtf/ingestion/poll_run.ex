@@ -30,6 +30,7 @@ defmodule BrusselsWtf.Ingestion.PollRun do
         :target_type,
         :target_id,
         :check_key,
+        :scope,
         :status
       ]
     end
@@ -42,6 +43,11 @@ defmodule BrusselsWtf.Ingestion.PollRun do
     update :mark_retrying do
       accept []
       change set_attribute(:status, :retrying)
+    end
+
+    update :mark_dispatched do
+      accept [:completed_at]
+      change set_attribute(:status, :dispatched)
     end
 
     update :complete do
@@ -92,11 +98,18 @@ defmodule BrusselsWtf.Ingestion.PollRun do
       public? true
     end
 
+    attribute :scope, :atom do
+      allow_nil? false
+      public? true
+      default :current
+      constraints one_of: [:current, :previous_year, :backfill]
+    end
+
     attribute :status, :atom do
       allow_nil? false
       public? true
       default :queued
-      constraints one_of: [:queued, :running, :retrying, :completed, :failed]
+      constraints one_of: [:queued, :running, :retrying, :dispatched, :completed, :failed]
     end
 
     attribute :error_summary, :string, public?: true

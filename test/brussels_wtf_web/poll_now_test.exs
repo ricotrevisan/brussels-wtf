@@ -112,8 +112,14 @@ defmodule BrusselsWtfWeb.PollNowTest do
     index = Enum.find(runs, &(&1.target_type == :index))
     meeting_run = Enum.find(runs, &(&1.target_type == :meeting))
 
-    assert %{kind: :backfill, target_type: :commune, requester_id: "rico"} = backfill
-    assert %{kind: :poll_now, target_type: :index} = index
+    assert %{
+             kind: :backfill,
+             scope: :backfill,
+             target_type: :commune,
+             requester_id: "rico"
+           } = backfill
+
+    assert %{kind: :poll_now, scope: :current, target_type: :index} = index
     assert %{kind: :poll_now, target_type: :meeting} = meeting_run
 
     assert_enqueued(
@@ -188,5 +194,27 @@ defmodule BrusselsWtfWeb.PollNowTest do
 
     assert response(response, 422) == "Invalid poll target"
     assert Ingestion.list_poll_runs!() == []
+  end
+
+  test "a meeting target without known locators is rejected instead of remaining queued", %{
+    reviewer_conn: conn,
+    commune: commune
+  } do
+    meeting =
+      BrusselsWtf.Council.upsert_meeting!(%{
+        commune_id: commune.id,
+        municipal_identifier: "no-locators",
+        scheduled_on: ~D[2026-09-30]
+      })
+
+    response =
+      post(conn, ~p"/review/polls", %{
+        "operation" => "poll-now",
+        "target_type" => "meeting",
+        "target_id" => meeting.id
+      })
+
+    assert response(response, 422) == "Invalid poll target"
+    refute Enum.any?(Ingestion.list_poll_runs!(), &(&1.target_id == meeting.id))
   end
 end
