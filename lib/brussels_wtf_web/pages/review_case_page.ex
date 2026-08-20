@@ -12,6 +12,14 @@ defmodule BrusselsWtfWeb.ReviewCasePage do
     {"mark-unsupported", "Mark unsupported"}
   ]
 
+  @dossier_actions [
+    {"confirm-dossier-link", "Confirm dossier link"},
+    {"remove-dossier-link", "Remove dossier link"},
+    {"merge-dossiers", "Merge dossiers"},
+    {"split-dossier", "Split dossier"},
+    {"relink-dossier", "Relink agenda item"}
+  ]
+
   @impl Dstar.Page
   def mount(conn, %{"id" => id}) do
     actor = conn.assigns.current_review_actor
@@ -74,7 +82,7 @@ defmodule BrusselsWtfWeb.ReviewCasePage do
       previews: previews,
       derived_artifacts: derived_artifacts,
       artifact_previews: artifact_previews,
-      actions: @actions,
+      actions: if(review_case.kind == :link_correction, do: @dossier_actions, else: @actions),
       csrf_token: Plug.CSRFProtection.get_csrf_token()
     )
   end
@@ -216,6 +224,65 @@ defmodule BrusselsWtfWeb.ReviewCasePage do
             </label>
             <label :if={action == "mark-unsupported"} class="mt-3 block">Reason code
             <input name="reason_code" required class="input input-bordered mt-1 w-full" /></label>
+            <input
+              :if={action in ["confirm-dossier-link", "remove-dossier-link"]}
+              type="hidden"
+              name="dossier_link_id"
+              value={@review_case.normalized_content["dossier_link_id"]}
+            />
+            <div :if={action == "merge-dossiers"} class="mt-3 grid gap-2">
+              <label>Source dossier UUID
+              <input
+                name="source_dossier_id"
+                required
+                value={@review_case.normalized_content["source_dossier_id"]}
+                class="input input-bordered w-full"
+              /></label>
+              <label>Target dossier UUID
+              <input
+                name="target_dossier_id"
+                required
+                value={@review_case.normalized_content["target_dossier_id"]}
+                class="input input-bordered w-full"
+              /></label>
+            </div>
+            <div :if={action == "split-dossier"} class="mt-3 grid gap-2">
+              <label>Source dossier UUID
+              <input
+                name="source_dossier_id"
+                required
+                value={
+                  @review_case.normalized_content["dossier_id"] ||
+                    @review_case.normalized_content["source_dossier_id"]
+                }
+                class="input input-bordered w-full"
+              /></label>
+              <label>Dossier link UUIDs, comma-separated
+              <input
+                name="dossier_link_ids"
+                required
+                value={@review_case.normalized_content["dossier_link_id"]}
+                class="input input-bordered w-full"
+              /></label>
+              <label>New dossier slug
+              <input name="new_dossier_slug" required class="input input-bordered w-full" /></label>
+              <label>New dossier title
+              <input name="new_dossier_title" required class="input input-bordered w-full" /></label>
+            </div>
+            <div :if={action == "relink-dossier"} class="mt-3 grid gap-2">
+              <input
+                type="hidden"
+                name="dossier_link_id"
+                value={@review_case.normalized_content["dossier_link_id"]}
+              />
+              <label>Target dossier UUID
+              <input
+                name="target_dossier_id"
+                required
+                value={@review_case.normalized_content["target_dossier_id"]}
+                class="input input-bordered w-full"
+              /></label>
+            </div>
             <button class="btn btn-sm mt-3" type="submit">{label}</button>
           </form>
         </div>
@@ -261,6 +328,12 @@ defmodule BrusselsWtfWeb.ReviewCasePage do
           <li :for={exclusion <- @review_case.exclusions}>
             {exclusion.reason} · generation
             <code>{exclusion.processing_generation}</code><pre class="whitespace-pre-wrap text-xs">{inspect(exclusion.details, pretty: true)}</pre>
+          </li>
+        </ul>
+        <h3 class="mt-6 font-semibold">Dossier revisions</h3>
+        <ul class="mt-2 space-y-2">
+          <li :for={action <- @review_case.dossier_actions}>
+            {humanize(action.action)} by {action.actor_id} · {action.note}<pre class="whitespace-pre-wrap text-xs">{inspect(action.details, pretty: true)}</pre>
           </li>
         </ul>
       </section>

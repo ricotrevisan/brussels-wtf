@@ -16,14 +16,90 @@ defmodule BrusselsWtf.Council.DossierLink do
 
     create :upsert do
       primary? true
-      accept [:agenda_item_id, :dossier_id]
+
+      accept [
+        :agenda_item_id,
+        :dossier_id,
+        :match_method,
+        :confidence,
+        :matcher_name,
+        :matcher_version,
+        :match_features,
+        :processing_generation,
+        :status,
+        :disposition
+      ]
+
       upsert? true
       upsert_identity :unique_link
+
+      upsert_fields [
+        :match_method,
+        :confidence,
+        :matcher_name,
+        :matcher_version,
+        :match_features,
+        :processing_generation,
+        :status,
+        :disposition,
+        :updated_at
+      ]
+    end
+
+    update :confirm do
+      require_atomic? false
+      change set_attribute(:status, :active)
+      change set_attribute(:disposition, :confirmed)
+    end
+
+    update :remove do
+      require_atomic? false
+      change set_attribute(:status, :removed)
+      change set_attribute(:disposition, :removed)
+    end
+
+    update :move do
+      require_atomic? false
+      accept [:dossier_id]
+      change set_attribute(:status, :active)
+      change set_attribute(:disposition, :confirmed)
     end
   end
 
   attributes do
     uuid_v7_primary_key :id
+
+    attribute :match_method, :atom do
+      allow_nil? false
+      public? true
+      default :editorial
+      constraints one_of: [:authoritative_identifier, :automated, :editorial]
+    end
+
+    attribute :confidence, :float, allow_nil?: false, public?: true, default: 1.0
+    attribute :matcher_name, :string, allow_nil?: false, public?: true, default: "editorial"
+    attribute :matcher_version, :string, allow_nil?: false, public?: true, default: "1"
+    attribute :match_features, :map, allow_nil?: false, public?: true, default: %{}
+
+    attribute :processing_generation, :string,
+      allow_nil?: false,
+      public?: true,
+      default: "editorial"
+
+    attribute :status, :atom do
+      allow_nil? false
+      public? true
+      default :active
+      constraints one_of: [:active, :removed]
+    end
+
+    attribute :disposition, :atom do
+      allow_nil? false
+      public? true
+      default :confirmed
+      constraints one_of: [:unreviewed, :confirmed, :removed]
+    end
+
     timestamps()
   end
 

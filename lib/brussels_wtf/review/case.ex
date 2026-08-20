@@ -138,6 +138,24 @@ defmodule BrusselsWtf.Review.Case do
       change {BrusselsWtf.Review.Changes.AuditAction,
               action: :mark_unsupported, effect: :exclusion, disposition: :unsupported}
     end
+
+    update :resolve_dossier do
+      require_atomic? false
+
+      argument :disposition, :atom,
+        allow_nil?: false,
+        constraints: [
+          one_of: [
+            :dossier_link_confirmed,
+            :dossier_link_removed,
+            :dossiers_merged,
+            :dossier_split,
+            :dossier_relinked
+          ]
+        ]
+
+      change BrusselsWtf.Review.Changes.ResolveDossierCase
+    end
   end
 
   policies do
@@ -154,7 +172,7 @@ defmodule BrusselsWtf.Review.Case do
       authorize_if actor_attribute_equals(:role, :reviewer)
     end
 
-    policy action([:retry, :reclassify, :relink, :correct, :mark_unsupported]) do
+    policy action([:retry, :reclassify, :relink, :correct, :mark_unsupported, :resolve_dossier]) do
       authorize_if actor_attribute_equals(:role, :reviewer)
     end
   end
@@ -223,7 +241,12 @@ defmodule BrusselsWtf.Review.Case do
                     :reclassified,
                     :relinked,
                     :corrected,
-                    :unsupported
+                    :unsupported,
+                    :dossier_link_confirmed,
+                    :dossier_link_removed,
+                    :dossiers_merged,
+                    :dossier_split,
+                    :dossier_relinked
                   ]
     end
 
@@ -265,6 +288,11 @@ defmodule BrusselsWtf.Review.Case do
     end
 
     has_many :exclusions, BrusselsWtf.Review.Exclusion do
+      destination_attribute :review_case_id
+      sort inserted_at: :asc
+    end
+
+    has_many :dossier_actions, BrusselsWtf.Council.DossierAction do
       destination_attribute :review_case_id
       sort inserted_at: :asc
     end

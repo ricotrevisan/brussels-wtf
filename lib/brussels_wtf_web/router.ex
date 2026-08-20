@@ -37,6 +37,7 @@ defmodule BrusselsWtfWeb.Router do
     dstar("/", TimelinePage)
     dstar("/meetings/:commune/:municipal_id", MeetingPage)
     dstar("/dossiers/:slug", DossierPage)
+    post "/dossiers/:slug/links/:link_id/reports", DossierReportController, :create
   end
 
   scope "/review", BrusselsWtfWeb do

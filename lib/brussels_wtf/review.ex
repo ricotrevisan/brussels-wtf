@@ -17,6 +17,7 @@ defmodule BrusselsWtf.Review do
       define :relink_review_case, action: :relink
       define :correct_review_case, action: :correct
       define :mark_review_case_unsupported, action: :mark_unsupported
+      define :resolve_dossier_review_case, action: :resolve_dossier
     end
 
     resource BrusselsWtf.Review.Action do
@@ -104,6 +105,7 @@ defmodule BrusselsWtf.Review do
       :notes,
       :revisions,
       :exclusions,
+      :dossier_actions,
       source_record: [:versions],
       source_version: [:observations, processing_runs: [:derived_artifacts, :attempts]]
     ])

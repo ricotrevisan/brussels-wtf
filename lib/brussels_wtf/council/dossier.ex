@@ -14,11 +14,21 @@ defmodule BrusselsWtf.Council.Dossier do
   actions do
     defaults [:read]
 
+    create :create do
+      accept [:slug, :title]
+    end
+
     create :upsert do
       primary? true
       accept [:slug, :title]
       upsert? true
       upsert_identity :unique_slug
+    end
+
+    update :retire do
+      accept [:retired_into_id]
+      require_atomic? false
+      change set_attribute(:status, :retired)
     end
 
     read :by_slug do
@@ -27,6 +37,7 @@ defmodule BrusselsWtf.Council.Dossier do
 
       prepare build(
                 load: [
+                  :retired_into,
                   dossier_links: [
                     agenda_item: [
                       :decision,
@@ -46,11 +57,23 @@ defmodule BrusselsWtf.Council.Dossier do
     uuid_v7_primary_key :id
     attribute :slug, :string, allow_nil?: false, public?: true
     attribute :title, :string, allow_nil?: false, public?: true
+
+    attribute :status, :atom do
+      allow_nil? false
+      public? true
+      default :active
+      constraints one_of: [:active, :retired]
+    end
+
     timestamps()
   end
 
   relationships do
     has_many :dossier_links, BrusselsWtf.Council.DossierLink
+
+    belongs_to :retired_into, __MODULE__ do
+      public? true
+    end
   end
 
   identities do

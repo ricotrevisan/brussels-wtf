@@ -9,21 +9,24 @@ defmodule BrusselsWtfWeb.ReviewActionController do
     "mark-unsupported" => :mark_review_case_unsupported!
   }
 
+  @dossier_actions ~w(confirm-dossier-link remove-dossier-link merge-dossiers split-dossier relink-dossier)
+
   def create(conn, %{"case_id" => case_id, "action" => action, "note" => note} = params) do
-    with operation when not is_nil(operation) <- Map.get(@actions, action),
-         review_case <-
-           BrusselsWtf.Review.get_review_case!(case_id, actor: conn.assigns.current_review_actor) do
-      inputs = action_inputs(action, note, params)
+    actor = conn.assigns.current_review_actor
 
-      apply(BrusselsWtf.Review, operation, [
-        review_case,
-        inputs,
-        [actor: conn.assigns.current_review_actor]
-      ])
+    cond do
+      operation = Map.get(@actions, action) ->
+        review_case = BrusselsWtf.Review.get_review_case!(case_id, actor: actor)
+        inputs = action_inputs(action, note, params)
+        apply(BrusselsWtf.Review, operation, [review_case, inputs, [actor: actor]])
+        redirect(conn, to: "/review/cases/#{case_id}")
 
-      redirect(conn, to: "/review/cases/#{case_id}")
-    else
-      _ -> send_resp(conn, 404, "Not found")
+      action in @dossier_actions ->
+        perform_dossier_action!(action, case_id, note, params, actor)
+        redirect(conn, to: "/review/cases/#{case_id}")
+
+      true ->
+        send_resp(conn, 404, "Not found")
     end
   end
 
@@ -54,4 +57,49 @@ defmodule BrusselsWtfWeb.ReviewActionController do
 
   defp action_inputs("mark-unsupported", note, params),
     do: %{note: note, reason_code: Map.get(params, "reason_code")}
+
+  defp perform_dossier_action!("confirm-dossier-link", case_id, note, params, actor) do
+    BrusselsWtf.Council.Dossiers.confirm_link!(params["dossier_link_id"], case_id, note, actor)
+  end
+
+  defp perform_dossier_action!("remove-dossier-link", case_id, note, params, actor) do
+    BrusselsWtf.Council.Dossiers.remove_link!(params["dossier_link_id"], case_id, note, actor)
+  end
+
+  defp perform_dossier_action!("merge-dossiers", case_id, note, params, actor) do
+    BrusselsWtf.Council.Dossiers.merge!(
+      params["source_dossier_id"],
+      params["target_dossier_id"],
+      case_id,
+      note,
+      actor
+    )
+  end
+
+  defp perform_dossier_action!("split-dossier", case_id, note, params, actor) do
+    link_ids =
+      params
+      |> Map.get("dossier_link_ids", "")
+      |> String.split(",", trim: true)
+      |> Enum.map(&String.trim/1)
+
+    BrusselsWtf.Council.Dossiers.split!(
+      params["source_dossier_id"],
+      link_ids,
+      %{slug: params["new_dossier_slug"], title: params["new_dossier_title"]},
+      case_id,
+      note,
+      actor
+    )
+  end
+
+  defp perform_dossier_action!("relink-dossier", case_id, note, params, actor) do
+    BrusselsWtf.Council.Dossiers.relink!(
+      params["dossier_link_id"],
+      params["target_dossier_id"],
+      case_id,
+      note,
+      actor
+    )
+  end
 end

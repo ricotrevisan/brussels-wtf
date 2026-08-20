@@ -50,12 +50,27 @@ defmodule BrusselsWtf.Council do
     end
 
     resource BrusselsWtf.Council.Dossier do
+      define :get_dossier_by_id, action: :read, get_by: [:id]
+      define :create_dossier, action: :create
       define :upsert_dossier, action: :upsert
       define :get_dossier, action: :by_slug, args: [:slug]
+      define :retire_dossier, action: :retire
     end
 
     resource BrusselsWtf.Council.DossierLink do
+      define :get_dossier_link, action: :read, get_by: [:id]
       define :upsert_dossier_link, action: :upsert
+      define :confirm_dossier_link, action: :confirm
+      define :remove_dossier_link, action: :remove
+      define :move_dossier_link, action: :move
+    end
+
+    resource BrusselsWtf.Council.DossierAction do
+      define :record_dossier_action, action: :record
+    end
+
+    resource BrusselsWtf.Council.DossierMatchExclusion do
+      define :record_dossier_match_exclusion, action: :record
     end
 
     resource BrusselsWtf.Council.CoverageVariant do

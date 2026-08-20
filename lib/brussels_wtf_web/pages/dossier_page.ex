@@ -8,6 +8,12 @@ defmodule BrusselsWtfWeb.DossierPage do
     locale = BrusselsWtfWeb.Locale.resolve(conn, params)
 
     case Council.get_dossier(slug) do
+      {:ok, %{status: :retired, retired_into: retired_into}}
+      when not is_nil(retired_into) and not is_struct(retired_into, Ash.NotLoaded) ->
+        conn
+        |> Plug.Conn.put_status(308)
+        |> Phoenix.Controller.redirect(to: "/dossiers/#{retired_into.slug}?lang=#{locale}")
+
       {:ok, dossier} ->
         entries =
           dossier.dossier_links
@@ -83,6 +89,28 @@ defmodule BrusselsWtfWeb.DossierPage do
               {text(@locale, :synthetic_reference)}
             </span>
           </p>
+          <details class="mt-3 text-sm">
+            <summary class="cursor-pointer underline underline-offset-2">
+              {text(@locale, :report_link)}
+            </summary>
+            <form
+              method="post"
+              action={"/dossiers/#{@dossier.slug}/links/#{entry.link_id}/reports"}
+              class="mt-3 border border-base-300 p-3"
+            >
+              <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+              <label>
+                {text(@locale, :report_reason)}
+                <textarea
+                  name="reason"
+                  required
+                  minlength="10"
+                  class="textarea textarea-bordered mt-1 w-full"
+                ></textarea>
+              </label>
+              <button type="submit" class="btn btn-sm mt-2">{text(@locale, :submit_report)}</button>
+            </form>
+          </details>
         </li>
       </ol>
 
@@ -92,6 +120,8 @@ defmodule BrusselsWtfWeb.DossierPage do
     </main>
     """
   end
+
+  defp entry(%{status: :removed}, _locale), do: []
 
   defp entry(link, locale) do
     item = link.agenda_item
@@ -112,6 +142,7 @@ defmodule BrusselsWtfWeb.DossierPage do
 
       [
         %{
+          link_id: link.id,
           commune: commune_name(locale, meeting.commune.slug, meeting.commune.name),
           date: meeting.scheduled_on,
           item_number: item.item_number,
@@ -165,6 +196,9 @@ defmodule BrusselsWtfWeb.DossierPage do
     do: "Référence de démonstration — ne constitue pas une preuve d’activité communale"
 
   defp text("fr", :byline), do: "Par"
+  defp text("fr", :report_link), do: "Signaler un lien de dossier incorrect"
+  defp text("fr", :report_reason), do: "Pourquoi ce lien est-il incorrect ?"
+  defp text("fr", :submit_report), do: "Envoyer le signalement"
   defp text("nl", :skip), do: "Naar inhoud"
   defp text("nl", :dossier), do: "Lopend dossier"
   defp text("nl", :title), do: "Dossiertijdlijn"
@@ -181,6 +215,9 @@ defmodule BrusselsWtfWeb.DossierPage do
     do: "Demonstratiereferentie — geen bewijs van gemeentelijke activiteit"
 
   defp text("nl", :byline), do: "Door"
+  defp text("nl", :report_link), do: "Een onjuiste dossierlink melden"
+  defp text("nl", :report_reason), do: "Waarom is deze link onjuist?"
+  defp text("nl", :submit_report), do: "Melding versturen"
   defp text(_locale, :skip), do: "Skip to content"
   defp text(_locale, :dossier), do: "Continuing dossier"
   defp text(_locale, :title), do: "Dossier timeline"
@@ -193,4 +230,7 @@ defmodule BrusselsWtfWeb.DossierPage do
     do: "Demonstration reference — not evidence of council activity"
 
   defp text(_locale, :byline), do: "By"
+  defp text(_locale, :report_link), do: "Report an incorrect dossier link"
+  defp text(_locale, :report_reason), do: "Why is this link incorrect?"
+  defp text(_locale, :submit_report), do: "Submit report"
 end

@@ -306,6 +306,69 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
     assert dossier =~ "Ixelles demonstration meeting"
     assert dossier =~ "Uccle demonstration meeting"
     assert dossier =~ "Rico Trevisan"
+    assert dossier =~ "Report an incorrect dossier link"
+  end
+
+  test "a reader report creates a private case without removing the public link", %{conn: conn} do
+    actor = %BrusselsWtf.Review.Actor{id: "rico", role: :reviewer}
+    dossier = BrusselsWtf.Council.get_dossier!("demo-public-space")
+    link = Enum.find(dossier.dossier_links, &(&1.status == :active))
+    token = Plug.CSRFProtection.get_csrf_token()
+
+    response =
+      post(
+        conn,
+        "/dossiers/#{dossier.slug}/links/#{link.id}/reports",
+        %{
+          "_csrf_token" => token,
+          "reason" => "This agenda item concerns a different continuing matter."
+        }
+      )
+
+    assert redirected_to(response) == "/dossiers/#{dossier.slug}?lang=en"
+    assert BrusselsWtf.Council.get_dossier_link!(link.id).status == :active
+
+    assert [review_case] =
+             BrusselsWtf.Review.list_review_cases!(
+               %{kind: :link_correction, status: :open},
+               actor: actor
+             )
+
+    assert review_case.affected_record_id == link.id
+    assert review_case.normalized_content["reason"] =~ "different continuing matter"
+  end
+
+  test "a retired dossier URL redirects permanently to the surviving timeline", %{conn: conn} do
+    actor = %BrusselsWtf.Review.Actor{id: "rico", role: :reviewer}
+    source = BrusselsWtf.Council.get_dossier!("demo-public-space")
+    target = BrusselsWtf.Council.upsert_dossier!(%{slug: "surviving-space", title: "Survivor"})
+    link = Enum.find(source.dossier_links, &(&1.status == :active))
+
+    review_case =
+      BrusselsWtf.Review.open_review_case!(%{
+        kind: :link_correction,
+        affected_record_id: link.id,
+        affected_record_type: "dossier_link",
+        processing_generation: "merge:#{Ecto.UUID.generate()}",
+        summary: "Merge duplicate dossiers",
+        normalized_content: %{
+          "dossier_link_id" => link.id,
+          "dossier_id" => source.id,
+          "target_dossier_id" => target.id
+        }
+      })
+
+    BrusselsWtf.Council.Dossiers.merge!(
+      source.id,
+      target.id,
+      review_case.id,
+      "Duplicate dossier",
+      actor
+    )
+
+    response = get(conn, "/dossiers/demo-public-space?lang=nl")
+    assert response.status == 308
+    assert get_resp_header(response, "location") == ["/dossiers/surviving-space?lang=nl"]
   end
 
   test "French, Dutch, and English meeting variants keep one resource identity", %{conn: conn} do

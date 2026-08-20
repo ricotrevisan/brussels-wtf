@@ -159,6 +159,86 @@ defmodule BrusselsWtfWeb.ReviewInterfaceTest do
     assert [%{actor_id: "rico", body: "Compared against page one."}] = reviewed.notes
   end
 
+  test "an authenticated dossier action resolves the case and renders its audit", %{
+    conn: conn,
+    actor: actor,
+    context: context
+  } do
+    meeting =
+      BrusselsWtf.Council.upsert_meeting!(%{
+        commune_id: context.commune.id,
+        municipal_identifier: "dossier-review",
+        scheduled_on: ~D[2026-08-20]
+      })
+
+    item =
+      BrusselsWtf.Council.upsert_rendered_agenda_item!(%{
+        council_meeting_id: meeting.id,
+        item_number: "1",
+        stable_anchor: "dossier-review-1",
+        source_wording: "Dossier review fixture",
+        procedural_state: :proposal
+      })
+
+    dossier =
+      BrusselsWtf.Council.upsert_dossier!(%{slug: "review-dossier", title: "Review dossier"})
+
+    link =
+      BrusselsWtf.Council.upsert_dossier_link!(%{
+        agenda_item_id: item.id,
+        dossier_id: dossier.id,
+        match_method: :automated,
+        confidence: 0.90,
+        matcher_name: "review-fixture",
+        matcher_version: "1",
+        processing_generation: "review-fixture",
+        disposition: :unreviewed
+      })
+
+    review_case =
+      Review.open_review_case!(%{
+        kind: :link_correction,
+        commune_id: context.commune.id,
+        affected_record_id: link.id,
+        affected_record_type: "dossier_link",
+        processing_generation: "link-review",
+        summary: "Review dossier link",
+        normalized_content: %{
+          "dossier_link_id" => link.id,
+          "dossier_id" => dossier.id,
+          "agenda_item_id" => item.id
+        }
+      })
+
+    detail = get(conn, ~p"/review/cases/#{review_case.id}")
+    document = detail |> html_response(200) |> LazyHTML.from_document()
+
+    assert LazyHTML.attribute(document["form[action$='/actions/retry']"], "action") == []
+
+    [csrf] =
+      LazyHTML.attribute(
+        document["form[action$='/actions/confirm-dossier-link'] input[name='_csrf_token']"],
+        "value"
+      )
+
+    acted =
+      detail
+      |> recycle()
+      |> post(~p"/review/cases/#{review_case.id}/actions/confirm-dossier-link", %{
+        "_csrf_token" => csrf,
+        "note" => "Identifier confirmed",
+        "dossier_link_id" => link.id
+      })
+
+    assert redirected_to(acted) == ~p"/review/cases/#{review_case.id}"
+    assert BrusselsWtf.Council.get_dossier_link!(link.id).disposition == :confirmed
+    assert Review.get_review_case!(review_case.id, actor: actor).status == :resolved
+
+    body = acted |> recycle() |> get(~p"/review/cases/#{review_case.id}") |> html_response(200)
+    assert body =~ "Confirm link by rico"
+    assert body =~ "Identifier confirmed"
+  end
+
   defp build_context! do
     now = BrusselsWtf.Clock.utc_now()
 
