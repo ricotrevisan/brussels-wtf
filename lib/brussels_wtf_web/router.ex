@@ -48,6 +48,17 @@ defmodule BrusselsWtfWeb.Router do
     dstar("/cases/:id", ReviewCasePage)
     post "/cases/:case_id/actions/:action", ReviewActionController, :create
     post "/cases/:case_id/notes", ReviewNoteController, :create
+
+    post "/publications/:page_id/factual-corrections",
+         PublicationActionController,
+         :factual_correction
+
+    post "/publications/:page_id/typography-corrections",
+         PublicationActionController,
+         :typography_correction
+
+    post "/publications/:page_id/withdraw", PublicationActionController, :withdraw
+    post "/publications/:page_id/republish", PublicationActionController, :republish
     get "/artifacts/source-versions/:id", ReviewArtifactController, :source_version
     get "/artifacts/derived/:id", ReviewArtifactController, :derived_artifact
   end

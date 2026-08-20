@@ -87,6 +87,11 @@ defmodule BrusselsWtf.Council do
       define :list_publication_revisions, action: :for_page, args: [:meeting_page_id]
     end
 
+    resource BrusselsWtf.Council.PublicationEvent do
+      define :record_publication_event, action: :record
+      define :list_publication_events, action: :for_page, args: [:meeting_page_id]
+    end
+
     resource BrusselsWtf.Council.MeetingPage do
       define :generate_meeting_coverage,
         action: :generate_coverage,
@@ -99,12 +104,13 @@ defmodule BrusselsWtf.Council do
       define :get_meeting_page, action: :read, get_by: [:id]
       define :upsert_meeting_page, action: :upsert
       define :stage_meeting_page_revision, action: :stage_revision
+      define :withdraw_meeting_page, action: :withdraw
       define :record_publication_gate_failure, action: :record_gate_failure
       define :publish_meeting_page, action: :publish
       define :list_published_meeting_pages, action: :published
 
       define :get_published_meeting_page,
-        action: :published_by_identity,
+        action: :public_by_identity,
         args: [:commune_slug, :municipal_identifier]
     end
 

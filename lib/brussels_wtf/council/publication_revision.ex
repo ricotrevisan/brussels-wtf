@@ -20,12 +20,17 @@ defmodule BrusselsWtf.Council.PublicationRevision do
 
       accept [
         :meeting_page_id,
+        :previous_revision_id,
         :publication_input_hash,
         :published_at,
         :canonical_run_id,
         :nl_run_id,
         :en_run_id,
-        :content
+        :content,
+        :revision_kind,
+        :correction_notes,
+        :actor_id,
+        :publication_metadata
       ]
     end
 
@@ -41,6 +46,23 @@ defmodule BrusselsWtf.Council.PublicationRevision do
     attribute :publication_input_hash, :string, allow_nil?: false, public?: true
     attribute :published_at, :utc_datetime_usec, allow_nil?: false, public?: true
     attribute :content, :map, allow_nil?: false, public?: true
+
+    attribute :revision_kind, :atom do
+      allow_nil? false
+      public? true
+      default :publication
+
+      constraints one_of: [
+                    :publication,
+                    :factual_correction,
+                    :typography_correction,
+                    :republication
+                  ]
+    end
+
+    attribute :correction_notes, :map, allow_nil?: false, public?: true, default: %{}
+    attribute :actor_id, :string, public?: true
+    attribute :publication_metadata, :map, allow_nil?: false, public?: true, default: %{}
     timestamps()
   end
 
@@ -60,6 +82,11 @@ defmodule BrusselsWtf.Council.PublicationRevision do
     belongs_to :en_run, BrusselsWtf.Council.CoverageRun,
       allow_nil?: false,
       public?: true
+
+    belongs_to :previous_revision, __MODULE__, public?: true
+
+    has_many :publication_events, BrusselsWtf.Council.PublicationEvent,
+      destination_attribute: :publication_revision_id
   end
 
   def validate_payload(changeset) do
@@ -79,7 +106,11 @@ defmodule BrusselsWtf.Council.PublicationRevision do
         content ==
           BrusselsWtf.Council.GenerationContract.combine(canonical.output, nl.output, en.output)
 
-    if valid?, do: :ok, else: {:error, "publication revision does not match its coverage runs"}
+    notes_valid? = valid_correction_notes?(changeset)
+
+    if valid? and notes_valid?,
+      do: :ok,
+      else: {:error, "publication revision does not match its coverage runs or correction notes"}
   end
 
   def valid_for_publish?(revision_id, page_id, input_hash, published_at) do
@@ -186,5 +217,19 @@ defmodule BrusselsWtf.Council.PublicationRevision do
       authorize?: false,
       domain: BrusselsWtf.Council
     )
+  end
+
+  defp valid_correction_notes?(changeset) do
+    kind = Ash.Changeset.get_attribute(changeset, :revision_kind)
+    notes = Ash.Changeset.get_attribute(changeset, :correction_notes) || %{}
+
+    case kind do
+      :factual_correction ->
+        MapSet.new(Map.keys(notes)) == MapSet.new(["fr", "nl", "en"]) and
+          Enum.all?(Map.values(notes), &(is_binary(&1) and String.trim(&1) != ""))
+
+      _other ->
+        notes == %{}
+    end
   end
 end

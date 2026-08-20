@@ -5,6 +5,7 @@ defmodule BrusselsWtf.Council.Publication do
   alias BrusselsWtf.Council.CoverageExecution
   alias BrusselsWtf.Council.GenerationContract
   alias BrusselsWtf.Council.PublicationInput
+  alias BrusselsWtf.Council.PublicationMetadata
   alias BrusselsWtf.Council.Provenance
   alias BrusselsWtf.Processors.Coverage
 
@@ -64,8 +65,9 @@ defmodule BrusselsWtf.Council.Publication do
         variant_notifications = persist_variants(fresh_meeting, output, runs)
 
         case Council.evaluate_publication_gate!(fresh_meeting.meeting_page.id, input_hash) do
-          %{ready?: true} ->
+          %{ready?: true} = gate_result ->
             now = BrusselsWtf.Clock.utc_now()
+            metadata = PublicationMetadata.build(input, runs, gate_result)
 
             item_state_notifications =
               Enum.flat_map(fresh_meeting.agenda_items, fn item ->
@@ -84,7 +86,27 @@ defmodule BrusselsWtf.Council.Publication do
                   canonical_run_id: runs["fr"].id,
                   nl_run_id: runs["nl"].id,
                   en_run_id: runs["en"].id,
-                  content: output
+                  content: output,
+                  previous_revision_id: fresh_meeting.meeting_page.current_revision_id,
+                  revision_kind: :publication,
+                  correction_notes: %{},
+                  actor_id: nil,
+                  publication_metadata: metadata
+                },
+                return_notifications?: true
+              )
+
+            {_event, event_notifications} =
+              Council.record_publication_event!(
+                %{
+                  meeting_page_id: fresh_meeting.meeting_page.id,
+                  publication_revision_id: revision.id,
+                  event_type: :published,
+                  occurred_at: now,
+                  publication_metadata: metadata,
+                  details: %{
+                    "previous_revision_id" => fresh_meeting.meeting_page.current_revision_id
+                  }
                 },
                 return_notifications?: true
               )
@@ -107,7 +129,7 @@ defmodule BrusselsWtf.Council.Publication do
               variant_notifications ++
               item_state_notifications ++
               revision_notifications ++
-              publish_notifications
+              publish_notifications ++ event_notifications
 
           %{ready?: false, failures: failures} ->
             BrusselsWtf.Repo.rollback({:publication_gate, failures})
@@ -131,7 +153,7 @@ defmodule BrusselsWtf.Council.Publication do
     end
   end
 
-  defp persist_variants(meeting, output, runs) do
+  def persist_variants(meeting, output, runs) do
     page = meeting.meeting_page
     canonical = runs["fr"]
 
@@ -273,13 +295,14 @@ defmodule BrusselsWtf.Council.Publication do
     }
   end
 
-  defp load_meeting(meeting_id) do
+  def load_meeting(meeting_id) do
     meeting_id
     |> Council.get_meeting!()
     |> Ash.load!([
       :commune,
-      :meeting_page,
+      meeting_page: [:locale_variants, :current_revision],
       agenda_items: [
+        :coverage_variants,
         proposals: [
           source_version: [:source_record],
           evidence: [source_version: [:source_record]]

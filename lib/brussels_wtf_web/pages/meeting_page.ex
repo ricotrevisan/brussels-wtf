@@ -11,20 +11,36 @@ defmodule BrusselsWtfWeb.MeetingPage do
       {:ok, page} ->
         variant = Enum.find(page.locale_variants, &(&1.locale == locale))
         locale_available = not is_nil(variant)
+        withdrawn = page.publication_status == :draft and not is_nil(page.withdrawn_at)
         resource_path = "/meetings/#{commune}/#{municipal_id}"
 
         assign(conn,
           page_title:
-            if(locale_available, do: variant.title, else: text(locale, :unavailable_title)),
+            cond do
+              withdrawn -> text(locale, :withdrawn_title)
+              locale_available -> variant.title
+              true -> text(locale, :unavailable_title)
+            end,
           html_lang: locale,
           resource_path: resource_path,
           meeting_page: page,
           variant: variant,
           locale_available: locale_available,
+          withdrawn: withdrawn,
+          withdrawal_reason: page.withdrawal_reasons[locale],
+          corrections: correction_notes(page.publication_revisions, locale),
           locale: locale,
           commune_name: commune_name(locale, commune, page.council_meeting.commune.name),
           items:
-            if(locale_available,
+            if(locale_available and not withdrawn,
+              do:
+                page.council_meeting.agenda_items
+                |> Enum.filter(& &1.published?)
+                |> Enum.sort_by(&item_sort_key/1),
+              else: []
+            ),
+          withdrawn_items:
+            if(withdrawn,
               do:
                 page.council_meeting.agenda_items
                 |> Enum.filter(& &1.published?)
@@ -74,19 +90,67 @@ defmodule BrusselsWtfWeb.MeetingPage do
         </time>
       </p>
       <h1 class="mt-2 text-3xl font-semibold tracking-tight">
-        {if @locale_available, do: @variant.title, else: text(@locale, :unavailable_title)}
+        <%= cond do %>
+          <% @withdrawn -> %>
+            {text(@locale, :withdrawn_title)}
+          <% @locale_available -> %>
+            {@variant.title}
+          <% true -> %>
+            {text(@locale, :unavailable_title)}
+        <% end %>
       </h1>
-      <p :if={not @locale_available} class="mt-5 border-l-4 border-warning pl-3 leading-7">
+      <p
+        :if={not @withdrawn and not @locale_available}
+        class="mt-5 border-l-4 border-warning pl-3 leading-7"
+      >
         {text(@locale, :unavailable_explanation)}
       </p>
-      <p :if={@meeting_page.revision_published_at} class="mt-3 text-sm text-base-content/70">
+      <p
+        :if={not @withdrawn and @meeting_page.revision_published_at}
+        class="mt-3 text-sm text-base-content/70"
+      >
         {text(@locale, :revision)}
         <time datetime={DateTime.to_iso8601(@meeting_page.revision_published_at)}>
           {format_datetime(@meeting_page.revision_published_at)}
         </time>
       </p>
 
-      <div class="mt-9 divide-y divide-base-300">
+      <section :if={@withdrawn} class="mt-8 border-l-4 border-warning pl-4">
+        <h2 class="text-xl font-semibold">{text(@locale, :withdrawn_heading)}</h2>
+        <p class="mt-2 leading-7">{@withdrawal_reason || text(@locale, :withdrawn_explanation)}</p>
+        <p :if={@meeting_page.withdrawn_at} class="mt-2 text-sm text-base-content/70">
+          {text(@locale, :withdrawn_on)}
+          <time datetime={DateTime.to_iso8601(@meeting_page.withdrawn_at)}>
+            {format_datetime(@meeting_page.withdrawn_at)}
+          </time>
+        </p>
+      </section>
+
+      <div :if={@withdrawn} class="mt-8 divide-y divide-base-300">
+        <section
+          :for={item <- @withdrawn_items}
+          id={item.stable_anchor}
+          class="scroll-mt-4 py-5"
+          tabindex="-1"
+        >
+          <h2 class="font-semibold">{text(@locale, :item)} {public_item_number(item)}</h2>
+          <p class="mt-2 text-sm">{text(@locale, :item_withdrawn)}</p>
+        </section>
+      </div>
+
+      <section :if={not @withdrawn and @corrections != []} class="mt-8 border-y border-base-300 py-4">
+        <h2 class="font-semibold">{text(@locale, :corrections)}</h2>
+        <ul class="mt-2 space-y-2 text-sm">
+          <li :for={correction <- @corrections}>
+            <time datetime={DateTime.to_iso8601(correction.published_at)}>
+              {format_datetime(correction.published_at)}
+            </time>
+            · {correction.note}
+          </li>
+        </ul>
+      </section>
+
+      <div :if={not @withdrawn} class="mt-9 divide-y divide-base-300">
         <.coverage_item :for={item <- @items} item={item} page={@meeting_page} locale={@locale} />
       </div>
 
@@ -227,6 +291,15 @@ defmodule BrusselsWtfWeb.MeetingPage do
     }
   end
 
+  defp correction_notes(revisions, locale) do
+    revisions
+    |> Enum.filter(&(&1.revision_kind == :factual_correction))
+    |> Enum.map(fn revision ->
+      %{published_at: revision.published_at, note: revision.correction_notes[locale]}
+    end)
+    |> Enum.reject(&is_nil(&1.note))
+  end
+
   defp proposal_copy(variant, :decision, locale),
     do: variant.proposal_summary || text(locale, :proposal_copy_unavailable)
 
@@ -351,7 +424,13 @@ defmodule BrusselsWtfWeb.MeetingPage do
       evidence: "Evidence and citations",
       source: "Authoritative source",
       retrieved: "Retrieved",
-      byline: "By"
+      byline: "By",
+      withdrawn_title: "Meeting coverage withdrawn",
+      withdrawn_heading: "This coverage has been withdrawn",
+      withdrawn_explanation: "The page is temporarily unavailable while its content is reviewed.",
+      withdrawn_on: "Withdrawn:",
+      item_withdrawn: "Coverage for this agenda item is temporarily unavailable.",
+      corrections: "Corrections"
     }
   end
 
@@ -377,7 +456,14 @@ defmodule BrusselsWtfWeb.MeetingPage do
       evidence: "Preuves et citations",
       source: "Source officielle",
       retrieved: "Récupérée",
-      byline: "Par"
+      byline: "Par",
+      withdrawn_title: "Contenu de la réunion retiré",
+      withdrawn_heading: "Ce contenu a été retiré",
+      withdrawn_explanation:
+        "La page est temporairement indisponible pendant la vérification de son contenu.",
+      withdrawn_on: "Retiré le :",
+      item_withdrawn: "Le contenu de ce point est temporairement indisponible.",
+      corrections: "Corrections"
     }
   end
 
@@ -402,7 +488,14 @@ defmodule BrusselsWtfWeb.MeetingPage do
       evidence: "Bewijs en citaten",
       source: "Officiële bron",
       retrieved: "Opgehaald",
-      byline: "Door"
+      byline: "Door",
+      withdrawn_title: "Vergaderbericht ingetrokken",
+      withdrawn_heading: "Dit bericht is ingetrokken",
+      withdrawn_explanation:
+        "De pagina is tijdelijk niet beschikbaar terwijl de inhoud wordt nagekeken.",
+      withdrawn_on: "Ingetrokken op:",
+      item_withdrawn: "Het bericht over dit agendapunt is tijdelijk niet beschikbaar.",
+      corrections: "Correcties"
     }
   end
 end

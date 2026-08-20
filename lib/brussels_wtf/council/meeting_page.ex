@@ -57,6 +57,13 @@ defmodule BrusselsWtf.Council.MeetingPage do
       change set_attribute(:publication_status, :draft)
     end
 
+    update :withdraw do
+      require_atomic? false
+      argument :reasons, :map, allow_nil?: false
+      argument :occurred_at, :utc_datetime_usec, allow_nil?: false
+      change BrusselsWtf.Council.Changes.WithdrawMeetingPage
+    end
+
     update :record_gate_failure do
       accept [:publication_input_hash, :last_gate_failures, :gate_checked_at]
     end
@@ -96,6 +103,9 @@ defmodule BrusselsWtf.Council.MeetingPage do
       end
 
       change set_attribute(:publication_status, :published)
+      change set_attribute(:withdrawn_at, nil)
+      change set_attribute(:withdrawn_by, nil)
+      change set_attribute(:withdrawal_reasons, %{})
     end
 
     read :published do
@@ -119,7 +129,7 @@ defmodule BrusselsWtf.Council.MeetingPage do
       filter expr(publication_status == :published)
     end
 
-    read :published_by_identity do
+    read :public_by_identity do
       get? true
 
       argument :commune_slug, :string, allow_nil?: false
@@ -128,6 +138,7 @@ defmodule BrusselsWtf.Council.MeetingPage do
       prepare build(
                 load: [
                   :locale_variants,
+                  :publication_revisions,
                   council_meeting: [
                     :commune,
                     agenda_items: [
@@ -143,7 +154,8 @@ defmodule BrusselsWtf.Council.MeetingPage do
               )
 
       filter expr(
-               publication_status == :published and
+               (publication_status == :published or
+                  (publication_status == :draft and not is_nil(withdrawn_at))) and
                  council_meeting.municipal_identifier == ^arg(:municipal_identifier) and
                  council_meeting.commune.slug == ^arg(:commune_slug)
              )
@@ -179,6 +191,9 @@ defmodule BrusselsWtf.Council.MeetingPage do
     end
 
     attribute :gate_checked_at, :utc_datetime_usec, public?: true
+    attribute :withdrawn_at, :utc_datetime_usec, public?: true
+    attribute :withdrawn_by, :string, public?: true
+    attribute :withdrawal_reasons, :map, allow_nil?: false, public?: true, default: %{}
 
     attribute :procedural_state, :atom do
       allow_nil? false
@@ -198,7 +213,12 @@ defmodule BrusselsWtf.Council.MeetingPage do
 
     has_many :locale_variants, BrusselsWtf.Council.LocaleVariant
     has_many :coverage_runs, BrusselsWtf.Council.CoverageRun
-    has_many :publication_revisions, BrusselsWtf.Council.PublicationRevision
+
+    has_many :publication_revisions, BrusselsWtf.Council.PublicationRevision do
+      sort published_at: :asc, id: :asc
+    end
+
+    has_many :publication_events, BrusselsWtf.Council.PublicationEvent
 
     belongs_to :current_revision, BrusselsWtf.Council.PublicationRevision, public?: true
   end

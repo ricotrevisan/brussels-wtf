@@ -30,6 +30,7 @@ defmodule BrusselsWtf.Council.CoverageRun do
         :provider_category,
         :model,
         :method,
+        :carried_provenance,
         :status,
         :input,
         :output,
@@ -72,13 +73,20 @@ defmodule BrusselsWtf.Council.CoverageRun do
     attribute :method, :atom do
       allow_nil? false
       public? true
-      constraints one_of: [:ai_generation, :machine_translation, :deterministic]
+      constraints one_of: [:ai_generation, :machine_translation, :deterministic, :human_edit]
     end
 
     attribute :status, :atom do
       allow_nil? false
       public? true
       constraints one_of: [:succeeded, :failed]
+    end
+
+    attribute :carried_provenance, {:array, :atom} do
+      allow_nil? false
+      public? true
+      default []
+      constraints items: [one_of: [:ai_generated, :machine_translated, :human_reviewed]]
     end
 
     attribute :input, :map, allow_nil?: false, public?: true
