@@ -3,7 +3,7 @@ defmodule BrusselsWtf.Processors.RecordedCoverage do
 
   @behaviour BrusselsWtf.Processors.Coverage
 
-  @expected_source_wording "Octroi d’une subvention de projet relative à une projection en plein air du film « La venue de l’avenir »."
+  @expected_source_wording "Octroi d’une subvention de projet en numéraire d’un montant de 700,00 EUR et en non numéraire évaluée à un montant de 5.158,00 EUR, relative à l’organisation d’une projection en plein air du film « La venue de l’avenir » dans le cadre de l’événement « Bruxelles fait son cinéma » le dimanche 5 juillet 2026 dans les jardins de l’Abbaye de la Cambre. Bénéficiaire : asbl Libération Films Animation. Conventions. Approbation."
   @expected_proposal "Octroyer une subvention de 700,00 EUR et une aide non numéraire évaluée à 5.158,00 EUR à l’asbl Libération Films Animation."
   @expected_citation "https://www.ixelles.be/uploads/conseil/projets/268.pdf"
 

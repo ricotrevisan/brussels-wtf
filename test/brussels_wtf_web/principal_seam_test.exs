@@ -92,7 +92,7 @@ defmodule BrusselsWtfWeb.PrincipalSeamTest do
 
     assert evidence_version_id == hd(project_history.versions).id
     assert evidence.citation_url == scenario.expected.citation_url
-    assert evidence.location == "Notes explicatives publiques, page 6/483"
+    assert evidence.location == "Notes explicatives publiques, page 12/483"
 
     projected_item =
       Ash.load!(item, proposals: [:source_version, evidence: [:source_version]])
@@ -102,7 +102,7 @@ defmodule BrusselsWtfWeb.PrincipalSeamTest do
 
     assert public_proposal_text == scenario.expected.proposal_text
 
-    assert [%{location: "Notes explicatives publiques, page 6/483"}] =
+    assert [%{location: "Notes explicatives publiques, page 12/483"}] =
              BrusselsWtfWeb.PublicEvidence.for_item(projected_item)
 
     page = meeting |> Ash.load!(:meeting_page) |> Map.fetch!(:meeting_page)
@@ -151,7 +151,7 @@ defmodule BrusselsWtfWeb.PrincipalSeamTest do
       assert html =~ "Rico Trevisan"
       assert html =~ "AI-generated"
       assert html =~ scenario.expected.citation_url
-      assert html =~ "Notes explicatives publiques, page 6/483"
+      assert html =~ "Notes explicatives publiques, page 12/483"
       assert html =~ project_hash
 
       if locale in ["nl", "en"], do: assert(html =~ "machine-translated")
@@ -322,7 +322,7 @@ replacement captured at the same locator"
     assert html =~ corrected_proposal
     assert html =~ corrected_location
     refute html =~ scenario.expected.proposal_text
-    refute html =~ "Notes explicatives publiques, page 6/483"
+    refute html =~ "Notes explicatives publiques, page 12/483"
 
     BrusselsWtf.Test.Harness.fail_source(:projects, %{
       reason: :timeout,
