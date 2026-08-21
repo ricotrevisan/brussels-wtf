@@ -34,6 +34,18 @@ COPY config/runtime.exs config/
 COPY rel rel
 RUN mix release
 
+# Prove release-owned corpus paths resolve after the compiler tree is unavailable.
+RUN set -eu; \
+  build_priv=/app/_build/prod/lib/brussels_wtf/priv; \
+  mv "$build_priv" "${build_priv}.hidden"; \
+  trap 'mv "${build_priv}.hidden" "$build_priv"' EXIT; \
+  REVIEW_USERNAME=release-check \
+  REVIEW_PASSWORD=release-check-password \
+  DATABASE_URL=ecto://release:release@127.0.0.1/release \
+  SECRET_KEY_BASE=0000000000000000000000000000000000000000000000000000000000000000 \
+  /app/_build/prod/rel/brussels_wtf/bin/brussels_wtf eval \
+    'unless byte_size(BrusselsWtf.Corpus.Manifest.digest()) == 64, do: System.halt(1)'
+
 FROM ${RUNNER_IMAGE} AS runner
 
 RUN apt-get update -y \

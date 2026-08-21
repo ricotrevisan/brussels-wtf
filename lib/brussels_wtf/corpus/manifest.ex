@@ -1,17 +1,15 @@
 defmodule BrusselsWtf.Corpus.Manifest do
   @moduledoc "Hash-pinned, recorded contract for the bounded real-meeting corpus."
 
-  @path Application.app_dir(:brussels_wtf, "priv/corpus/issue-33/manifest.json")
-
   def load! do
-    @path
+    manifest_path()
     |> File.read!()
     |> Jason.decode!()
     |> validate!()
   end
 
   def digest do
-    @path |> File.read!() |> BrusselsWtf.Digest.sha256()
+    manifest_path() |> File.read!() |> BrusselsWtf.Digest.sha256()
   end
 
   def bundle_path!(source) do
@@ -355,4 +353,8 @@ defmodule BrusselsWtf.Corpus.Manifest do
   end
 
   defp item_keys(meeting), do: meeting["items"] |> Enum.map(& &1["key"]) |> MapSet.new()
+
+  defp manifest_path do
+    Application.app_dir(:brussels_wtf, "priv/corpus/issue-33/manifest.json")
+  end
 end
