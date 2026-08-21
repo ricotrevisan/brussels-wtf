@@ -800,8 +800,13 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     end
   end
 
-  @spec normalize(Ecto.UUID.t(), String.t()) :: :ok
-  def normalize(processing_run_id, citation_url) do
+  @spec normalize(Ecto.UUID.t(), String.t()) :: :ok | {:error, term()}
+  def normalize(processing_run_id, citation_url),
+    do: normalize(processing_run_id, citation_url, 1, 3)
+
+  @spec normalize(Ecto.UUID.t(), String.t(), pos_integer(), pos_integer()) ::
+          :ok | {:error, term()}
+  def normalize(processing_run_id, citation_url, attempt, max_attempts) do
     run =
       Ash.load!(Ingestion.get_processing_run!(processing_run_id),
         source_version: [source_record: [:commune]]
@@ -821,8 +826,41 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
       raise "derived extraction artifact checksum mismatch"
     end
 
-    {:ok, normalized} = BrusselsWtf.Processors.normalize(Map.put(run.output, "text", text))
+    case BrusselsWtf.Processors.normalize(Map.put(run.output, "text", text)) do
+      {:ok, normalized} ->
+        persist_normalized(source_record, version, citation_url, normalized)
 
+      {:error, :processor_unimplemented} ->
+        BrusselsWtf.Ingestion.NormalizationReview.open_for_run(run, citation_url)
+        :ok
+
+      {:error, {:normalization_ambiguity, candidates}} when is_map(candidates) ->
+        BrusselsWtf.Ingestion.NormalizationReview.open_for_run(
+          run,
+          citation_url,
+          :normalization_ambiguity,
+          candidates
+        )
+
+        :ok
+
+      {:error, reason} ->
+        if attempt >= max_attempts do
+          BrusselsWtf.Ingestion.NormalizationReview.open_for_run(
+            run,
+            citation_url,
+            :processor_failure,
+            %{}
+          )
+
+          :ok
+        else
+          {:error, reason}
+        end
+    end
+  end
+
+  defp persist_normalized(source_record, version, citation_url, normalized) do
     meeting =
       Council.upsert_meeting!(%{
         commune_id: source_record.commune_id,
