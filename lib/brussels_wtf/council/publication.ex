@@ -15,11 +15,12 @@ defmodule BrusselsWtf.Council.Publication do
         meeting_id,
         attempt \\ 1,
         max_attempts \\ 3,
-        generation_kind \\ :automatic
+        generation_kind \\ :automatic,
+        coverage_batch_id \\ nil
       ) do
     case BrusselsWtf.Council.GenerationControl.preflight(generation_kind) do
       :ok ->
-        metadata = Coverage.metadata()
+        metadata = Coverage.metadata() |> attach_content_review(coverage_batch_id)
 
         case BrusselsWtf.Council.GenerationControl.before_call(metadata, generation_kind) do
           :ok -> execute_generation(meeting_id, metadata, attempt, max_attempts, generation_kind)
@@ -65,14 +66,55 @@ defmodule BrusselsWtf.Council.Publication do
            :ok <- GenerationContract.validate_bundle(input, en, "en") do
         output = GenerationContract.combine(canonical, nl, en)
 
-        publish_revision(meeting, input, output, %{
-          "fr" => canonical_run,
-          "nl" => nl_run,
-          "en" => en_run
-        })
+        publish_revision(
+          meeting,
+          input,
+          output,
+          %{"fr" => canonical_run, "nl" => nl_run, "en" => en_run},
+          metadata[:content_review]
+        )
       end
 
     handle_result(result, meeting, input, metadata, attempt, max_attempts)
+  end
+
+  defp attach_content_review(metadata, nil), do: metadata
+
+  defp attach_content_review(metadata, coverage_batch_id) do
+    batch = Council.get_coverage_batch!(coverage_batch_id)
+
+    if batch.content_reviewed_by && batch.content_reviewed_at &&
+         batch.content_review_manifest_sha256 do
+      review = %{
+        actor_id: batch.content_reviewed_by,
+        reviewed_at: batch.content_reviewed_at,
+        manifest_sha256: batch.content_review_manifest_sha256
+      }
+
+      metadata
+      |> Map.put(:content_review, review)
+      |> Map.update(:canonical_carried_provenance, [:human_reviewed], fn labels ->
+        Enum.uniq([:human_reviewed | labels])
+      end)
+      |> Map.update(:translation_carried_provenance, [:human_reviewed], fn labels ->
+        Enum.uniq([:human_reviewed | labels])
+      end)
+    else
+      metadata
+    end
+  end
+
+  defp put_content_review(metadata, nil), do: metadata
+
+  defp put_content_review(metadata, review),
+    do: Map.put(metadata, "content_review", serialize_content_review(review))
+
+  defp serialize_content_review(review) do
+    %{
+      "actor_id" => review.actor_id,
+      "reviewed_at" => DateTime.to_iso8601(review.reviewed_at),
+      "manifest_sha256" => review.manifest_sha256
+    }
   end
 
   def generation_input(meeting_id) when is_binary(meeting_id),
@@ -80,7 +122,7 @@ defmodule BrusselsWtf.Council.Publication do
 
   def generation_input(meeting), do: PublicationInput.build(meeting)
 
-  defp publish_revision(meeting, input, output, runs) do
+  defp publish_revision(meeting, input, output, runs, content_review) do
     input_hash = PublicationInput.hash(input)
 
     transaction =
@@ -102,7 +144,10 @@ defmodule BrusselsWtf.Council.Publication do
         case Council.evaluate_publication_gate!(fresh_meeting.meeting_page.id, input_hash) do
           %{ready?: true} = gate_result ->
             now = BrusselsWtf.Clock.utc_now()
-            metadata = PublicationMetadata.build(input, runs, gate_result)
+
+            metadata =
+              PublicationMetadata.build(input, runs, gate_result)
+              |> put_content_review(content_review)
 
             item_state_notifications =
               Enum.flat_map(fresh_meeting.agenda_items, fn item ->
@@ -125,7 +170,7 @@ defmodule BrusselsWtf.Council.Publication do
                   previous_revision_id: fresh_meeting.meeting_page.current_revision_id,
                   revision_kind: :publication,
                   correction_notes: %{},
-                  actor_id: nil,
+                  actor_id: content_review && content_review.actor_id,
                   publication_metadata: metadata
                 },
                 return_notifications?: true

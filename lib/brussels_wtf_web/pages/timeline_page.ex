@@ -10,6 +10,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
     {"city-of-brussels", "City of Brussels"}
   ]
   @slugs Enum.map(@communes, &elem(&1, 0))
+  @real_corpus_meeting_count 8
 
   @impl Dstar.Page
   def mount(conn, params) do
@@ -18,6 +19,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
 
     pages =
       Council.list_published_meeting_pages!()
+      |> prefer_real_corpus()
       |> Enum.filter(&(&1.council_meeting.commune.slug in selected))
 
     entries =
@@ -40,6 +42,21 @@ defmodule BrusselsWtfWeb.TimelinePage do
       unknown: entries |> Enum.filter(&(&1.state == :unknown)) |> newest_first(),
       decided: entries |> Enum.filter(&(&1.state == :decision)) |> newest_first()
     )
+  end
+
+  defp prefer_real_corpus(pages) do
+    real_pages = Enum.filter(pages, &real_page?/1)
+    if length(real_pages) >= @real_corpus_meeting_count, do: real_pages, else: pages
+  end
+
+  defp real_page?(page) do
+    Enum.any?(page.council_meeting.agenda_items, fn item ->
+      proposal = loaded_or_nil(item.published_proposal)
+      decision = loaded_or_nil(item.published_decision)
+      real_proposal? = proposal && not proposal.synthetic
+      real_decision? = decision && Enum.any?(decision.evidence, &(not &1.synthetic))
+      real_proposal? || real_decision?
+    end)
   end
 
   @impl Dstar.Page

@@ -15,12 +15,12 @@ defmodule BrusselsWtf.Council.Dossier do
     defaults [:read]
 
     create :create do
-      accept [:slug, :title]
+      accept [:slug, :title, :localized_titles]
     end
 
     create :upsert do
       primary? true
-      accept [:slug, :title]
+      accept [:slug, :title, :localized_titles]
       upsert? true
       upsert_identity :unique_slug
     end
@@ -40,10 +40,11 @@ defmodule BrusselsWtf.Council.Dossier do
                   :retired_into,
                   dossier_links: [
                     agenda_item: [
-                      :decision,
                       :coverage_variants,
+                      published_decision: [evidence: [:source_version]],
+                      published_proposal: [:source_version, evidence: [:source_version]],
                       proposals: [:source_version, evidence: [:source_version]],
-                      council_meeting: [:commune, meeting_page: [:locale_variants]]
+                      council_meeting: [:commune, meeting_page: [:current_revision]]
                     ]
                   ]
                 ]
@@ -57,6 +58,7 @@ defmodule BrusselsWtf.Council.Dossier do
     uuid_v7_primary_key :id
     attribute :slug, :string, allow_nil?: false, public?: true
     attribute :title, :string, allow_nil?: false, public?: true
+    attribute :localized_titles, :map, allow_nil?: false, public?: true, default: %{}
 
     attribute :status, :atom do
       allow_nil? false

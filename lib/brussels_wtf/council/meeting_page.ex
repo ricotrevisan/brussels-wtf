@@ -35,7 +35,8 @@ defmodule BrusselsWtf.Council.MeetingPage do
                  input.arguments.meeting_id,
                  input.arguments.attempt,
                  input.arguments.max_attempts,
-                 input.arguments.generation_kind
+                 input.arguments.generation_kind,
+                 Map.get(input.arguments, :coverage_batch_id)
                ) do
             :ok -> {:ok, :ok}
             {:error, _reason} = error -> error

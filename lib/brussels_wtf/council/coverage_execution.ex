@@ -296,6 +296,7 @@ defmodule BrusselsWtf.Council.CoverageExecution do
       provider_category: metadata.provider_category,
       model: metadata.model,
       method: method,
+      carried_provenance: carried_provenance(metadata, operation),
       status: :succeeded,
       input: input,
       output: output,
@@ -330,6 +331,7 @@ defmodule BrusselsWtf.Council.CoverageExecution do
       provider_category: metadata.provider_category,
       model: metadata.model,
       method: method,
+      carried_provenance: carried_provenance(metadata, operation),
       status: :failed,
       input: input,
       output: %{},
@@ -338,6 +340,12 @@ defmodule BrusselsWtf.Council.CoverageExecution do
       failure_details: failure_details
     })
   end
+
+  defp carried_provenance(metadata, :canonical_generation),
+    do: Map.get(metadata, :canonical_carried_provenance, [])
+
+  defp carried_provenance(metadata, :translation),
+    do: Map.get(metadata, :translation_carried_provenance, [])
 
   defp failure_details(reason) do
     classification = classify_failure(reason)

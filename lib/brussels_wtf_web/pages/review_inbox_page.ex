@@ -16,6 +16,9 @@ defmodule BrusselsWtfWeb.ReviewInboxPage do
       cases: Review.list_review_cases!(filters, actor: actor),
       filters: params,
       communes: list_communes(),
+      corpus_batches: BrusselsWtf.Council.list_corpus_import_batches!(),
+      corpus_meeting_keys:
+        BrusselsWtf.Corpus.Manifest.load!()["meetings"] |> Enum.map_join("\n", & &1["key"]),
       kinds: @kinds,
       statuses: @statuses
     )
@@ -79,6 +82,70 @@ defmodule BrusselsWtfWeb.ReviewInboxPage do
           </label>
           <button type="submit" class="btn self-end">Queue operation</button>
         </form>
+      </section>
+
+      <section class="mt-7 border-y border-base-300 py-4">
+        <h2 class="text-lg font-semibold">Real corpus import batch</h2>
+        <p class="mt-1 text-sm text-base-content/70">
+          Import only hash-pinned sources from the sealed issue-33 meeting allowlist. This does not authorize coverage generation.
+        </p>
+        <form
+          method="post"
+          action="/review/corpus-batches"
+          class="mt-3 grid gap-3 md:grid-cols-[1fr_auto]"
+        >
+          <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+          <label>
+            Sealed meeting keys <textarea
+              name="meeting_keys"
+              required
+              class="textarea textarea-bordered min-h-40 w-full font-mono"
+            >{@corpus_meeting_keys}</textarea>
+          </label>
+          <button type="submit" class="btn self-end">Queue corpus import</button>
+        </form>
+
+        <div :if={@corpus_batches != []} class="mt-5 overflow-x-auto">
+          <table class="table table-sm">
+            <thead>
+              <tr>
+                <th>Batch</th><th>Status</th><th>Sources</th><th>Items</th><th>Published</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr :for={batch <- @corpus_batches}>
+                <td class="font-mono text-xs">{batch.id}</td>
+                <td>{batch.status}</td>
+                <td>{batch.metrics["documents_downloaded"] || 0}/{batch.expected_documents}</td>
+                <td>{batch.metrics["normalized_items"] || 0}</td>
+                <td>{batch.metrics["pages_published"] || 0}</td>
+                <td>
+                  <form method="post" action={"/review/corpus-batches/#{batch.id}/refresh"}>
+                    <input
+                      type="hidden"
+                      name="_csrf_token"
+                      value={Plug.CSRFProtection.get_csrf_token()}
+                    />
+                    <button type="submit" class="btn btn-xs">Refresh report</button>
+                  </form>
+                  <form
+                    :if={batch.status == :ready_for_coverage and is_nil(batch.coverage_batch_id)}
+                    method="post"
+                    action={"/review/corpus-batches/#{batch.id}/prepare-coverage"}
+                    class="mt-1"
+                  >
+                    <input
+                      type="hidden"
+                      name="_csrf_token"
+                      value={Plug.CSRFProtection.get_csrf_token()}
+                    />
+                    <button type="submit" class="btn btn-xs">Verify dossier and queue coverage</button>
+                  </form>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section class="mt-7 border-y border-base-300 py-4">

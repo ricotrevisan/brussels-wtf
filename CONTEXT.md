@@ -156,6 +156,10 @@ A calendar-month hard limit on paid coverage cost. Each paid call reserves a con
 
 An authenticated, bounded allowlist of meetings explicitly queued for coverage generation. Historical acquisition never implies permission to generate paid coverage.
 
+## Real corpus import batch
+
+An authenticated, immutable allowlist of municipal meeting identities and hash-pinned authoritative source locators. It bounds one historical acquisition run, retains its source-version lineage and measurements, and never expands continuous polling or authorizes coverage generation.
+
 ### PDF extraction and OCR
 
 - A **native extraction generation** always runs Poppler first and retains page-level quality decisions and a private `native-text` derived artifact.

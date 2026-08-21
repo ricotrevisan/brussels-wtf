@@ -63,3 +63,19 @@ After a call, the reservation stores provider, model, meeting page, publication-
 ## Historical coverage batches
 
 Acquisition backfills retain their backfill scope through extraction and normalization and never imply permission to generate coverage. When `BACKFILL_GENERATION_ENABLED=true`, an authenticated reviewer can use **Coverage generation batch** on `/review` to submit a finite meeting-ID allowlist. The allowlist and reviewer are stored before one backfill generation job per meeting is inserted. The configured maximum batch size is enforced again in the domain function, not only by the form.
+
+
+## Sealed real-corpus import
+
+Issue 33 has a separate authenticated import path. It does not use unrestricted commune backfill and it does not authorize generation.
+
+1. Sign in to `/review` as the configured reviewer.
+2. In **Real corpus import batch**, submit the sealed meeting keys. The complete issue-33 run contains eight keys and nine documents.
+3. The batch stores the manifest digest, exact keys, expected document count, expected bytes, requester, lifecycle, lineage IDs, and measurements before work starts.
+4. Import jobs run serially on the `corpus` queue. They read only `priv/corpus/issue-33/sources/`; no municipal or provider network call occurs. The manifest permits at most eight meetings, 24 items, nine documents, and 2,000,000 bytes per document. It seals each official URL, discovery parent, and original capture time. The importer records a meeting-scoped locator and local bundle-check observation with no HTTP response fields. Each byte sequence is archived and read back before its source version enters extraction.
+5. A byte-count or SHA-256 mismatch retains the observed bytes, opens an acquisition review case, blocks the batch, and does not enqueue extraction.
+6. Use **Refresh report** to persist retrieval, stored-byte, OCR, normalization, review, generation, and publication measurements.
+7. Only when all eight meetings contain the exact 24 authoritative item identifiers and no related case is open does **Verify dossier and queue coverage** appear. This authenticated action records the actor, review time, manifest digest, two manually verified `OPP/2026/185` links, and their audit actions. It then creates a separate historical `CoverageBatch` carrying the same content-review provenance.
+8. Recorded publication creates three zero-network coverage runs per meeting. Each run carries the authenticated human-review label, while preserving the original AI-generation or machine-translation label. The immutable publication revision records the review actor, time, and manifest digest. Refreshing the batch after all eight pages publish closes it as `completed`.
+
+Re-running import, dossier preparation, or coverage preparation is idempotent. A sealed batch never expands its meeting membership. To accept changed official bytes, review the new municipal document, update the research note and manifest, replace the release-owned file, and deploy a new manifest digest. Do not edit a persisted batch or bypass its review case.

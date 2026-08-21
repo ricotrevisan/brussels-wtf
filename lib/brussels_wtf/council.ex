@@ -82,6 +82,11 @@ defmodule BrusselsWtf.Council do
       define :list_coverage_batches, action: :read
     end
 
+    resource BrusselsWtf.Council.CorpusImportBatch do
+      define :get_corpus_import_batch, action: :read, get_by: [:id]
+      define :list_corpus_import_batches, action: :read
+    end
+
     resource BrusselsWtf.Council.CoverageRun do
       define :record_coverage_run, action: :record
       define :list_coverage_runs, action: :for_page, args: [:meeting_page_id]
@@ -151,7 +156,9 @@ defmodule BrusselsWtf.Council do
   @doc "Persists and queues an authenticated bounded coverage batch."
   def request_coverage_batch!(meeting_ids, opts) when is_list(meeting_ids) and is_list(opts) do
     actor = Keyword.fetch!(opts, :actor)
+    content_review = Keyword.get(opts, :content_review)
     authorize_coverage_batch!(actor)
+    validate_content_review!(content_review, actor)
     config = Application.fetch_env!(:brussels_wtf, :coverage_generation)
     validate_coverage_batch!(meeting_ids, config)
 
@@ -166,7 +173,10 @@ defmodule BrusselsWtf.Council do
                  requester_id: actor.id,
                  meeting_ids: meeting_ids,
                  generation_kind: :backfill,
-                 status: :queued
+                 status: :queued,
+                 content_reviewed_by: content_review && content_review.actor_id,
+                 content_reviewed_at: content_review && content_review.reviewed_at,
+                 content_review_manifest_sha256: content_review && content_review.manifest_sha256
                },
                action: :record,
                domain: __MODULE__,
@@ -193,6 +203,18 @@ defmodule BrusselsWtf.Council do
         raise ArgumentError, "coverage batch could not be queued: #{inspect(reason)}"
     end
   end
+
+  defp validate_content_review!(nil, _actor), do: :ok
+
+  defp validate_content_review!(
+         %{actor_id: actor_id, reviewed_at: %DateTime{}, manifest_sha256: digest},
+         %BrusselsWtf.Review.Actor{id: actor_id}
+       )
+       when is_binary(digest) and byte_size(digest) == 64,
+       do: :ok
+
+  defp validate_content_review!(_review, _actor),
+    do: raise(ArgumentError, "content review must belong to the authenticated reviewer")
 
   defp authorize_coverage_batch!(%BrusselsWtf.Review.Actor{role: :reviewer}), do: :ok
   defp authorize_coverage_batch!(_actor), do: raise(ArgumentError, "reviewer is required")

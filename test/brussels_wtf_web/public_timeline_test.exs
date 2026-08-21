@@ -309,6 +309,38 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
     assert dossier =~ "Report an incorrect dossier link"
   end
 
+  test "a dossier timeline selects its published revision instead of newer draft coverage" do
+    page = %{
+      current_revision: %{
+        content: %{
+          "items" => %{
+            "OPP/2026/185" => %{
+              "variants" => %{
+                "en" => %{
+                  "title" => "PUBLISHED-DOSSIER-TITLE",
+                  "summary" => "Published summary",
+                  "proposal_summary" => "Published proposal"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    item = %{
+      authoritative_identifier: "OPP/2026/185",
+      continuity_key: nil,
+      coverage_variants: [
+        %{locale: "en", title: "UNPUBLISHED-DOSSIER-SENTINEL", summary: "Draft"}
+      ]
+    }
+
+    variant = BrusselsWtfWeb.DossierPage.published_variant(page, item, "en")
+    assert variant["title"] == "PUBLISHED-DOSSIER-TITLE"
+    refute variant["title"] =~ "UNPUBLISHED"
+  end
+
   test "a reader report creates a private case without removing the public link", %{conn: conn} do
     actor = %BrusselsWtf.Review.Actor{id: "rico", role: :reviewer}
     dossier = BrusselsWtf.Council.get_dossier!("demo-public-space")
