@@ -30,16 +30,21 @@ defmodule BrusselsWtf.Processors.Stub do
   def normalize(%{sha256: sha256}), do: fetch(sha256, :normalize)
 
   @impl true
+  def maximum_cost(_operation, _input), do: {:ok, 0}
+
+  @impl true
   def metadata do
     %{
       processor_name: "recorded-coverage-generator",
       processor_version: "fixture-contract-1",
       config_hash: "sha256:fixture-coverage-contract-1",
       provider_category: "recorded_fixture",
+      billing_mode: :recorded,
+      network_access: :none,
       model: "recorded-ixelles-proposal",
       canonical_method: :ai_generation,
       translation_method: :machine_translation,
-      usage: %{"fixture" => true}
+      usage: %{"fixture" => true, "network_calls" => 0}
     }
   end
 

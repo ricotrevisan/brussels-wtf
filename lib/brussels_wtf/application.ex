@@ -7,6 +7,7 @@ defmodule BrusselsWtf.Application do
 
   @impl true
   def start(_type, _args) do
+    :ok = BrusselsWtf.Council.GenerationControl.validate_configuration!()
     oban_config = oban_config()
     Application.put_env(:brussels_wtf, Oban, oban_config, persistent: true)
 

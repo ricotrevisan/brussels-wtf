@@ -5,7 +5,7 @@ defmodule BrusselsWtf.Council.CoverageExecution do
   alias BrusselsWtf.Council.PublicationInput
   alias BrusselsWtf.Processors.Coverage
 
-  def canonical(page, input, metadata) do
+  def canonical(page, input, metadata, generation_kind, retry) do
     execute(
       page,
       "fr",
@@ -14,11 +14,21 @@ defmodule BrusselsWtf.Council.CoverageExecution do
       input,
       metadata.canonical_method,
       metadata,
+      generation_kind,
+      retry,
       fn -> Coverage.generate_fr(input) end
     )
   end
 
-  def translation(page, canonical_run, canonical_output, locale, metadata)
+  def translation(
+        page,
+        canonical_run,
+        canonical_output,
+        locale,
+        metadata,
+        generation_kind,
+        retry
+      )
       when locale in ["nl", "en"] do
     input = %{
       "canonical_output_hash" => canonical_run.output_hash,
@@ -34,11 +44,62 @@ defmodule BrusselsWtf.Council.CoverageExecution do
       input,
       metadata.translation_method,
       metadata,
+      generation_kind,
+      retry,
       fn -> Coverage.translate(canonical_output, locale) end
     )
   end
 
-  defp execute(page, locale, operation, parent_run_id, input, method, metadata, fun) do
+  defp execute(
+         page,
+         locale,
+         operation,
+         parent_run_id,
+         input,
+         method,
+         metadata,
+         generation_kind,
+         retry,
+         fun
+       ) do
+    with :ok <- BrusselsWtf.Council.GenerationControl.before_call(metadata, generation_kind),
+         {:ok, reservation} <-
+           BrusselsWtf.Council.GenerationControl.reserve_call(
+             page,
+             operation,
+             locale,
+             input,
+             metadata,
+             retry
+           ) do
+      execute_permitted(
+        page,
+        locale,
+        operation,
+        parent_run_id,
+        input,
+        method,
+        metadata,
+        reservation,
+        fun
+      )
+    else
+      {:defer, reason} -> {:deferred, reason}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp execute_permitted(
+         page,
+         locale,
+         operation,
+         parent_run_id,
+         input,
+         method,
+         metadata,
+         reservation,
+         fun
+       ) do
     started_at = System.monotonic_time()
     result = safe_invoke(fun)
 
@@ -57,6 +118,7 @@ defmodule BrusselsWtf.Council.CoverageExecution do
           method,
           metadata,
           metadata.usage,
+          reservation,
           duration_ms
         )
 
@@ -71,6 +133,7 @@ defmodule BrusselsWtf.Council.CoverageExecution do
           method,
           metadata,
           usage,
+          reservation,
           duration_ms
         )
 
@@ -84,6 +147,7 @@ defmodule BrusselsWtf.Council.CoverageExecution do
           method,
           metadata,
           metadata.usage,
+          reservation,
           duration_ms,
           failure_details(reason)
         )
@@ -98,6 +162,7 @@ defmodule BrusselsWtf.Council.CoverageExecution do
           method,
           metadata,
           usage,
+          reservation,
           duration_ms,
           failure_details(reason)
         )
@@ -112,6 +177,7 @@ defmodule BrusselsWtf.Council.CoverageExecution do
           method,
           metadata,
           metadata.usage,
+          reservation,
           duration_ms,
           %{"classification" => "invalid_processor_response"}
         )
@@ -137,6 +203,7 @@ defmodule BrusselsWtf.Council.CoverageExecution do
          method,
          metadata,
          usage,
+         reservation,
          duration_ms
        ) do
     run =
@@ -153,7 +220,10 @@ defmodule BrusselsWtf.Council.CoverageExecution do
         duration_ms
       )
 
-    {:ok, output, run}
+    case BrusselsWtf.Council.GenerationControl.reconcile_call(reservation, run, usage) do
+      :ok -> {:ok, output, run}
+      {:defer, reason} -> {:deferred, reason}
+    end
   end
 
   defp fail(
@@ -165,6 +235,7 @@ defmodule BrusselsWtf.Council.CoverageExecution do
          method,
          metadata,
          usage,
+         reservation,
          duration_ms,
          failure_details
        ) do
@@ -182,13 +253,22 @@ defmodule BrusselsWtf.Council.CoverageExecution do
         failure_details
       )
 
-    {:error,
-     {:coverage_processor_failure,
-      %{
-        run_id: run.id,
-        classification: failure_details["classification"],
-        locale: locale
-      }}}
+    case BrusselsWtf.Council.GenerationControl.reconcile_call(reservation, run, usage) do
+      :ok ->
+        {:error,
+         {:coverage_processor_failure,
+          %{
+            run_id: run.id,
+            classification: failure_details["classification"],
+            locale: locale
+          }}}
+
+      {:defer, reason} ->
+        {:deferred, reason}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   defp record(

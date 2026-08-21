@@ -20,12 +20,17 @@ defmodule BrusselsWtf.Council.PublicationTest do
     def translate(_canonical, _locale), do: {:error, :should_not_run}
 
     @impl true
+    def maximum_cost(_operation, _input), do: {:ok, 0}
+
+    @impl true
     def metadata do
       %{
         processor_name: "failing-coverage-processor",
         processor_version: "1",
         config_hash: "sha256:failing-coverage-processor",
         provider_category: "test_failure",
+        billing_mode: :recorded,
+        network_access: :none,
         model: nil,
         canonical_method: :ai_generation,
         translation_method: :machine_translation,

@@ -58,6 +58,10 @@ if config_env() == :prod do
   # avoiding recursive keyword-list leakage from the build configuration.
   config :brussels_wtf, :process_role, role
 
+  config :brussels_wtf,
+         :coverage_generation,
+         BrusselsWtf.Council.GenerationControl.runtime_config()
+
   cbe_open_data_directory = System.get_env("CBE_OPEN_DATA_DIRECTORY")
   cbe_open_data_sha256 = System.get_env("CBE_OPEN_DATA_SHA256")
 

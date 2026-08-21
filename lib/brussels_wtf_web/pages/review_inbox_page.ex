@@ -81,6 +81,28 @@ defmodule BrusselsWtfWeb.ReviewInboxPage do
         </form>
       </section>
 
+      <section class="mt-7 border-y border-base-300 py-4">
+        <h2 class="text-lg font-semibold">Coverage generation batch</h2>
+        <p class="mt-1 text-sm text-base-content/70">
+          Queue only this finite meeting allowlist. Backfill generation must also be enabled at runtime.
+        </p>
+        <form
+          method="post"
+          action="/review/coverage-batches"
+          class="mt-3 grid gap-3 md:grid-cols-[1fr_auto]"
+        >
+          <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+          <label>
+            Meeting IDs, separated by spaces, commas, or new lines <textarea
+              name="meeting_ids"
+              required
+              class="textarea textarea-bordered min-h-24 w-full font-mono"
+            ></textarea>
+          </label>
+          <button type="submit" class="btn self-end">Queue coverage batch</button>
+        </form>
+      </section>
+
       <form
         method="get"
         action="/review"

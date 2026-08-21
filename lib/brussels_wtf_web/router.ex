@@ -45,6 +45,7 @@ defmodule BrusselsWtfWeb.Router do
 
     dstar("/", ReviewInboxPage)
     post "/polls", PollController, :create
+    post "/coverage-batches", CoverageBatchController, :create
     dstar("/cases/:id", ReviewCasePage)
     post "/cases/:case_id/actions/:action", ReviewActionController, :create
     post "/cases/:case_id/notes", ReviewNoteController, :create

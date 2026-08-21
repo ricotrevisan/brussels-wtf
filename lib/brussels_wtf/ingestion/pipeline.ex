@@ -279,9 +279,9 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
   end
 
   @spec extract(Ecto.UUID.t()) :: :ok | {:error, term()}
-  def extract(source_version_id, attempt \\ 1) do
+  def extract(source_version_id, attempt \\ 1, generation_kind \\ :automatic) do
     version = Ash.load!(Ingestion.get_source_version!(source_version_id), :source_record)
-    run = prepare_native_generation(version)
+    run = prepare_native_generation(version, generation_kind)
 
     case run.status do
       :succeeded -> reconcile_native_success(version, run)
@@ -329,13 +329,16 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     end
   end
 
-  defp prepare_native_generation(version) do
+  defp prepare_native_generation(version, generation_kind) do
     metadata = BrusselsWtf.PDF.Processor.metadata()
 
     Ingestion.record_processing_run!(%{
       source_version_id: version.id,
       processor_role: :native_extraction,
-      inputs: %{"source_sha256" => version.sha256},
+      inputs: %{
+        "source_sha256" => version.sha256,
+        "generation_kind" => generation_kind(generation_kind)
+      },
       processor_name: metadata.native_processor_name,
       processor_version: metadata.native_processor_version,
       config_hash: metadata.config_hash,
@@ -523,6 +526,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
           "native_run_id" => native_run.id,
           "native_artifact_id" => native_artifact.id,
           "review_case_id" => native_run.output["review_case_id"],
+          "generation_kind" => native_run.inputs["generation_kind"] || "automatic",
           "pages" => quality["rejected_pages"],
           "languages" => limits.ocr_languages,
           "limits" => Map.new(limits, fn {key, value} -> {to_string(key), value} end)
@@ -547,7 +551,11 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
   end
 
   defp enqueue_normalization(run, locator_url) do
-    %{processing_run_id: run.id, locator_url: locator_url}
+    %{
+      processing_run_id: run.id,
+      locator_url: locator_url,
+      generation_kind: run.inputs["generation_kind"] || "automatic"
+    }
     |> Workers.NormalizeSource.new()
     |> Oban.insert!()
 
@@ -802,11 +810,16 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
 
   @spec normalize(Ecto.UUID.t(), String.t()) :: :ok | {:error, term()}
   def normalize(processing_run_id, citation_url),
-    do: normalize(processing_run_id, citation_url, 1, 3)
+    do: normalize(processing_run_id, citation_url, 1, 3, :automatic)
 
   @spec normalize(Ecto.UUID.t(), String.t(), pos_integer(), pos_integer()) ::
           :ok | {:error, term()}
-  def normalize(processing_run_id, citation_url, attempt, max_attempts) do
+  def normalize(processing_run_id, citation_url, attempt, max_attempts),
+    do: normalize(processing_run_id, citation_url, attempt, max_attempts, :automatic)
+
+  @spec normalize(Ecto.UUID.t(), String.t(), pos_integer(), pos_integer(), atom()) ::
+          :ok | {:error, term()}
+  def normalize(processing_run_id, citation_url, attempt, max_attempts, generation_kind) do
     run =
       Ash.load!(Ingestion.get_processing_run!(processing_run_id),
         source_version: [source_record: [:commune]]
@@ -828,7 +841,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
 
     case BrusselsWtf.Processors.normalize(Map.put(run.output, "text", text)) do
       {:ok, normalized} ->
-        persist_normalized(source_record, version, citation_url, normalized)
+        persist_normalized(source_record, version, citation_url, normalized, generation_kind)
 
       {:error, :processor_unimplemented} ->
         BrusselsWtf.Ingestion.NormalizationReview.open_for_run(run, citation_url)
@@ -860,7 +873,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     end
   end
 
-  defp persist_normalized(source_record, version, citation_url, normalized) do
+  defp persist_normalized(source_record, version, citation_url, normalized, generation_kind) do
     meeting =
       Council.upsert_meeting!(%{
         commune_id: source_record.commune_id,
@@ -915,9 +928,11 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
       procedural_state: :unknown
     })
 
-    %{meeting_id: meeting.id}
-    |> Workers.PublishMeeting.new()
-    |> Oban.insert!()
+    if generation_kind != :backfill do
+      %{meeting_id: meeting.id, generation_kind: "automatic"}
+      |> Workers.PublishMeeting.new()
+      |> Oban.insert!()
+    end
 
     :ok
   end
@@ -1116,7 +1131,12 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
             discover_nested_and_enqueue(locator, poll_run_id, check_key, body, now)
 
           locator.role in @processable_roles and not processed?(version) ->
-            %{source_version_id: version.id}
+            poll_run = Ingestion.get_poll_run!(poll_run_id)
+
+            %{
+              source_version_id: version.id,
+              generation_kind: generation_kind(poll_run)
+            }
             |> Workers.ExtractSource.new()
             |> Oban.insert!()
 
@@ -1723,4 +1743,10 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
   defp language("nl"), do: :nl
   defp language("en"), do: :en
   defp language(_), do: :bilingual
+  defp generation_kind(%{kind: :backfill}), do: "backfill"
+  defp generation_kind(%{scope: :previous_year}), do: "backfill"
+  defp generation_kind(%{}), do: "automatic"
+  defp generation_kind(:backfill), do: "backfill"
+  defp generation_kind("backfill"), do: "backfill"
+  defp generation_kind(_kind), do: "automatic"
 end

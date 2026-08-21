@@ -11,22 +11,57 @@ defmodule BrusselsWtf.Council.Publication do
 
   @locales ["fr", "nl", "en"]
 
-  def generate_and_publish(meeting_id, attempt \\ 1, max_attempts \\ 3) do
+  def generate_and_publish(
+        meeting_id,
+        attempt \\ 1,
+        max_attempts \\ 3,
+        generation_kind \\ :automatic
+      ) do
+    case BrusselsWtf.Council.GenerationControl.preflight(generation_kind) do
+      :ok ->
+        metadata = Coverage.metadata()
+
+        case BrusselsWtf.Council.GenerationControl.before_call(metadata, generation_kind) do
+          :ok -> execute_generation(meeting_id, metadata, attempt, max_attempts, generation_kind)
+          {:defer, _reason} -> :ok
+        end
+
+      {:defer, _reason} ->
+        :ok
+    end
+  end
+
+  defp execute_generation(meeting_id, metadata, attempt, max_attempts, generation_kind) do
     meeting = load_meeting(meeting_id)
     input = PublicationInput.build(meeting)
-    metadata = Coverage.metadata()
     page = meeting.meeting_page
 
     result =
       with :ok <- PublicationInput.validate(input),
            {:ok, canonical, canonical_run} <-
-             CoverageExecution.canonical(page, input, metadata),
+             CoverageExecution.canonical(page, input, metadata, generation_kind, attempt),
            :ok <- GenerationContract.validate_bundle(input, canonical, "fr"),
            {:ok, nl, nl_run} <-
-             CoverageExecution.translation(page, canonical_run, canonical, "nl", metadata),
+             CoverageExecution.translation(
+               page,
+               canonical_run,
+               canonical,
+               "nl",
+               metadata,
+               generation_kind,
+               attempt
+             ),
            :ok <- GenerationContract.validate_bundle(input, nl, "nl"),
            {:ok, en, en_run} <-
-             CoverageExecution.translation(page, canonical_run, canonical, "en", metadata),
+             CoverageExecution.translation(
+               page,
+               canonical_run,
+               canonical,
+               "en",
+               metadata,
+               generation_kind,
+               attempt
+             ),
            :ok <- GenerationContract.validate_bundle(input, en, "en") do
         output = GenerationContract.combine(canonical, nl, en)
 
@@ -209,6 +244,16 @@ defmodule BrusselsWtf.Council.Publication do
   end
 
   defp handle_result(:ok, _meeting, _input, _metadata, _attempt, _max_attempts), do: :ok
+
+  defp handle_result(
+         {:deferred, _reason},
+         _meeting,
+         _input,
+         _metadata,
+         _attempt,
+         _max_attempts
+       ),
+       do: :ok
 
   defp handle_result(
          {:error, {:publication_gate, failures}},

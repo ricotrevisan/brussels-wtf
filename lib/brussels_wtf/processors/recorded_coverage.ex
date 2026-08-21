@@ -98,12 +98,17 @@ defmodule BrusselsWtf.Processors.RecordedCoverage do
   def translate(_canonical, _locale), do: {:error, :recorded_translation_not_available}
 
   @impl true
+  def maximum_cost(_operation, _input), do: {:ok, 0}
+
+  @impl true
   def metadata do
     %{
       processor_name: "recorded-ixelles-coverage",
       processor_version: "2026-08-19",
       config_hash: "sha256:recorded-ixelles-coverage-v1",
       provider_category: "recorded_contract",
+      billing_mode: :recorded,
+      network_access: :none,
       model: "recorded-output",
       canonical_method: :ai_generation,
       translation_method: :machine_translation,

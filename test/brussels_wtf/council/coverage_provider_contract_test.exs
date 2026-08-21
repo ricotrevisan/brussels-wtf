@@ -18,16 +18,21 @@ defmodule BrusselsWtf.Council.CoverageProviderContractTest do
     defdelegate translate(canonical, locale), to: BrusselsWtf.Processors.Stub
 
     @impl true
+    def maximum_cost(_operation, _input), do: {:ok, 0}
+
+    @impl true
     def metadata do
       %{
         processor_name: "alternate-recorded-generator",
         processor_version: "2026-08",
         config_hash: "sha256:alternate-recorded-contract",
         provider_category: "recorded_fixture",
+        billing_mode: :recorded,
+        network_access: :none,
         model: "alternate-fixture",
         canonical_method: :ai_generation,
         translation_method: :machine_translation,
-        usage: %{"fixture" => true}
+        usage: %{"fixture" => true, "network_calls" => 0}
       }
     end
   end

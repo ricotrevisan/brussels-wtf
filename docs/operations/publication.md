@@ -35,3 +35,31 @@ Processor failures retain one coverage-run record per execution. Oban retries th
 ## Processor configuration
 
 Coverage generation is selected through the `:brussels_wtf, :coverage_processor` application configuration, independently of extraction and normalization. Production uses a deterministic recorded contract for the initial Ixelles proposal. That contract matches the commune, meeting, normalized wording, claim text, state, and official citation before returning its recorded copy; source drift fails closed instead of receiving stale prose. Tests use a fixture-backed stub and make no paid or nondeterministic calls. A later benchmark may replace the provider through the same processor seam without changing the publication contract.
+
+
+## Runtime generation controls
+
+The application reads these variables when the release starts:
+
+- `COVERAGE_GENERATION_MODE`: `disabled`, `recorded`, or `paid`. The current default is `recorded` so the hash-pinned Ixelles contract remains available. Invalid values stop startup.
+- `BACKFILL_GENERATION_ENABLED`: strict `true` or `false`, default `false`.
+- `COVERAGE_BACKFILL_MAX_BATCH_SIZE`: positive meeting count, default `10`.
+- `COVERAGE_MONTHLY_BUDGET_CENTS`: required positive integer only in `paid` mode. It is rejected in the other modes.
+
+`disabled` still permits polling, retrieval, extraction, OCR, and normalization. Coverage jobs finish without calling processor metadata or a provider, pages remain private, and no publication review case is opened merely because generation is off.
+
+`recorded` permits only a processor that declares recorded billing and no network access. Recorded runs reserve no money. `paid` permits only a network-backed paid processor and requires the monthly budget. No paid production processor is selected yet, so setting `paid` with the current recorded processor stops startup rather than falling back.
+
+There are currently no accepted paid-provider credential variables. Do not put a provider key into the application until a provider adapter, credential name, request/output caps, conservative maximum-cost calculation, timeout, and retry contract have been reviewed. That later adapter must read its credential from a Coolify secret, reject missing or partial credentials at startup, and never expose the value in configuration errors, logs, usage records, or review diagnostics.
+
+Workers re-read the effective policy immediately before canonical French generation and again before each translation. To stop paid work, set `COVERAGE_GENERATION_MODE=disabled` in Coolify and restart the app process. Jobs already queued before the restart then finish without another provider call. The OCR process may keep running because this switch does not stop extraction.
+
+## Paid-call budget
+
+A paid call must obtain a PostgreSQL reservation before provider use. The guarded update admits the call only when current spend plus outstanding reservations plus the conservative maximum charge for the capped request fits within the UTC calendar-month limit. Calls denied by the budget make no network request and do not flood the review inbox.
+
+After a call, the reservation stores provider, model, meeting page, publication-input hash, operation, locale, retry, usage, and final cost when available. If final cost is unknown, the conservative maximum is charged. A transient reconciliation failure leaves the reservation held, blocks publication, and queues a durable reconciliation retry on the `publish` queue. If queuing fails, the original publication job fails so Oban retries it; exhausted reconciliation retries persist `reconciliation_failed` on the reservation and poison the month. If a provider reports a charge above its declared maximum, the reservation records `reconciliation_failed`, links the coverage run and usage, and holds the rest of that month's budget so no later paid call can be admitted. A paid adapter must cap provider output and calculate the upper bound before it can be enabled. A limit already persisted for the current month cannot be changed by restarting the release with another value.
+
+## Historical coverage batches
+
+Acquisition backfills retain their backfill scope through extraction and normalization and never imply permission to generate coverage. When `BACKFILL_GENERATION_ENABLED=true`, an authenticated reviewer can use **Coverage generation batch** on `/review` to submit a finite meeting-ID allowlist. The allowlist and reviewer are stored before one backfill generation job per meeting is inserted. The configured maximum batch size is enforced again in the domain function, not only by the form.

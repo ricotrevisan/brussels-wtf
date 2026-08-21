@@ -21,14 +21,25 @@ defmodule BrusselsWtf.Council.MeetingPage do
       argument :attempt, :integer, allow_nil?: false
       argument :max_attempts, :integer, allow_nil?: false
 
+      argument :generation_kind, :atom do
+        allow_nil? false
+        default :automatic
+        constraints one_of: [:automatic, :backfill]
+      end
+
+      argument :coverage_batch_id, :uuid
+
       run fn input, _context ->
-        case BrusselsWtf.Council.Publication.generate_and_publish(
-               input.arguments.meeting_id,
-               input.arguments.attempt,
-               input.arguments.max_attempts
-             ) do
-          :ok -> {:ok, :ok}
-          {:error, _reason} = error -> error
+        with :ok <- authorize_generation(input.arguments) do
+          case BrusselsWtf.Council.Publication.generate_and_publish(
+                 input.arguments.meeting_id,
+                 input.arguments.attempt,
+                 input.arguments.max_attempts,
+                 input.arguments.generation_kind
+               ) do
+            :ok -> {:ok, :ok}
+            {:error, _reason} = error -> error
+          end
         end
       end
     end
@@ -160,6 +171,18 @@ defmodule BrusselsWtf.Council.MeetingPage do
                  council_meeting.commune.slug == ^arg(:commune_slug)
              )
     end
+  end
+
+  defp authorize_generation(%{generation_kind: :automatic}), do: :ok
+
+  defp authorize_generation(%{
+         generation_kind: :backfill,
+         coverage_batch_id: batch_id,
+         meeting_id: meeting_id
+       }) do
+    if BrusselsWtf.Council.coverage_batch_allows?(batch_id, meeting_id),
+      do: :ok,
+      else: {:error, :invalid_coverage_batch}
   end
 
   attributes do

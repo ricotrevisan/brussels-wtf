@@ -9,9 +9,17 @@ defmodule BrusselsWtf.Workers.NormalizeSource do
 
   @impl true
   def perform(%Oban.Job{
-        args: %{"processing_run_id" => run_id, "locator_url" => url},
+        args: %{"processing_run_id" => run_id, "locator_url" => url} = args,
         attempt: attempt
       }) do
-    BrusselsWtf.Ingestion.Pipeline.normalize(run_id, url, attempt, @max_attempts)
+    generation_kind = if args["generation_kind"] == "backfill", do: :backfill, else: :automatic
+
+    BrusselsWtf.Ingestion.Pipeline.normalize(
+      run_id,
+      url,
+      attempt,
+      @max_attempts,
+      generation_kind
+    )
   end
 end

@@ -50,11 +50,13 @@ defmodule BrusselsWtf.Workers.ExtractSource do
   end
 
   def perform(%Oban.Job{
-        args: %{"source_version_id" => source_version_id},
+        args: %{"source_version_id" => source_version_id} = args,
         attempt: attempt,
         max_attempts: max_attempts
       }) do
-    case BrusselsWtf.Ingestion.Pipeline.extract(source_version_id, attempt) do
+    generation_kind = if args["generation_kind"] == "backfill", do: :backfill, else: :automatic
+
+    case BrusselsWtf.Ingestion.Pipeline.extract(source_version_id, attempt, generation_kind) do
       :ok ->
         :ok
 

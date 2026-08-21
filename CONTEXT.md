@@ -144,6 +144,18 @@ Whether a meeting page is `draft` or `published`. A draft publishes automaticall
 
 The automated checks required to move content from `draft` to `published`. The gate requires complete FR/NL/EN locale variants, claim-specific official evidence, and applicable provenance labels. Rico Trevisan may review or edit content but his approval is not required for publication. Public coverage carries his byline.
 
+## Coverage generation mode
+
+The runtime policy that decides whether meeting coverage processors may run. `disabled` permits acquisition, extraction, OCR, and normalization but makes no coverage call. `recorded` permits only zero-network recorded processors. `paid` permits a network-backed processor only through a generation budget.
+
+## Generation budget
+
+A calendar-month hard limit on paid coverage cost. Each paid call reserves a conservative maximum cost before execution and reconciles that reservation with the final cost or keeps it reserved when the outcome is uncertain. Exhausted or unavailable budget fails closed before provider use.
+
+## Coverage batch
+
+An authenticated, bounded allowlist of meetings explicitly queued for coverage generation. Historical acquisition never implies permission to generate paid coverage.
+
 ### PDF extraction and OCR
 
 - A **native extraction generation** always runs Poppler first and retains page-level quality decisions and a private `native-text` derived artifact.
