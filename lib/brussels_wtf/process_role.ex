@@ -3,7 +3,7 @@ defmodule BrusselsWtf.ProcessRole do
 
   def oban(:app, base) do
     base
-    |> Keyword.put(:queues, poll: 1, fetch: 2, extract: 1, normalize: 1, publish: 1)
+    |> Keyword.put(:queues, poll: 1, fetch: 2, extract: 1, normalize: 1, enrich: 1, publish: 1)
   end
 
   def oban(:ocr, base) do

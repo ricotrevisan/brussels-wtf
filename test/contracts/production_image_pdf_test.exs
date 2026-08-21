@@ -49,6 +49,7 @@ defmodule BrusselsWtf.Contracts.ProductionImagePdfTest do
              "fetch" => 2,
              "extract" => 1,
              "normalize" => 1,
+             "enrich" => 1,
              "publish" => 1
            }
 

@@ -55,7 +55,12 @@ config :spark,
 config :brussels_wtf,
   ecto_repos: [BrusselsWtf.Repo],
   generators: [timestamp_type: :utc_datetime, binary_id: true],
-  ash_domains: [BrusselsWtf.Ingestion, BrusselsWtf.Council, BrusselsWtf.Review],
+  ash_domains: [
+    BrusselsWtf.Ingestion,
+    BrusselsWtf.Council,
+    BrusselsWtf.Review,
+    BrusselsWtf.Identity
+  ],
   clock: BrusselsWtf.Clock.System,
   http: BrusselsWtf.HTTP.Req,
   http_max_body_bytes: 25 * 1_024 * 1_024,
@@ -64,6 +69,7 @@ config :brussels_wtf,
   archive: BrusselsWtf.Archive.Unconfigured,
   readiness: BrusselsWtf.Readiness.Monitor,
   processors: BrusselsWtf.Processors.Unimplemented,
+  cbe_source: BrusselsWtf.CBE.Unconfigured,
   pdf_processor: BrusselsWtf.PDF.PopplerOcr,
   pdf_quality_thresholds: %{
     min_characters: 40,
@@ -82,6 +88,7 @@ config :brussels_wtf,
     ocr_languages: "fra+nld"
   },
   coverage_processor: BrusselsWtf.Processors.RecordedCoverage,
+  legal_relationships_enabled: false,
   allow_synthetic_seeds: false,
   automatic_transcription: false,
   session_cookie_secure: false,
@@ -127,6 +134,7 @@ config :brussels_wtf, Oban,
     extract: 1,
     ocr: 1,
     normalize: 1,
+    enrich: 1,
     publish: 1
   ]
 
