@@ -20,7 +20,7 @@ A single rejected page rejects native extraction for the document. Only rejected
 
 The same release image has two mutually exclusive roles:
 
-- `PROCESS_ROLE=app`: web, polling, fetching, native extraction, normalization, private enrichment, and publication; it cannot consume OCR jobs.
+- `PROCESS_ROLE=app`: web, polling, fetching, sealed corpus import, native extraction, normalization, private enrichment, and publication; it cannot consume OCR jobs.
 - `PROCESS_ROLE=ocr`: no Phoenix server or cron plugins, and only the `ocr` queue at concurrency 1.
 
 Run `/app/bin/ocr_worker` in the OCR service. Migrations remain owned by the app role. The production image pins Debian Bookworm and contains Poppler 22.12, OCRmyPDF 14.0, Tesseract 5.3, and the `fra`, `nld`, and `osd` data packages. Release validation fails closed when the toolchain or bilingual language data is missing. Automatic transcription is explicitly disabled.

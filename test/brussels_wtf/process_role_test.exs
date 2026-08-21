@@ -7,6 +7,7 @@ defmodule BrusselsWtf.ProcessRoleTest do
     ocr = BrusselsWtf.ProcessRole.oban(:ocr, base)
 
     refute Keyword.has_key?(app[:queues], :ocr)
+    assert app[:queues][:corpus] == 1
     assert app[:plugins] != false
     assert ocr[:queues] == [ocr: 1]
     assert ocr[:plugins] == false
