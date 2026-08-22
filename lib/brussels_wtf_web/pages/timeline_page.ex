@@ -30,6 +30,15 @@ defmodule BrusselsWtfWeb.TimelinePage do
         |> Enum.map(&entry(page, &1, locale))
       end)
 
+    q = String.slice(params["q"] || "", 0, 200)
+    show = selected_sections(params)
+    needle = String.downcase(q)
+
+    matching =
+      Enum.filter(entries, fn entry ->
+        needle == "" or String.contains?(String.downcase(entry.search_text), needle)
+      end)
+
     assign(conn,
       page_title: "brussels.wtf",
       html_lang: locale,
@@ -38,9 +47,10 @@ defmodule BrusselsWtfWeb.TimelinePage do
       communes:
         Enum.map(@communes, fn {slug, name} -> {slug, commune_name(locale, slug, name)} end),
       selected_communes: selected,
-      coming: entries |> Enum.filter(&(&1.state == :proposal)) |> newest_first(),
-      unknown: entries |> Enum.filter(&(&1.state == :unknown)) |> newest_first(),
-      decided: entries |> Enum.filter(&(&1.state == :decision)) |> newest_first()
+      q: q,
+      show: show,
+      coming: matching |> Enum.filter(&(&1.state == :proposal)) |> newest_first(),
+      previously: matching |> Enum.filter(&(&1.state in [:decision, :unknown])) |> newest_first()
     )
   end
 
@@ -66,59 +76,92 @@ defmodule BrusselsWtfWeb.TimelinePage do
       {text(@locale, :skip)}
     </a>
     <header class="border-b border-base-300">
-      <div class="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-4">
+      <div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4">
         <a href={~p"/"} class="font-semibold tracking-wide">brussels.wtf</a>
         <.language_nav locale={@locale} path="/" />
       </div>
     </header>
 
-    <main id="content" class="mx-auto max-w-5xl px-4 py-8 text-base-content" tabindex="-1">
-      <h1 class="text-3xl font-semibold tracking-tight">{text(@locale, :title)}</h1>
-      <p class="mt-2 max-w-2xl text-base-content/70">{text(@locale, :intro)}</p>
-
-      <form method="get" action="/" data-reader-communes class="mt-7 border-y border-base-300 py-4">
-        <input type="hidden" name="lang" value={@locale} />
-        <input type="hidden" name="communes_submitted" value="1" />
-        <fieldset>
-          <legend class="font-medium">{text(@locale, :communes)}</legend>
-          <div class="mt-3 flex flex-wrap gap-x-5 gap-y-2">
-            <label :for={{slug, name} <- @communes} class="flex items-center gap-2">
-              <input
-                type="checkbox"
-                name="commune[]"
-                value={slug}
-                checked={slug in @selected_communes}
-                class="checkbox checkbox-sm"
-              />
-              <span>{name}</span>
+    <main id="content" class="mx-auto max-w-6xl px-4 py-8 text-base-content" tabindex="-1">
+      <div class="grid gap-8 md:grid-cols-[15rem_minmax(0,1fr)]">
+        <aside class="md:sticky md:top-4 md:self-start">
+          <h1 class="text-xl font-semibold tracking-tight">{text(@locale, :title)}</h1>
+          <p class="mt-2 text-sm text-base-content/70">{text(@locale, :intro)}</p>
+          <form method="get" action="/" data-reader-communes class="mt-5 space-y-4">
+            <input type="hidden" name="lang" value={@locale} />
+            <input type="hidden" name="communes_submitted" value="1" />
+            <label class="block text-sm font-medium">
+              {text(@locale, :search)}
+              <input type="search" name="q" value={@q} class="input input-bordered mt-1 w-full" />
             </label>
-          </div>
-        </fieldset>
-        <button type="submit" class="btn btn-sm mt-4">{text(@locale, :apply)}</button>
-      </form>
+            <fieldset class="space-y-2 text-sm">
+              <legend class="font-medium">{text(@locale, :sections)}</legend>
+              <label class="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  name="show[]"
+                  value="coming"
+                  checked={"coming" in @show}
+                  class="checkbox checkbox-sm"
+                />
+                {text(@locale, :coming)} ({length(@coming)})
+              </label>
+              <label class="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  name="show[]"
+                  value="previously"
+                  checked={"previously" in @show}
+                  class="checkbox checkbox-sm"
+                />
+                {text(@locale, :previously)} ({length(@previously)})
+              </label>
+            </fieldset>
+            <fieldset class="space-y-2 text-sm">
+              <legend class="font-medium">{text(@locale, :communes)}</legend>
+              <label :for={{slug, name} <- @communes} class="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  name="commune[]"
+                  value={slug}
+                  checked={slug in @selected_communes}
+                  class="checkbox checkbox-sm"
+                />
+                <span>{name}</span>
+              </label>
+            </fieldset>
+            <button type="submit" class="btn btn-sm w-full">{text(@locale, :apply)}</button>
+          </form>
+        </aside>
 
-      <section aria-labelledby="coming-up" class="mt-10">
-        <h2 id="coming-up" class="text-2xl font-semibold">{text(@locale, :coming)}</h2>
-        <p :if={@coming == []} class="mt-3 text-base-content/70">{text(@locale, :none_coming)}</p>
-        <div class="mt-4 divide-y divide-base-300">
-          <.timeline_entry :for={entry <- @coming} entry={entry} locale={@locale} />
-        </div>
-      </section>
+        <div class="min-w-0">
+          <section
+            :if={"coming" in @show}
+            aria-labelledby="coming-up"
+            class="border-t border-base-300 pt-4"
+          >
+            <h2 id="coming-up" class="text-2xl font-semibold">{text(@locale, :coming)}</h2>
+            <p :if={@coming == []} class="mt-3 text-base-content/70">{text(@locale, :none_coming)}</p>
+            <div class="mt-3">
+              <.timeline_entry :for={entry <- @coming} entry={entry} locale={@locale} />
+            </div>
+          </section>
 
-      <section :if={@unknown != []} aria-labelledby="outcome-unknown" class="mt-10">
-        <h2 id="outcome-unknown" class="text-2xl font-semibold">{text(@locale, :unknown_heading)}</h2>
-        <div class="mt-4 divide-y divide-base-300">
-          <.timeline_entry :for={entry <- @unknown} entry={entry} locale={@locale} />
+          <section
+            :if={"previously" in @show}
+            aria-labelledby="previously"
+            class="mt-8 border-t border-base-300 pt-4"
+          >
+            <h2 id="previously" class="text-2xl font-semibold">{text(@locale, :previously)}</h2>
+            <p :if={@previously == []} class="mt-3 text-base-content/70">
+              {text(@locale, :none_decided)}
+            </p>
+            <div class="mt-3">
+              <.timeline_entry :for={entry <- @previously} entry={entry} locale={@locale} />
+            </div>
+          </section>
         </div>
-      </section>
-
-      <section aria-labelledby="decided" class="mt-10">
-        <h2 id="decided" class="text-2xl font-semibold">{text(@locale, :decided)}</h2>
-        <p :if={@decided == []} class="mt-3 text-base-content/70">{text(@locale, :none_decided)}</p>
-        <div class="mt-4 divide-y divide-base-300">
-          <.timeline_entry :for={entry <- @decided} entry={entry} locale={@locale} />
-        </div>
-      </section>
+      </div>
 
       <footer class="mt-12 border-t border-base-300 pt-5 text-sm text-base-content/70">
         {text(@locale, :byline)} Rico Trevisan
@@ -132,41 +175,16 @@ defmodule BrusselsWtfWeb.TimelinePage do
 
   defp timeline_entry(assigns) do
     ~H"""
-    <article class="py-5" data-commune={@entry.commune_slug}>
-      <p class="text-sm text-base-content/70">
-        <span class="font-medium text-base-content">{@entry.commune}</span>
-        · <time datetime={Date.to_iso8601(@entry.date)}>{format_date(@entry.date)}</time>
-        · {text(@locale, :item)} {@entry.item_number}
-      </p>
-      <h3 class="mt-2 text-xl font-semibold leading-snug">
-        <a
-          href={@entry.href}
-          class="underline decoration-base-300 underline-offset-4 hover:decoration-current"
-        >
-          {@entry.title}
-        </a>
-      </h3>
-      <p class="mt-2 font-medium">{status_label(@locale, @entry)}</p>
-      <p class="mt-2 max-w-3xl leading-7">{@entry.summary}</p>
-      <div class="mt-3 flex flex-wrap gap-2" aria-label={text(@locale, :provenance)}>
-        <span :for={label <- provenance_labels(@entry.provenance)} class="badge badge-outline">{label}</span>
-      </div>
-      <p :if={@entry.dossiers != []} class="mt-3 text-sm">
-        {text(@locale, :dossiers)}:
-        <a
-          :for={dossier <- @entry.dossiers}
-          href={"/dossiers/#{dossier.slug}?lang=#{@locale}"}
-          class="mr-3 underline underline-offset-2"
-        >{dossier.title}</a>
-      </p>
-      <p :for={evidence <- @entry.evidences} class="mt-3 text-sm">
-        {text(@locale, :source)}:
-        <a href={evidence.citation_url} rel="external" class="underline underline-offset-2">
-          {evidence.source_title}
-        </a>
-        <span :if={evidence.synthetic} class="block font-medium text-warning">
-          {text(@locale, :synthetic_reference)}
-        </span>
+    <article
+      class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-base-300 py-2"
+      data-commune={@entry.commune_slug}
+    >
+      <a href={@entry.href} class="min-w-0 flex-1 font-medium underline-offset-2 hover:underline">
+        {@entry.title}
+      </a>
+      <p class="shrink-0 text-sm text-base-content/70">
+        {@entry.commune} ·
+        <time datetime={Date.to_iso8601(@entry.date)}>{format_date(@entry.date)}</time>
       </p>
     </article>
     """
@@ -217,7 +235,21 @@ defmodule BrusselsWtfWeb.TimelinePage do
       dossiers: Enum.map(item.dossier_links, & &1.dossier),
       href:
         "/meetings/#{page.council_meeting.commune.slug}/#{page.council_meeting.municipal_identifier}" <>
-          "?lang=#{locale}##{item.stable_anchor}"
+          "?lang=#{locale}##{item.stable_anchor}",
+      search_text:
+        [
+          variant.title,
+          variant.summary,
+          commune_name(
+            locale,
+            page.council_meeting.commune.slug,
+            page.council_meeting.commune.name
+          ),
+          item.published_item_number || item.item_number,
+          Date.to_iso8601(page.council_meeting.scheduled_on)
+        ]
+        |> Enum.reject(&is_nil/1)
+        |> Enum.join(" ")
     }
   end
 
@@ -241,6 +273,16 @@ defmodule BrusselsWtfWeb.TimelinePage do
   defp localized_summary(variant, _state, _locale),
     do: variant.proposal_summary || variant.summary
 
+  defp selected_sections(params) do
+    selected =
+      params
+      |> Map.get("show")
+      |> List.wrap()
+      |> Enum.filter(&(&1 in ~w(coming previously)))
+
+    if selected == [], do: ~w(coming previously), else: selected
+  end
+
   defp selected_communes(%{"communes_submitted" => _} = params),
     do: normalize_communes(params["commune"])
 
@@ -258,38 +300,6 @@ defmodule BrusselsWtfWeb.TimelinePage do
 
   defp loaded_or_nil(%Ash.NotLoaded{}), do: nil
   defp loaded_or_nil(value), do: value
-
-  defp status_label(locale, %{state: :decision, disposition: disposition}),
-    do: text(locale, :decision) <> ": " <> disposition_label(locale, disposition)
-
-  defp status_label(locale, %{state: :unknown}), do: text(locale, :outcome_unknown)
-
-  defp status_label(locale, %{state: :proposal, outcome: :unknown}),
-    do: text(locale, :proposal) <> " · " <> text(locale, :outcome_unknown)
-
-  defp status_label(locale, _entry), do: text(locale, :proposal)
-
-  defp disposition_label("fr", :approved), do: "approuvée"
-  defp disposition_label("fr", :postponed), do: "reportée"
-  defp disposition_label("fr", :rejected), do: "rejetée"
-  defp disposition_label("fr", :amended), do: "amendée"
-  defp disposition_label("fr", :withdrawn), do: "retirée"
-  defp disposition_label("fr", :other), do: "autre"
-  defp disposition_label("nl", :approved), do: "goedgekeurd"
-  defp disposition_label("nl", :postponed), do: "uitgesteld"
-  defp disposition_label("nl", :rejected), do: "verworpen"
-  defp disposition_label("nl", :amended), do: "gewijzigd"
-  defp disposition_label("nl", :withdrawn), do: "ingetrokken"
-  defp disposition_label("nl", :other), do: "andere"
-  defp disposition_label(_locale, value), do: value |> to_string() |> String.replace("_", " ")
-
-  defp provenance_labels(values) do
-    Enum.map(values, fn
-      :ai_generated -> "AI-generated"
-      :machine_translated -> "machine-translated"
-      :human_reviewed -> "human-reviewed"
-    end)
-  end
 
   defp commune_name("fr", "city-of-brussels", _name), do: "Ville de Bruxelles"
   defp commune_name("nl", "city-of-brussels", _name), do: "Stad Brussel"
@@ -319,7 +329,10 @@ defmodule BrusselsWtfWeb.TimelinePage do
         "Upcoming proposals, unresolved outcomes, and documented decisions from four Brussels communes.",
       communes: "Communes",
       apply: "Apply selection",
+      search: "Search",
+      sections: "Sections",
       coming: "Coming up",
+      previously: "Previously",
       unknown_heading: "Outcome not yet documented",
       decided: "What they decided",
       none_coming: "No upcoming coverage.",
@@ -350,7 +363,10 @@ defmodule BrusselsWtfWeb.TimelinePage do
         "Propositions à venir, résultats non documentés et décisions officielles de quatre communes bruxelloises.",
       communes: "Communes",
       apply: "Appliquer la sélection",
+      search: "Rechercher",
+      sections: "Sections",
       coming: "À venir",
+      previously: "Auparavant",
       unknown_heading: "Résultat pas encore documenté",
       decided: "Ce qu’ils ont décidé",
       none_coming: "Aucune actualité à venir.",
@@ -380,7 +396,10 @@ defmodule BrusselsWtfWeb.TimelinePage do
         "Komende voorstellen, niet-gedocumenteerde resultaten en officiële besluiten uit vier Brusselse gemeenten.",
       communes: "Gemeenten",
       apply: "Selectie toepassen",
+      search: "Zoeken",
+      sections: "Onderdelen",
       coming: "Binnenkort",
+      previously: "Eerder",
       unknown_heading: "Resultaat nog niet gedocumenteerd",
       decided: "Wat ze beslisten",
       none_coming: "Geen komende berichtgeving.",

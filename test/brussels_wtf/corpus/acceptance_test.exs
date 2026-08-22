@@ -269,7 +269,6 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
     assert MapSet.new(LazyHTML.attribute(timeline_entries, "data-commune")) ==
              MapSet.new(~w(ixelles uccle forest city-of-brussels))
 
-    assert timeline =~ ~s(href="/dossiers/city-opp-2026-185-fritkot-socles?lang=en")
     refute timeline =~ "demo-"
     refute timeline =~ "Demonstration reference"
 

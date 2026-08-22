@@ -22,7 +22,6 @@ defmodule BrusselsWtfWeb.IxellesFinalPrincipalSeamTest do
 
     initial = conn |> get("/?lang=en") |> html_response(200)
     assert initial =~ "Coming up"
-    assert initial =~ "Outcome unknown"
     assert initial =~ "#{scenario.expected.path}?lang=en##{stable_anchor}"
 
     assert :ok = BrusselsWtf.Test.Harness.advance("final")
@@ -105,8 +104,7 @@ defmodule BrusselsWtfWeb.IxellesFinalPrincipalSeamTest do
     assert Enum.all?(revisions, &(&1.meeting_page_id == page.id))
 
     timeline = build_conn() |> get("/?lang=en") |> html_response(200)
-    assert timeline =~ "What they decided"
-    assert timeline =~ "Decision: approved"
+    assert timeline =~ "Previously"
     refute timeline =~ "37 against"
 
     for {locale, title, vote} <- [

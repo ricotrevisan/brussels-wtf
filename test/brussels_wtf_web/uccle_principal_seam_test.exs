@@ -59,9 +59,11 @@ defmodule BrusselsWtfWeb.UcclePrincipalSeamTest do
 
     html = conn |> get("/?lang=en") |> html_response(200)
     assert html =~ "Uccle"
-    assert html =~ "What they decided"
-    assert html =~ "Decision: approved"
+    assert html =~ "Previously"
     assert html =~ "#{scenario.expected.path}?lang=en##{item1.stable_anchor}"
+
+    meeting = conn |> recycle() |> get(scenario.expected.path <> "?lang=en") |> html_response(200)
+    assert meeting =~ "Decision: approved"
 
     for locale <- ["fr", "nl", "en"] do
       page =

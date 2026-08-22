@@ -61,7 +61,6 @@ defmodule BrusselsWtfWeb.CityOfBrusselsPrincipalSeamTest do
     timeline = conn |> get("/?lang=en") |> html_response(200)
     assert timeline =~ "City of Brussels"
     assert timeline =~ "Coming up"
-    assert timeline =~ "Outcome unknown"
     assert timeline =~ "#{scenario.expected.path}?lang=en##{item.stable_anchor}"
 
     page =

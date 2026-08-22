@@ -132,8 +132,6 @@ defmodule BrusselsWtfWeb.PrincipalSeamTest do
     timeline = conn |> get("/?lang=en") |> html_response(200)
     assert timeline =~ scenario.expected.title_en
     assert timeline =~ "Coming up"
-    assert timeline =~ "Proposal"
-    assert timeline =~ "Outcome unknown"
     assert timeline =~ "#{scenario.expected.path}?lang=en#agenda-item-4"
 
     for {locale, title} <- [

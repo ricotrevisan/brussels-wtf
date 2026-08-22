@@ -44,18 +44,15 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
     assert Enum.count(document["main#content"]) == 1
     assert Enum.count(document[~s(nav[aria-label="Language"])]) == 1
     assert Enum.count(document[~s(section[aria-labelledby="coming-up"])]) == 1
-    assert Enum.count(document[~s(section[aria-labelledby="decided"])]) == 1
+    assert Enum.count(document[~s(section[aria-labelledby="previously"])]) == 1
     assert html =~ "Coming up"
-    assert html =~ "What they decided"
+    assert html =~ "Previously"
 
     for commune <- ["Ixelles", "Uccle", "Forest", "City of Brussels"] do
       assert html =~ commune
     end
 
-    assert html =~ "Proposal"
-    assert html =~ "Outcome unknown"
-    assert html =~ "Decision: postponed"
-    assert html =~ "Decision: approved"
+    assert Enum.count(document[~s(article[data-commune])]) > 0
     refute html =~ "Official source linked"
   end
 
@@ -65,9 +62,6 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
     timeline = conn |> get("/?lang=en") |> html_response(200)
 
     assert timeline =~ ~s(href="/meetings/ixelles/demo-ixelles?lang=en#agenda-item-mobility-1")
-    assert timeline =~ "AI-generated"
-    assert timeline =~ "machine-translated"
-    assert timeline =~ ~s(rel="external")
     assert timeline =~ "Rico Trevisan"
 
     meeting =
@@ -76,6 +70,9 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
     document = LazyHTML.from_document(meeting)
     assert Enum.count(document["article#agenda-item-mobility-1"]) == 1
     assert Enum.count(document["article#agenda-item-mobility-1 h2"]) == 1
+    assert meeting =~ "AI-generated"
+    assert meeting =~ "machine-translated"
+    assert meeting =~ ~s(rel="external")
     assert meeting =~ "Proposal"
     assert meeting =~ "Outcome unknown"
     assert meeting =~ "Continuing dossier"
@@ -149,11 +146,15 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
       procedural_state: :decision
     })
 
-    document = conn |> get("/?lang=en") |> html_response(200) |> LazyHTML.from_document()
-    ixelles = document[~s(article[data-commune="ixelles"])] |> LazyHTML.text()
+    document =
+      conn
+      |> get("/meetings/ixelles/demo-ixelles?lang=en")
+      |> html_response(200)
+      |> LazyHTML.from_document()
 
-    assert ixelles =~ "Outcome unknown"
-    refute ixelles =~ "Decision: nil"
+    article = document["article#agenda-item-mobility-1"] |> LazyHTML.text()
+    assert article =~ "Outcome unknown"
+    refute article =~ "Decision: nil"
   end
 
   test "an exact page locale never substitutes for missing item coverage", %{conn: conn} do
@@ -297,7 +298,7 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
 
   test "dossier references are real links to a stored dossier timeline", %{conn: conn} do
     timeline = conn |> get("/?lang=en") |> html_response(200)
-    assert timeline =~ ~s(href="/dossiers/demo-public-space?lang=en")
+    assert timeline =~ ~s(href="/meetings/ixelles/demo-ixelles?lang=en#)
 
     dossier =
       conn |> recycle() |> get("/dossiers/demo-public-space?lang=en") |> html_response(200)

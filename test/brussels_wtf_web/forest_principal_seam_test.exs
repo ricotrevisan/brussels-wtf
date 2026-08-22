@@ -65,7 +65,7 @@ defmodule BrusselsWtfWeb.ForestPrincipalSeamTest do
 
     timeline = conn |> get("/?lang=en") |> html_response(200)
     assert timeline =~ "Successor installed during the meeting"
-    assert timeline =~ "What they decided"
+    assert timeline =~ "Previously"
 
     meeting_html =
       build_conn()
