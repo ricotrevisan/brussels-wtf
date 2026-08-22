@@ -133,17 +133,25 @@ defmodule BrusselsWtf.Council.PublicationRevision do
       "en" => revision.en_run
     }
 
-    revision.meeting_page_id == page_id and revision.publication_input_hash == input_hash and
-      is_struct(published_at, DateTime) and
-      DateTime.compare(revision.published_at, published_at) == :eq and
-      variants_match_runs?(page, revision_runs) and
-      public_content(page) == revision_content(revision.content)
+    case BrusselsWtf.Council.PublicationScope.selection(
+           page.council_meeting,
+           revision.canonical_run.input
+         ) do
+      {:ok, scoped_meeting} ->
+        revision.meeting_page_id == page_id and revision.publication_input_hash == input_hash and
+          is_struct(published_at, DateTime) and
+          DateTime.compare(revision.published_at, published_at) == :eq and
+          variants_match_runs?(page, scoped_meeting, revision_runs) and
+          public_content(page, scoped_meeting) == revision_content(revision.content)
+
+      {:error, _reason} ->
+        false
+    end
   end
 
-  defp variants_match_runs?(page, runs) do
+  defp variants_match_runs?(page, scoped_meeting, runs) do
     variants =
-      page.locale_variants ++
-        Enum.flat_map(page.council_meeting.agenda_items, & &1.coverage_variants)
+      page.locale_variants ++ Enum.flat_map(scoped_meeting.agenda_items, & &1.coverage_variants)
 
     canonical = runs["fr"]
 
@@ -156,14 +164,14 @@ defmodule BrusselsWtf.Council.PublicationRevision do
     end)
   end
 
-  defp public_content(page) do
+  defp public_content(page, scoped_meeting) do
     %{
       "page" =>
         Map.new(page.locale_variants, fn variant ->
           {variant.locale, %{"title" => variant.title, "summary" => variant.summary}}
         end),
       "items" =>
-        Map.new(page.council_meeting.agenda_items, fn item ->
+        Map.new(scoped_meeting.agenda_items, fn item ->
           item_key = item.authoritative_identifier || item.continuity_key
 
           {item_key,

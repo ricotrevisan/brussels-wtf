@@ -6,6 +6,7 @@ defmodule BrusselsWtf.Council.Publication do
   alias BrusselsWtf.Council.GenerationContract
   alias BrusselsWtf.Council.PublicationInput
   alias BrusselsWtf.Council.PublicationMetadata
+  alias BrusselsWtf.Council.PublicationScope
   alias BrusselsWtf.Council.Provenance
   alias BrusselsWtf.Processors.Coverage
 
@@ -23,8 +24,18 @@ defmodule BrusselsWtf.Council.Publication do
         metadata = Coverage.metadata() |> attach_content_review(coverage_batch_id)
 
         case BrusselsWtf.Council.GenerationControl.before_call(metadata, generation_kind) do
-          :ok -> execute_generation(meeting_id, metadata, attempt, max_attempts, generation_kind)
-          {:defer, _reason} -> :ok
+          :ok ->
+            execute_generation(
+              meeting_id,
+              metadata,
+              attempt,
+              max_attempts,
+              generation_kind,
+              coverage_batch_id
+            )
+
+          {:defer, _reason} ->
+            :ok
         end
 
       {:defer, _reason} ->
@@ -32,9 +43,17 @@ defmodule BrusselsWtf.Council.Publication do
     end
   end
 
-  defp execute_generation(meeting_id, metadata, attempt, max_attempts, generation_kind) do
-    meeting = load_meeting(meeting_id)
-    input = PublicationInput.build(meeting)
+  defp execute_generation(
+         meeting_id,
+         metadata,
+         attempt,
+         max_attempts,
+         generation_kind,
+         coverage_batch_id
+       ) do
+    {meeting, input} =
+      meeting_id |> load_meeting() |> PublicationScope.for_batch!(coverage_batch_id)
+
     page = meeting.meeting_page
 
     result =
@@ -127,9 +146,10 @@ defmodule BrusselsWtf.Council.Publication do
 
     transaction =
       BrusselsWtf.Repo.transaction(fn ->
-        fresh_meeting = load_meeting(meeting.id)
+        full_meeting = load_meeting(meeting.id)
+        {fresh_meeting, fresh_input} = PublicationScope.restore!(full_meeting, input)
 
-        if PublicationInput.hash(PublicationInput.build(fresh_meeting)) != input_hash do
+        if PublicationInput.hash(fresh_input) != input_hash do
           BrusselsWtf.Repo.rollback(:stale_publication_input)
         end
 
@@ -153,6 +173,18 @@ defmodule BrusselsWtf.Council.Publication do
               Enum.flat_map(fresh_meeting.agenda_items, fn item ->
                 {_item, notifications} =
                   Council.publish_agenda_item_state!(item, return_notifications?: true)
+
+                notifications
+              end)
+
+            scoped_ids = MapSet.new(fresh_meeting.agenda_items, & &1.id)
+
+            excluded_item_notifications =
+              full_meeting.agenda_items
+              |> Enum.reject(&MapSet.member?(scoped_ids, &1.id))
+              |> Enum.flat_map(fn item ->
+                {_item, notifications} =
+                  Council.unpublish_agenda_item_state!(item, return_notifications?: true)
 
                 notifications
               end)
@@ -208,6 +240,7 @@ defmodule BrusselsWtf.Council.Publication do
             stage_notifications ++
               variant_notifications ++
               item_state_notifications ++
+              excluded_item_notifications ++
               revision_notifications ++
               publish_notifications ++ event_notifications
 

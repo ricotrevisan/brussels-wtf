@@ -21,6 +21,7 @@ defmodule BrusselsWtf.Council.CoverageBatch do
       accept [
         :requester_id,
         :meeting_ids,
+        :item_scopes,
         :status,
         :generation_kind,
         :content_reviewed_by,
@@ -34,6 +35,7 @@ defmodule BrusselsWtf.Council.CoverageBatch do
     uuid_v7_primary_key :id
     attribute :requester_id, :string, allow_nil?: false, public?: true
     attribute :meeting_ids, {:array, :uuid}, allow_nil?: false, public?: true
+    attribute :item_scopes, :map, allow_nil?: false, public?: true, default: %{}
     attribute :content_reviewed_by, :string, public?: true
     attribute :content_reviewed_at, :utc_datetime_usec, public?: true
     attribute :content_review_manifest_sha256, :string, public?: true

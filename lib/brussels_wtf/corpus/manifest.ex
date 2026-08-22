@@ -34,6 +34,27 @@ defmodule BrusselsWtf.Corpus.Manifest do
     end)
   end
 
+  def contract_scope(meeting) do
+    commune = meeting.commune.slug
+
+    case meeting_by_identity(commune, meeting.municipal_identifier) do
+      %{"scheduled_on" => scheduled_on} = contract ->
+        if scheduled_on == Date.to_iso8601(meeting.scheduled_on) do
+          keys = MapSet.new(Enum.map(contract["items"], & &1["key"]))
+          %{meeting | agenda_items: Enum.filter(meeting.agenda_items, &item_in?(&1, keys))}
+        else
+          meeting
+        end
+
+      _other ->
+        meeting
+    end
+  end
+
+  def contract_item_count(meetings) do
+    Enum.sum(Enum.map(meetings, &(contract_scope(&1).agenda_items |> length())))
+  end
+
   def source_by_sha256(sha256) do
     Enum.find_value(load!()["meetings"], fn meeting ->
       case Enum.find(meeting["sources"], &(&1["sha256"] == sha256)) do
@@ -356,5 +377,9 @@ defmodule BrusselsWtf.Corpus.Manifest do
 
   defp manifest_path do
     Application.app_dir(:brussels_wtf, "priv/corpus/issue-33/manifest.json")
+  end
+
+  defp item_in?(item, keys) do
+    MapSet.member?(keys, item.authoritative_identifier || item.continuity_key)
   end
 end

@@ -180,7 +180,7 @@ The Uccle charging material is related, but it is not the safest cross-meeting i
 
 ## Implemented sealed bundle
 
-Issue 33 selects nine of the official versions above. Their exact 8,172,482 bytes are stored under `priv/corpus/issue-33/sources/` and described by `priv/corpus/issue-33/manifest.json`. The manifest digest at implementation time is `13435330149cb2afc9b12c1f67a08d524b406b94f1c6e4a419bafc7443aabec6`.
+Issue 33 selects nine of the official versions above. Their exact 8,172,482 bytes are stored under `priv/corpus/issue-33/sources/` and described by `priv/corpus/issue-33/manifest.json`. The manifest digest at implementation time is `4b5d56695b76ee485ca06344c219f6c4b55d5bd91e96138bd7a230f80390129e`. The Uccle 2026-04-23 heading marker uses Poppler's normalized extraction `CONSEIL COMMUNAL DU 23 AVRIL 2026`; the pinned municipal bytes are unchanged.
 
 The importer reads the release-owned files, verifies their byte counts and SHA-256 values, and records each original HTTPS locator, exact discovery parent, and captured-at timestamp from the research session as provenance. It makes no network requests. New bytes from a later municipal publication require an explicit manifest and bundle revision; they cannot silently replace this corpus.
 

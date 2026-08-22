@@ -134,9 +134,17 @@ defmodule BrusselsWtf.Corpus.Import do
     coverage_batch =
       case batch.coverage_batch_id do
         nil ->
+          item_scopes =
+            contract["meetings"]
+            |> Enum.zip(meetings)
+            |> Map.new(fn {meeting_contract, meeting} ->
+              {meeting.id, Enum.map(meeting_contract["items"], & &1["key"])}
+            end)
+
           Council.request_coverage_batch!(Enum.map(meetings, & &1.id),
             actor: actor,
-            content_review: content_review
+            content_review: content_review,
+            item_scopes: item_scopes
           )
 
         id ->
@@ -166,14 +174,13 @@ defmodule BrusselsWtf.Corpus.Import do
 
     meetings =
       Enum.map(meeting_ids, fn id ->
-        id |> Council.get_meeting!() |> Ash.load!([:meeting_page, :agenda_items])
+        id |> Council.get_meeting!() |> Ash.load!([:commune, :meeting_page, :agenda_items])
       end)
 
     pages = Enum.map(meetings, & &1.meeting_page) |> Enum.reject(&is_nil/1)
     published_pages = Enum.count(pages, &(&1.publication_status == :published))
 
-    normalized_items =
-      meetings |> Enum.flat_map(& &1.agenda_items) |> Enum.uniq_by(& &1.id) |> length()
+    normalized_items = Manifest.contract_item_count(meetings)
 
     processing_runs = processing_runs(source_version_ids)
     ocr_runs = Enum.filter(processing_runs, &(&1.processor_role == :ocr))
@@ -542,7 +549,7 @@ defmodule BrusselsWtf.Corpus.Import do
       actual =
         meeting && MapSet.new(Enum.map(meeting.agenda_items, & &1.authoritative_identifier))
 
-      if meeting && actual == expected,
+      if meeting && MapSet.subset?(expected, actual),
         do: meeting,
         else: raise(ArgumentError, "normalized meeting does not match the sealed corpus contract")
     end)

@@ -26,6 +26,7 @@ defmodule BrusselsWtf.Council do
       define :mark_agenda_item_proposed, action: :mark_proposed
       define :mark_agenda_item_decided, action: :mark_decided
       define :publish_agenda_item_state, action: :publish_current_state
+      define :unpublish_agenda_item_state, action: :unpublish_current_state
     end
 
     resource BrusselsWtf.Council.AgendaItemVersion do
@@ -157,13 +158,15 @@ defmodule BrusselsWtf.Council do
   def request_coverage_batch!(meeting_ids, opts) when is_list(meeting_ids) and is_list(opts) do
     actor = Keyword.fetch!(opts, :actor)
     content_review = Keyword.get(opts, :content_review)
+    item_scopes = Keyword.get(opts, :item_scopes, %{})
     authorize_coverage_batch!(actor)
     validate_content_review!(content_review, actor)
     config = Application.fetch_env!(:brussels_wtf, :coverage_generation)
     validate_coverage_batch!(meeting_ids, config)
 
     meeting_ids = Enum.uniq(meeting_ids)
-    Enum.each(meeting_ids, &get_meeting!/1)
+    meetings = Enum.map(meeting_ids, &(get_meeting!(&1) |> Ash.load!(:agenda_items)))
+    validate_item_scopes!(item_scopes, meetings)
 
     case BrusselsWtf.Repo.transaction(fn ->
            {batch, notifications} =
@@ -172,6 +175,7 @@ defmodule BrusselsWtf.Council do
                %{
                  requester_id: actor.id,
                  meeting_ids: meeting_ids,
+                 item_scopes: item_scopes,
                  generation_kind: :backfill,
                  status: :queued,
                  content_reviewed_by: content_review && content_review.actor_id,
@@ -215,6 +219,34 @@ defmodule BrusselsWtf.Council do
 
   defp validate_content_review!(_review, _actor),
     do: raise(ArgumentError, "content review must belong to the authenticated reviewer")
+
+  defp validate_item_scopes!(scopes, _meetings) when scopes == %{}, do: :ok
+
+  defp validate_item_scopes!(scopes, meetings) when is_map(scopes) do
+    meeting_ids = MapSet.new(meetings, & &1.id)
+
+    valid? =
+      MapSet.new(Map.keys(scopes)) == meeting_ids and
+        Enum.all?(scopes, fn {meeting_id, keys} ->
+          meeting = Enum.find(meetings, &(&1.id == meeting_id))
+
+          available =
+            meeting &&
+              MapSet.new(
+                meeting.agenda_items,
+                &(&1.authoritative_identifier || &1.continuity_key)
+              )
+
+          (is_list(keys) and keys != [] and Enum.all?(keys, &is_binary/1) and
+             length(keys) == length(Enum.uniq(keys)) and
+             available) && MapSet.subset?(MapSet.new(keys), available)
+        end)
+
+    if valid?, do: :ok, else: raise(ArgumentError, "invalid coverage item scope")
+  end
+
+  defp validate_item_scopes!(_scopes, _meetings),
+    do: raise(ArgumentError, "invalid coverage item scope")
 
   defp authorize_coverage_batch!(%BrusselsWtf.Review.Actor{role: :reviewer}), do: :ok
   defp authorize_coverage_batch!(_actor), do: raise(ArgumentError, "reviewer is required")

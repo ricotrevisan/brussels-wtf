@@ -66,6 +66,14 @@ WORKDIR /app
 RUN chown nobody:root /app
 COPY --from=builder --chown=nobody:root /app/_build/prod/rel/brussels_wtf ./
 
+# Exercise the sealed normalizer with the production Poppler output, not synthetic marker text.
+RUN REVIEW_USERNAME=release-check \
+  REVIEW_PASSWORD=release-check-password \
+  DATABASE_URL=ecto://release:release@127.0.0.1/release \
+  SECRET_KEY_BASE=0000000000000000000000000000000000000000000000000000000000000000 \
+  /app/bin/brussels_wtf eval \
+    'meeting = BrusselsWtf.Corpus.Manifest.meeting!("uccle-2026-04-23"); source = hd(meeting["sources"]); bytes = File.read!(BrusselsWtf.Corpus.Manifest.bundle_path!(source)); {:ok, extracted} = BrusselsWtf.PDF.PopplerOcr.native(%{sha256: source["sha256"], media_type: source["media_type"]}, bytes); {:ok, _normalized} = BrusselsWtf.Corpus.Manifest.normalize(%{"sha256" => source["sha256"], "text" => extracted.text})'
+
 USER nobody
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \

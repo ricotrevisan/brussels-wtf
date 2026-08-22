@@ -189,6 +189,39 @@ defmodule BrusselsWtf.Council.PublicationLifecycleTest do
     assert List.last(events).details["withdrawn_at"] == "2026-08-21T11:00:00.000000Z"
   end
 
+  test "unscoped republication rejects newly normalized agenda items", %{
+    actor: actor,
+    meeting: meeting,
+    page: page
+  } do
+    [existing_item] = meeting.agenda_items
+
+    PublicationLifecycle.withdraw!(
+      page.id,
+      %{"fr" => "Retiré", "nl" => "Ingetrokken", "en" => "Withdrawn"},
+      actor
+    )
+
+    Council.upsert_agenda_item!(%{
+      council_meeting_id: meeting.id,
+      item_number: "5",
+      authoritative_identifier: "new-item-after-publication",
+      source_wording: "Newly normalized legitimate agenda item",
+      current_source_version_id: existing_item.current_source_version_id,
+      current_version_order: "later",
+      procedural_state: :unknown,
+      outcome: :unknown
+    })
+
+    assert_raise ArgumentError,
+                 "withdrawn content is stale and requires a new generated revision",
+                 fn ->
+                   PublicationLifecycle.republish!(page.id, actor)
+                 end
+
+    assert Council.get_meeting_page!(page.id).publication_status == :draft
+  end
+
   defp bundles_from_content(content) do
     Map.new(["fr", "nl", "en"], &{&1, bundle_from_content(content, &1)})
   end

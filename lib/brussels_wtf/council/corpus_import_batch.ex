@@ -232,7 +232,10 @@ defmodule BrusselsWtf.Council.CorpusImportBatch do
       end)
       |> Map.new()
 
-    actual == expected
+    MapSet.new(Map.keys(actual)) == MapSet.new(Map.keys(expected)) and
+      Enum.all?(expected, fn {identity, expected_items} ->
+        MapSet.subset?(expected_items, Map.fetch!(actual, identity))
+      end)
   rescue
     _error -> false
   end

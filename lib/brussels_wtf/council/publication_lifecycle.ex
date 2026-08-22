@@ -6,6 +6,7 @@ defmodule BrusselsWtf.Council.PublicationLifecycle do
   alias BrusselsWtf.Council.Publication
   alias BrusselsWtf.Council.PublicationInput
   alias BrusselsWtf.Council.PublicationMetadata
+  alias BrusselsWtf.Council.PublicationScope
 
   @locales ["fr", "nl", "en"]
 
@@ -17,7 +18,7 @@ defmodule BrusselsWtf.Council.PublicationLifecycle do
     meeting = meeting_for_page!(page_id)
     page = current_page!(meeting)
     ensure_published!(page)
-    input = PublicationInput.build(meeting)
+    {meeting, input} = scope_to_revision!(meeting, page.current_revision)
     validate_bundles!(input, bundles)
     content = GenerationContract.combine(bundles["fr"], bundles["nl"], bundles["en"])
 
@@ -39,7 +40,7 @@ defmodule BrusselsWtf.Council.PublicationLifecycle do
     meeting = meeting_for_page!(page_id)
     page = current_page!(meeting)
     ensure_published!(page)
-    input = PublicationInput.build(meeting)
+    {meeting, input} = scope_to_revision!(meeting, page.current_revision)
     :ok = validate_bundle!(input, bundle, locale)
 
     previous = load_revision!(page.current_revision)
@@ -107,7 +108,7 @@ defmodule BrusselsWtf.Council.PublicationLifecycle do
     page = current_page!(meeting)
     ensure_withdrawn!(page)
     previous = load_revision!(page.current_revision)
-    input = PublicationInput.build(meeting)
+    {_scoped_meeting, input} = scope_to_input!(meeting, previous.canonical_run.input)
     input_hash = PublicationInput.hash(input)
 
     if input_hash != previous.publication_input_hash do
@@ -414,6 +415,21 @@ defmodule BrusselsWtf.Council.PublicationLifecycle do
   defp meeting_for_page!(page_id) do
     page = Council.get_meeting_page!(page_id)
     Publication.load_meeting(page.council_meeting_id)
+  end
+
+  defp scope_to_revision!(meeting, revision) do
+    revision = load_revision!(revision)
+    scope_to_input!(meeting, revision.canonical_run.input)
+  end
+
+  defp scope_to_input!(meeting, input) do
+    case PublicationScope.restore(meeting, input) do
+      {:ok, scoped} ->
+        scoped
+
+      {:error, _reason} ->
+        raise ArgumentError, "publication revision scope is no longer available"
+    end
   end
 
   defp current_page!(meeting) do

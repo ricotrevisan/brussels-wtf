@@ -88,6 +88,31 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
                )
     end
 
+    ixelles_268 =
+      imported.meeting_ids
+      |> Enum.map(&(Council.get_meeting!(&1) |> Ash.load!(:commune)))
+      |> Enum.find(&(&1.commune.slug == "ixelles" and &1.municipal_identifier == "268"))
+
+    ixelles_source_version =
+      imported.source_version_ids
+      |> Enum.map(&(Ingestion.get_source_version!(&1) |> Ash.load!(:source_record)))
+      |> Enum.find(&(&1.source_record.council_meeting_id == ixelles_268.id))
+
+    extra_real_item =
+      Council.upsert_agenda_item!(%{
+        council_meeting_id: ixelles_268.id,
+        item_number: "4",
+        authoritative_identifier: "4",
+        source_wording: "Previously published real item outside the sealed corpus selection",
+        current_source_version_id: ixelles_source_version.id,
+        current_version_order: "preexisting",
+        procedural_state: :unknown,
+        outcome: :unknown
+      })
+
+    Council.publish_agenda_item_state!(extra_real_item)
+    assert Council.get_agenda_item!(extra_real_item.id).published?
+
     ready = Import.refresh!(batch.id, actor)
     assert ready.status == :ready_for_coverage
     assert ready.metrics["documents_downloaded"] == 9
@@ -103,6 +128,8 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
     assert DateTime.compare(prepared.content_reviewed_at, ~U[2026-08-21 14:30:00Z]) == :eq
 
     coverage_batch = Council.get_coverage_batch!(prepared.coverage_batch_id)
+    assert map_size(coverage_batch.item_scopes) == 8
+    assert Enum.all?(coverage_batch.item_scopes, fn {_meeting_id, keys} -> length(keys) == 3 end)
     assert coverage_batch.content_reviewed_by == "rico"
     assert coverage_batch.content_reviewed_at == prepared.content_reviewed_at
     assert coverage_batch.content_review_manifest_sha256 == Manifest.digest()
@@ -163,11 +190,13 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
                Enum.all?(page.coverage_runs, &(:human_reviewed in &1.carried_provenance))
            end)
 
-    items =
+    all_items =
       pages
       |> Enum.flat_map(& &1.council_meeting.agenda_items)
       |> Enum.uniq_by(& &1.id)
 
+    items = Enum.filter(all_items, & &1.published?)
+    refute Enum.find(all_items, &(&1.id == extra_real_item.id)).published?
     assert length(items) == 24
     assert Enum.all?(items, &(&1.stable_anchor =~ ~r/^agenda-item-/))
     assert length(Enum.uniq_by(items, & &1.stable_anchor)) == 24
@@ -187,6 +216,46 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
                  (variant.locale == "fr" or :machine_translated in variant.provenance)
              end)
            end)
+
+    ixelles_page =
+      Enum.find(
+        pages,
+        &(&1.council_meeting.commune.slug == "ixelles" and
+            &1.council_meeting.municipal_identifier == "268")
+      )
+
+    bundles =
+      Map.new(~w(fr nl en), fn locale ->
+        {locale, bundle_from_content(ixelles_page.current_revision.content, locale)}
+      end)
+
+    Council.PublicationLifecycle.factual_correction!(
+      ixelles_page.id,
+      bundles,
+      %{"fr" => "Vérification", "nl" => "Controle", "en" => "Verification"},
+      actor
+    )
+
+    Council.PublicationLifecycle.typography_correction!(
+      ixelles_page.id,
+      "en",
+      bundles["en"],
+      actor
+    )
+
+    Council.PublicationLifecycle.withdraw!(
+      ixelles_page.id,
+      %{"fr" => "Test", "nl" => "Test", "en" => "Test"},
+      actor
+    )
+
+    Council.PublicationLifecycle.republish!(ixelles_page.id, actor)
+
+    reloaded_ixelles_page =
+      ixelles_page.id |> Council.get_meeting_page!() |> Ash.load!(:current_revision)
+
+    assert MapSet.new(Map.keys(reloaded_ixelles_page.current_revision.content["items"])) ==
+             MapSet.new(~w(1 10 13))
 
     assert MapSet.new(Enum.map(pages, & &1.council_meeting.commune.slug)) ==
              MapSet.new(~w(ixelles uccle forest city-of-brussels))
@@ -237,6 +306,16 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
     assert_raise Ash.Error.Invalid, ~r/completed real-corpus batches are closed/, fn ->
       Ash.update!(completed, %{failure: "late_failure"}, action: :block, domain: Council)
     end
+  end
+
+  defp bundle_from_content(content, locale) do
+    %{
+      "page" => content["page"][locale],
+      "items" =>
+        Map.new(content["items"], fn {item_key, item} ->
+          {item_key, %{"claim_refs" => item["claim_refs"], "variant" => item["variants"][locale]}}
+        end)
+    }
   end
 
   defp contract_text(meeting, source) do

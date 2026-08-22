@@ -4,6 +4,7 @@ defmodule BrusselsWtf.Council.PublicationGate do
   alias BrusselsWtf.Council
   alias BrusselsWtf.Council.Provenance
   alias BrusselsWtf.Council.PublicationInput
+  alias BrusselsWtf.Council.PublicationScope
 
   @locales ["fr", "nl", "en"]
 
@@ -31,19 +32,6 @@ defmodule BrusselsWtf.Council.PublicationGate do
         ]
       ])
 
-    current_input = PublicationInput.build(page.council_meeting)
-
-    input_failures =
-      case PublicationInput.validate(current_input) do
-        :ok ->
-          if PublicationInput.hash(current_input) == expected_input_hash,
-            do: [],
-            else: [error(:stale_publication_input, nil, nil)]
-
-        {:error, {:publication_gate, failures}} ->
-          failures
-      end
-
     canonical =
       case Enum.find(page.locale_variants, &(&1.locale == "fr")) do
         %{coverage_run: run}
@@ -54,6 +42,23 @@ defmodule BrusselsWtf.Council.PublicationGate do
 
         _variant ->
           nil
+      end
+
+    {current_meeting, current_input} =
+      case canonical && PublicationScope.restore(page.council_meeting, canonical.input) do
+        {:ok, scoped} -> scoped
+        _other -> {page.council_meeting, PublicationInput.build(page.council_meeting)}
+      end
+
+    input_failures =
+      case PublicationInput.validate(current_input) do
+        :ok ->
+          if PublicationInput.hash(current_input) == expected_input_hash,
+            do: [],
+            else: [error(:stale_publication_input, nil, nil)]
+
+        {:error, {:publication_gate, failures}} ->
+          failures
       end
 
     blocking_failures =
@@ -72,7 +77,7 @@ defmodule BrusselsWtf.Council.PublicationGate do
     failures =
       input_failures ++
         page_failures(page, canonical) ++
-        Enum.flat_map(page.council_meeting.agenda_items, &item_failures(&1, canonical)) ++
+        Enum.flat_map(current_meeting.agenda_items, &item_failures(&1, canonical)) ++
         blocking_failures
 
     %{ready?: failures == [], failures: failures, input_hash: expected_input_hash}

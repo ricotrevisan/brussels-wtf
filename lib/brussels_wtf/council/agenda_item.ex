@@ -102,6 +102,11 @@ defmodule BrusselsWtf.Council.AgendaItem do
       end
     end
 
+    update :unpublish_current_state do
+      accept []
+      change set_attribute(:published?, false)
+    end
+
     update :mark_decided do
       require_atomic? false
       accept [:current_decision_id, :outcome]
