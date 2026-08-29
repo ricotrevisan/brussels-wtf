@@ -3,6 +3,10 @@ defmodule BrusselsWtfWeb.HealthController do
 
   def live(conn, _params), do: send_resp(conn, :no_content, "")
 
+  def version(conn, _params) do
+    json(conn, %{release: Application.fetch_env!(:brussels_wtf, :release_sha)})
+  end
+
   def ready(conn, _params) do
     case readiness().status() do
       :ok -> send_resp(conn, :no_content, "")

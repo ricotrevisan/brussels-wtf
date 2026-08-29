@@ -51,10 +51,9 @@ defmodule BrusselsWtf.HTTP.ReqTest do
       start: {Agent, :start_link, [fn -> 0 end, [name: BrusselsWtf.HTTP.ReqTest.RetryCounter]]}
     })
 
-    {:ok, server} = Bandit.start_link(plug: Server, ip: {127, 0, 0, 1}, port: 0)
+    server = start_supervised!({Bandit, plug: Server, ip: {127, 0, 0, 1}, port: 0})
     {:ok, {_address, port}} = ThousandIsland.listener_info(server)
 
-    on_exit(fn -> Supervisor.stop(server) end)
     {:ok, base_url: "http://127.0.0.1:#{port}"}
   end
 

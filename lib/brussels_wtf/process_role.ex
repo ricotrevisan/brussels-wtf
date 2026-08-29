@@ -10,7 +10,8 @@ defmodule BrusselsWtf.ProcessRole do
       normalize: 1,
       enrich: 1,
       publish: 1,
-      corpus: 1
+      corpus: 1,
+      maintenance: 1
     )
   end
 

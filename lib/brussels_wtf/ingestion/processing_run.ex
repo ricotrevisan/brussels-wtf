@@ -95,7 +95,7 @@ defmodule BrusselsWtf.Ingestion.ProcessingRun do
       allow_nil? false
       public? true
       default :native_extraction
-      constraints one_of: [:native_extraction, :ocr]
+      constraints one_of: [:native_extraction, :ocr, :relationship_verification]
     end
 
     attribute :inputs, :map, allow_nil?: false, public?: true, default: %{}

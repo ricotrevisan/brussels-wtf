@@ -48,6 +48,11 @@ RUN set -eu; \
 
 FROM ${RUNNER_IMAGE} AS runner
 
+# Coolify supplies SOURCE_COMMIT for Git deployments; expose it through the
+# unauthenticated health version endpoint so a rollout can prove its exact image.
+ARG SOURCE_COMMIT=unknown
+ENV RELEASE_SHA=${SOURCE_COMMIT}
+
 RUN apt-get update -y \
   && apt-get install -y --no-install-recommends \
     libstdc++6 openssl libncurses6 locales ca-certificates curl coreutils util-linux \

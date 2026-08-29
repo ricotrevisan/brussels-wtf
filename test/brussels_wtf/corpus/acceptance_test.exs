@@ -124,15 +124,15 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
     assert prepared.coverage_batch_id
     assert prepared.dossier_id
     assert length(prepared.dossier_link_ids) == 2
-    assert prepared.content_reviewed_by == "rico"
-    assert DateTime.compare(prepared.content_reviewed_at, ~U[2026-08-21 14:30:00Z]) == :eq
+    assert is_nil(prepared.content_reviewed_by)
+    assert is_nil(prepared.content_reviewed_at)
 
     coverage_batch = Council.get_coverage_batch!(prepared.coverage_batch_id)
     assert map_size(coverage_batch.item_scopes) == 8
     assert Enum.all?(coverage_batch.item_scopes, fn {_meeting_id, keys} -> length(keys) == 3 end)
-    assert coverage_batch.content_reviewed_by == "rico"
-    assert coverage_batch.content_reviewed_at == prepared.content_reviewed_at
-    assert coverage_batch.content_review_manifest_sha256 == Manifest.digest()
+    assert is_nil(coverage_batch.content_reviewed_by)
+    assert is_nil(coverage_batch.content_reviewed_at)
+    assert is_nil(coverage_batch.content_review_manifest_sha256)
 
     prepared_again = Import.prepare_coverage!(batch.id, actor)
     assert prepared_again.coverage_batch_id == prepared.coverage_batch_id
@@ -145,6 +145,13 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
       |> Ash.read!(domain: Council, actor: actor)
 
     assert length(dossier_actions) == 2
+    assert Enum.all?(dossier_actions, &(&1.action == :confirm_link and &1.actor_id == "rico"))
+    assert MapSet.new(dossier_actions, & &1.subject_id) == MapSet.new(prepared.dossier_link_ids)
+
+    assert Enum.all?(dossier_actions, fn action ->
+             action.details["corpus_import_batch_id"] == prepared.id and
+               action.details["manifest_sha256"] == Manifest.digest()
+           end)
 
     for meeting_id <- prepared.meeting_ids do
       assert :ok =
@@ -181,13 +188,9 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
     assert length(pages) == 8
 
     assert Enum.all?(pages, fn page ->
-             page.current_revision.actor_id == "rico" and
-               page.current_revision.publication_metadata["content_review"] == %{
-                 "actor_id" => "rico",
-                 "reviewed_at" => "2026-08-21T14:30:00.000000Z",
-                 "manifest_sha256" => Manifest.digest()
-               } and
-               Enum.all?(page.coverage_runs, &(:human_reviewed in &1.carried_provenance))
+             is_nil(page.current_revision.actor_id) and
+               is_nil(page.current_revision.publication_metadata["content_review"]) and
+               Enum.all?(page.coverage_runs, &(:human_reviewed not in &1.carried_provenance))
            end)
 
     all_items =
@@ -212,7 +215,7 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
 
     assert Enum.all?(items, fn item ->
              Enum.all?(item.coverage_variants, fn variant ->
-               :human_reviewed in variant.provenance and :ai_generated in variant.provenance and
+               :human_reviewed not in variant.provenance and :ai_generated in variant.provenance and
                  (variant.locale == "fr" or :machine_translated in variant.provenance)
              end)
            end)

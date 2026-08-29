@@ -225,7 +225,7 @@ defmodule BrusselsWtf.IdentityEnrichmentTest do
       })
 
     assert management.kind == :management
-    refute Identity.public_eligible?(management)
+    assert management.verification_status == :unreviewed
 
     assert_raise ArgumentError, ~r/cannot establish ownership/, fn ->
       Identity.record_sourced_fact!(%{

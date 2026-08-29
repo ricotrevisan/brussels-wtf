@@ -30,7 +30,7 @@ defmodule BrusselsWtf.Ingestion.ProcessingRunArtifact do
     attribute :role, :atom do
       allow_nil? false
       public? true
-      constraints one_of: [:native_output, :ocr_document, :ocr_output]
+      constraints one_of: [:native_output, :ocr_document, :ocr_output, :relationship_claim]
     end
 
     timestamps()

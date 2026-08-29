@@ -33,6 +33,24 @@ defmodule BrusselsWtfWeb.HealthControllerTest do
     assert get_resp_header(conn, "set-cookie") == []
   end
 
+  test "version exposes the immutable release identifier without a session", %{conn: conn} do
+    previous = Application.get_env(:brussels_wtf, :release_sha)
+    Application.put_env(:brussels_wtf, :release_sha, "1d0f92a")
+
+    on_exit(fn ->
+      if previous do
+        Application.put_env(:brussels_wtf, :release_sha, previous)
+      else
+        Application.delete_env(:brussels_wtf, :release_sha)
+      end
+    end)
+
+    conn = get(conn, ~p"/health/version")
+
+    assert json_response(conn, 200) == %{"release" => "1d0f92a"}
+    assert get_resp_header(conn, "set-cookie") == []
+  end
+
   test "readiness succeeds only when its database and archive checks pass", %{conn: conn} do
     Application.put_env(:brussels_wtf, :readiness, Ready)
     conn = get(conn, ~p"/health/ready")

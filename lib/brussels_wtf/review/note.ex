@@ -18,6 +18,7 @@ defmodule BrusselsWtf.Review.Note do
     create :add do
       primary? true
       accept [:review_case_id, :body]
+      change BrusselsWtf.Review.Changes.RejectSuggestionCaseNote
       change BrusselsWtf.Review.Changes.SetActor
     end
   end

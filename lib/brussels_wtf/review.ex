@@ -35,6 +35,9 @@ defmodule BrusselsWtf.Review do
     resource BrusselsWtf.Review.Exclusion do
       define :record_review_exclusion, action: :record
     end
+
+    resource BrusselsWtf.Review.Suggestion
+    resource BrusselsWtf.Review.SuggestionDecision
   end
 
   def complete_retry_with_notifications!(review_case_id) do

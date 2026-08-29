@@ -25,6 +25,7 @@ defmodule BrusselsWtfWeb.Router do
   scope "/health", BrusselsWtfWeb do
     get "/live", HealthController, :live
     get "/ready", HealthController, :ready
+    get "/version", HealthController, :version
   end
 
   scope "/", BrusselsWtfWeb do
@@ -37,7 +38,12 @@ defmodule BrusselsWtfWeb.Router do
     dstar("/", TimelinePage)
     dstar("/meetings/:commune/:municipal_id", MeetingPage)
     dstar("/dossiers/:slug", DossierPage)
+    dstar("/companies/:enterprise_number", PublicProfilePage)
+    dstar("/people/:id", PublicProfilePage)
     post "/dossiers/:slug/links/:link_id/reports", DossierReportController, :create
+
+    post "/companies/:enterprise_number/suggestions/:kind", SuggestionController, :create
+    post "/people/:id/suggestions/:kind", SuggestionController, :create
   end
 
   scope "/review", BrusselsWtfWeb do
@@ -52,6 +58,8 @@ defmodule BrusselsWtfWeb.Router do
     dstar("/cases/:id", ReviewCasePage)
     post "/cases/:case_id/actions/:action", ReviewActionController, :create
     post "/cases/:case_id/notes", ReviewNoteController, :create
+    post "/cases/:case_id/suggestion/reject", SuggestionActionController, :reject
+    post "/cases/:case_id/suggestion/approve", SuggestionActionController, :approve
 
     post "/publications/:page_id/factual-corrections",
          PublicationActionController,

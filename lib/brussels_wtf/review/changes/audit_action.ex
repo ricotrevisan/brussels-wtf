@@ -10,6 +10,12 @@ defmodule BrusselsWtf.Review.Changes.AuditAction do
 
     changeset =
       cond do
+        changeset.data.kind == :suggestion ->
+          Ash.Changeset.add_error(changeset,
+            field: :kind,
+            message: "suggestion cases require the dedicated moderation workflow"
+          )
+
         action in [:reclassify, :relink] and is_nil(changeset.data.source_record_id) ->
           Ash.Changeset.add_error(changeset,
             field: :source_record_id,

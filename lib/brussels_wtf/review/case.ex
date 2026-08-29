@@ -82,7 +82,18 @@ defmodule BrusselsWtf.Review.Case do
 
     update :complete_retry do
       require_atomic? false
+      change BrusselsWtf.Review.Changes.RejectSuggestionCaseAction
       change set_attribute(:status, :resolved)
+    end
+
+    update :close_suggestion do
+      require_atomic? false
+
+      argument :disposition, :atom,
+        allow_nil?: false,
+        constraints: [one_of: [:suggestion_rejected, :suggestion_approved]]
+
+      change BrusselsWtf.Review.Changes.CloseSuggestionCase
     end
 
     update :reclassify do
@@ -167,6 +178,10 @@ defmodule BrusselsWtf.Review.Case do
       authorize_if actor_absent()
     end
 
+    policy action(:close_suggestion) do
+      forbid_if always()
+    end
+
     policy action_type(:read) do
       access_type :strict
       authorize_if actor_attribute_equals(:role, :reviewer)
@@ -246,7 +261,9 @@ defmodule BrusselsWtf.Review.Case do
                     :dossier_link_removed,
                     :dossiers_merged,
                     :dossier_split,
-                    :dossier_relinked
+                    :dossier_relinked,
+                    :suggestion_rejected,
+                    :suggestion_approved
                   ]
     end
 

@@ -28,12 +28,10 @@ defmodule BrusselsWtf.Identity.SourcedFact do
         :effective_to,
         :source_version_id,
         :authoritative_url,
+        :source_authority,
         :evidence_kind,
         :evidence_excerpt,
         :evidence_location,
-        :verification_status,
-        :verified_by,
-        :verified_at,
         :supersedes_id
       ]
 
@@ -82,6 +80,12 @@ defmodule BrusselsWtf.Identity.SourcedFact do
     attribute :effective_from, :date, public?: true
     attribute :effective_to, :date, public?: true
     attribute :authoritative_url, :string, public?: true
+
+    attribute :source_authority, :atom do
+      public? true
+      constraints one_of: [:municipal_decision]
+    end
+
     attribute :evidence_kind, :atom, allow_nil?: false, public?: true
     attribute :evidence_excerpt, :string, allow_nil?: false, public?: true
     attribute :evidence_location, :string, allow_nil?: false, public?: true
@@ -89,11 +93,17 @@ defmodule BrusselsWtf.Identity.SourcedFact do
     attribute :verification_status, :atom do
       allow_nil? false
       public? true
-      default :candidate
-      constraints one_of: [:candidate, :verified, :rejected, :superseded]
+      default :unreviewed
+      constraints one_of: [:unreviewed, :verified, :rejected, :superseded]
     end
 
     attribute :verified_by, :string, public?: true
+    attribute :verification_processor_version, :string, public?: true
+    attribute :verification_ruleset_version, :string, public?: true
+    attribute :verification_config_sha256, :string, public?: true
+    attribute :verification_generation, :string, public?: true
+    attribute :verification_processing_run_id, :uuid, public?: true
+    attribute :verification_artifact_id, :uuid, public?: true
     attribute :verified_at, :utc_datetime_usec, public?: true
     attribute :supersedes_id, :uuid, public?: true
     create_timestamp :inserted_at
@@ -101,6 +111,29 @@ defmodule BrusselsWtf.Identity.SourcedFact do
 
   relationships do
     belongs_to :source_version, BrusselsWtf.Ingestion.SourceVersion, public?: true
+
+    belongs_to :verification_processing_run, BrusselsWtf.Ingestion.ProcessingRun do
+      source_attribute :verification_processing_run_id
+      define_attribute? false
+      public? true
+    end
+
+    belongs_to :verification_artifact, BrusselsWtf.Ingestion.DerivedArtifact do
+      source_attribute :verification_artifact_id
+      define_attribute? false
+      public? true
+    end
+
+    belongs_to :supersedes, __MODULE__ do
+      source_attribute :supersedes_id
+      define_attribute? false
+      public? true
+    end
+
+    has_one :superseded_by, __MODULE__ do
+      destination_attribute :supersedes_id
+      public? true
+    end
   end
 
   identities do
@@ -115,8 +148,11 @@ defmodule BrusselsWtf.Identity.SourcedFact do
       :effective_to,
       :source_version_id,
       :authoritative_url,
+      :source_authority,
       :evidence_kind,
-      :evidence_location
+      :evidence_excerpt,
+      :evidence_location,
+      :supersedes_id
     ] do
       nils_distinct? false
     end

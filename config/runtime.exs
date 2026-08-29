@@ -30,17 +30,27 @@ if config_env() == :dev do
       web_console_logger: true,
       patterns: [
         # Static assets, except user uploads
-        ~r"priv/static/(?!uploads/).*\.(js|css|png|jpeg|jpg|gif|svg)$"E,
+        Regex.compile!(to_string("priv/static/(?!uploads/).*\\.(js|css|png|jpeg|jpg|gif|svg)$")),
         # Gettext translations
-        ~r"priv/gettext/.*\.po$"E,
+        Regex.compile!(to_string("priv/gettext/.*\\.po$")),
         # Router, Controllers, LiveViews and LiveComponents
-        ~r"lib/brussels_wtf_web/router\.ex$"E,
-        ~r"lib/brussels_wtf_web/(controllers|live|components|pages)/.*\.(ex|heex)$"E
+        Regex.compile!(to_string("lib/brussels_wtf_web/router\\.ex$")),
+        Regex.compile!(
+          to_string("lib/brussels_wtf_web/(controllers|live|components|pages)/.*\\.(ex|heex)$")
+        )
       ]
     ]
 end
 
 if config_env() == :prod do
+  release_sha = System.get_env("RELEASE_SHA", "unknown")
+
+  unless Regex.match?(~r/\A(?:unknown|[0-9a-f]{7,40})\z/, release_sha) do
+    raise "RELEASE_SHA must be a Git commit hash or unknown"
+  end
+
+  config :brussels_wtf, :release_sha, release_sha
+
   process_role = System.get_env("PROCESS_ROLE", "app")
 
   role =
@@ -175,6 +185,32 @@ if config_env() == :prod do
       environment variable SECRET_KEY_BASE is missing.
       You can generate one by calling: mix phx.gen.secret
       """
+
+  suggestions_enabled =
+    case System.get_env("SUGGESTIONS_ENABLED", "true") do
+      "true" -> true
+      "false" -> false
+      _ -> raise "SUGGESTIONS_ENABLED must be true or false"
+    end
+
+  suggestion_hmac_key =
+    System.get_env("SUGGESTION_RATE_LIMIT_SECRET") ||
+      :crypto.mac(
+        :hmac,
+        :sha256,
+        secret_key_base,
+        "brussels-wtf:suggestion-rate-limit:v1"
+      )
+
+  trusted_proxies =
+    System.get_env("SUGGESTION_TRUSTED_PROXIES", "")
+    |> String.split(",", trim: true)
+    |> Enum.map(&String.trim/1)
+
+  config :brussels_wtf, :suggestions,
+    enabled: suggestions_enabled,
+    rate_limit_secret: suggestion_hmac_key,
+    trusted_proxies: trusted_proxies
 
   host = System.get_env("PHX_HOST") || "example.com"
 

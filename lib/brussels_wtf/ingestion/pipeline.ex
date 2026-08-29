@@ -432,6 +432,12 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
             []
           end
 
+        if result.quality_measurements["accepted"] do
+          BrusselsWtf.Identity.IxellesPublicMandateProcessor.enqueue_waiting_for_source_version!(
+            version.id
+          )
+        end
+
         notifications =
           run_notifications ++
             attempt_notifications ++
@@ -474,6 +480,10 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     artifact = Enum.find(run.derived_artifacts, &(&1.output_kind == "native-text"))
 
     if run.quality_measurements["accepted"] do
+      BrusselsWtf.Identity.IxellesPublicMandateProcessor.enqueue_waiting_for_source_version!(
+        version.id
+      )
+
       if review_case_id = run.output["review_case_id"] do
         BrusselsWtf.Review.complete_retry!(review_case_id)
       end

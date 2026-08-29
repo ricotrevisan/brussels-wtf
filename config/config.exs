@@ -55,6 +55,7 @@ config :spark,
 config :brussels_wtf,
   ecto_repos: [BrusselsWtf.Repo],
   generators: [timestamp_type: :utc_datetime, binary_id: true],
+  release_sha: "development",
   ash_domains: [
     BrusselsWtf.Ingestion,
     BrusselsWtf.Council,
@@ -94,7 +95,6 @@ config :brussels_wtf,
     backfill_max_batch_size: 10,
     monthly_budget_cents: nil
   },
-  legal_relationships_enabled: false,
   allow_synthetic_seeds: false,
   automatic_transcription: false,
   session_cookie_secure: false,
@@ -103,6 +103,23 @@ config :brussels_wtf,
     username: nil,
     password: nil,
     session_ttl_seconds: 28_800
+  ],
+  suggestions: [
+    enabled: false,
+    rate_limit_secret: nil,
+    trusted_proxies: [],
+    rate_limit_window_seconds: 3_600,
+    rate_limit_max_submissions: 5,
+    body_min_length: 10,
+    body_max_bytes: 10_000,
+    body_retention_days: 365,
+    contact_retention_days: 90,
+    decided_contact_retention_days: 30,
+    anti_abuse_retention_seconds: 172_800,
+    fingerprint_retention_days: 730,
+    decision_note_retention_days: 365,
+    purge_batch_size: 100,
+    purge_max_batches_per_job: 10
   ]
 
 config :brussels_wtf, Oban,
@@ -131,7 +148,8 @@ config :brussels_wtf, Oban,
           commune_slug: "city-of-brussels",
           kind: "scheduled",
           scope: "previous-year"
-        }}
+        }},
+       {"30 2 * * *", BrusselsWtf.Workers.PurgeSuggestions, args: %{}}
      ]}
   ],
   queues: [
@@ -142,7 +160,8 @@ config :brussels_wtf, Oban,
     ocr: 1,
     normalize: 1,
     enrich: 1,
-    publish: 1
+    publish: 1,
+    maintenance: 1
   ]
 
 # Configure the endpoint

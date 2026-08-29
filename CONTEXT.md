@@ -122,7 +122,7 @@ A typed, time-bounded assertion such as a management role, ownership, council ma
 
 ## Ownership suggestion
 
-A public open-ended text submission proposing missing ownership information. It requires no account, accepts optional private contact information, and is protected by basic rate limiting and a honeypot. It remains private until Rico approves it; approval creates the publishable relationship and rejection is retained to prevent repetition.
+A public open-ended text submission proposing missing ownership information. It requires no account, accepts optional private contact information, and is protected by keyed rate limiting and a visually hidden honeypot. Submission text is only a private lead. Approval only references a separately current, verified, semantically matching fact; it never verifies or publishes the suggestion. Rejection retains a non-sensitive disposition audit and a time-bounded keyed fingerprint to prevent repetition. Private contact is retained for at most 90 days and at most 30 days after a decision, anti-abuse keys for at most 48 hours, body text for 365 days, and reviewer notes and fingerprints only until their explicit deadlines.
 
 ## Correction suggestion
 
@@ -134,7 +134,7 @@ A source-backed record supporting or contradicting a factual claim. Evidence ide
 
 ## Verification status
 
-The evidentiary state of a claim: unreviewed, verified, rejected, or superseded. This is separate from publication status. Model inference and name similarity remain unreviewed signals and are not publishable facts.
+The evidentiary state of a claim: unreviewed, verified, rejected, or superseded. This is separate from publication status and content provenance. `verified` means the claim passed its source-specific identity and authoritative-evidence rules; it does not imply human review. Model inference and name similarity remain unreviewed signals and are not publishable facts.
 
 ## Publication status
 

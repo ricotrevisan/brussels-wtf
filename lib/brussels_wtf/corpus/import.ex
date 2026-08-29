@@ -114,22 +114,7 @@ defmodule BrusselsWtf.Corpus.Import do
     end
 
     meetings = meetings_by_contract!(contract, batch.meeting_ids)
-    reviewed_at = batch.content_reviewed_at || BrusselsWtf.Clock.utc_now()
-
-    batch =
-      update_batch!(
-        batch,
-        %{content_reviewed_by: actor.id, content_reviewed_at: reviewed_at},
-        :record_preparation
-      )
-
     {dossier, links} = upsert_recorded_dossier!(contract, meetings, batch, actor)
-
-    content_review = %{
-      actor_id: actor.id,
-      reviewed_at: reviewed_at,
-      manifest_sha256: batch.manifest_sha256
-    }
 
     coverage_batch =
       case batch.coverage_batch_id do
@@ -143,7 +128,6 @@ defmodule BrusselsWtf.Corpus.Import do
 
           Council.request_coverage_batch!(Enum.map(meetings, & &1.id),
             actor: actor,
-            content_review: content_review,
             item_scopes: item_scopes
           )
 

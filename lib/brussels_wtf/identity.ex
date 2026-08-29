@@ -47,6 +47,7 @@ defmodule BrusselsWtf.Identity do
     end
 
     resource BrusselsWtf.Identity.SourcedFact do
+      define :get_sourced_fact, action: :read, get_by: [:id]
       define :record_fact, action: :record
     end
 
@@ -209,13 +210,120 @@ defmodule BrusselsWtf.Identity do
 
   def record_sourced_fact!(attrs) when is_map(attrs) do
     validate_sourced_fact_attributes!(attrs)
-    record_fact!(attrs)
+
+    transaction!(fn ->
+      {fact, notifications} = record_fact!(attrs, return_notifications?: true)
+      BrusselsWtf.Identity.IxellesPublicMandateProcessor.enqueue_if_eligible!(fact)
+      {fact, notifications}
+    end)
   end
 
-  def public_eligible?(fact) do
-    Application.get_env(:brussels_wtf, :legal_relationships_enabled, false) and
-      fact.verification_status == :verified and is_binary(fact.verified_by) and
-      not is_nil(fact.verified_at)
+  def verify_sourced_fact!(fact_id, verifier_id, processing_run_id)
+      when is_binary(processing_run_id) do
+    case Ecto.UUID.cast(processing_run_id) do
+      {:ok, processing_run_id} ->
+        BrusselsWtf.Identity.TrustedVerifier.verify!(fact_id, verifier_id, processing_run_id)
+
+      :error ->
+        raise ArgumentError, "verification requires a persisted processing run"
+    end
+  end
+
+  def verify_sourced_fact!(_fact_id, _verifier_id, _processing_run_id) do
+    raise ArgumentError, "verification requires a persisted processing run"
+  end
+
+  def list_public_relationships!(filter \\ %{}) do
+    BrusselsWtf.Identity.PublicProjection.list!(filter)
+  end
+
+  def get_public_company_profile(enterprise_number) do
+    with true <- canonical_enterprise_number?(enterprise_number),
+         {:ok, company} <- get_legal_entity_by_number(enterprise_number),
+         company <- Ash.load!(company, :cbe_release),
+         %{source_kind: :open_data, published_on: %Date{}, sha256: sha256} = release <-
+           company.cbe_release,
+         true <- valid_public_checksum?(sha256) do
+      {:ok,
+       %BrusselsWtf.Identity.PublicProfile.Company{
+         entity_id: company.id,
+         registered_name: company.registered_name,
+         enterprise_number: company.enterprise_number,
+         status: company.status,
+         cbe: %BrusselsWtf.Identity.PublicProfile.CbeCitation{
+           published_on: release.published_on,
+           sha256: release.sha256
+         },
+         relationships: public_relationships_for(:legal_entity, company.id)
+       }}
+    else
+      _ -> {:error, :not_found}
+    end
+  rescue
+    Ash.Error.Invalid -> {:error, :not_found}
+  end
+
+  def get_public_person_profile(id) do
+    with {:ok, canonical_id} <- Ecto.UUID.cast(id),
+         {:ok, person} <- get_person(canonical_id) do
+      case person do
+        %{status: :retired, retired_into_id: target_id} when not is_nil(target_id) ->
+          with true <- BrusselsWtf.Identity.PublicProjection.ever_public_person?(person.id),
+               {:ok, _profile} <- public_person_profile(target_id) do
+            {:redirect,
+             %BrusselsWtf.Identity.PublicProfile.Redirect{kind: :person, target_id: target_id}}
+          else
+            _ -> {:error, :not_found}
+          end
+
+        %{status: :active} ->
+          public_person_profile(person.id)
+
+        _ ->
+          {:error, :not_found}
+      end
+    else
+      _ -> {:error, :not_found}
+    end
+  end
+
+  defp public_person_profile(person_id) do
+    person = get_person!(person_id)
+
+    case public_relationships_for(:person, person.id) do
+      [] ->
+        {:error, :not_found}
+
+      relationships ->
+        {:ok,
+         %BrusselsWtf.Identity.PublicProfile.Person{
+           id: person.id,
+           legal_name: person.legal_name,
+           relationships: relationships
+         }}
+    end
+  end
+
+  defp canonical_enterprise_number?(value) when is_binary(value) do
+    Regex.match?(~r/\A[0-9]{10}\z/, value) and normalize_enterprise_number!(value) == value
+  rescue
+    ArgumentError -> false
+  end
+
+  defp canonical_enterprise_number?(_value), do: false
+
+  defp valid_public_checksum?(value) when is_binary(value),
+    do: Regex.match?(~r/\A[0-9a-f]{64}\z/i, value)
+
+  defp valid_public_checksum?(_value), do: false
+
+  defp public_relationships_for(type, id) do
+    subject = list_public_relationships!(%{subject_type: type, subject_id: id})
+    object = list_public_relationships!(%{object_type: type, object_id: id})
+
+    (subject ++ object)
+    |> Enum.uniq_by(& &1.fact_id)
+    |> Enum.sort_by(&{&1.effective_from || ~D[0001-01-01], &1.fact_id}, :desc)
   end
 
   def normalize_enterprise_number!(value) when is_binary(value) do
@@ -394,6 +502,11 @@ defmodule BrusselsWtf.Identity do
 
     from = optional_date_value(attrs, :effective_from)
     to = optional_date_value(attrs, :effective_to)
+
+    if kind in [:public_mandate, :office_holding, "public_mandate", "office_holding"] and
+         is_nil(from) do
+      raise ArgumentError, "a public mandate or office-holding fact requires its applicable date"
+    end
 
     if from && to && Date.compare(to, from) == :lt do
       raise ArgumentError, "effective_to cannot precede effective_from"

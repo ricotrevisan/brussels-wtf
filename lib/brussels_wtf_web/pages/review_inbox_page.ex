@@ -139,7 +139,7 @@ defmodule BrusselsWtfWeb.ReviewInboxPage do
                       name="_csrf_token"
                       value={Plug.CSRFProtection.get_csrf_token()}
                     />
-                    <button type="submit" class="btn btn-xs">Verify dossier and queue coverage</button>
+                    <button type="submit" class="btn btn-xs">Confirm dossier links and queue scoped coverage</button>
                   </form>
                 </td>
               </tr>

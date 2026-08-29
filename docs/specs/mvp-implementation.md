@@ -8,7 +8,7 @@ A reader cannot safely treat an agenda as a final decision, infer that an item d
 
 The publication also needs to explain the same municipal activity in French, Dutch, and English without allowing stale or incomplete language variants to diverge. It must make continuing matters understandable across meetings through dossiers while retaining the meeting-specific wording and outcome of each agenda item. Public corrections, uncertain dossier links, and processing failures need an actionable editorial workflow that is independent of background-job transport state.
 
-Company, person, management, ownership, public-mandate, contract, and council-member relationship coverage introduces a separate evidentiary and legal risk. Name similarity, textual mentions, model inference, or a shared address cannot become a public relationship. Sensitive relationship pages must remain behind the unresolved Belgian media and privacy legal review gate while neutral meeting publication proceeds independently.
+Company, person, management, ownership, public-mandate, contract, and council-member relationship coverage introduces separate evidentiary and privacy risk. Name similarity, textual mentions, model inference, or a shared address cannot become a public relationship. Public relationship facts may publish automatically only after their source-specific identity, authoritative-evidence, wording, and privacy rules pass.
 
 The MVP must run within Rico's existing Hetzner/Coolify estate and its constrained host capacity. It must reuse the existing PostgreSQL and rustFS services through dedicated logical namespaces, avoid unbounded OCR or transcription work, and avoid taking responsibility for estate-wide backup, retention, or restore operations.
 
@@ -22,7 +22,7 @@ The public experience will use a dense, text-first timeline. The homepage will s
 
 An authenticated review inbox will expose actionable acquisition, extraction, normalization, evidence, suggestion, and link-correction cases. Reviewers will compare immutable source context with extracted and normalized content, add notes, and invoke explicit audited actions such as retry, reclassify, relink, correct, merge, split, confirm, reject, or mark unsupported. Review actions will create new observations, artifacts, processing generations, or domain revisions; they will never alter an immutable source version.
 
-Identity and relationship foundations will use CBE enterprise numbers for legal entities, corroborated identities for people, and typed, time-bounded relationship claims backed by evidence. Company enrichment will run asynchronously and will not block neutral meeting-page publication. Public company/person relationship routes and sensitive relationship presentation will remain disabled until legal gate #12 is resolved and its required policy or implementation changes are incorporated. Neutral meeting, agenda, decision, evidence, and dossier functionality will be launchable without that gate.
+Identity and relationship foundations will use CBE enterprise numbers for legal entities, corroborated identities for people, and typed, time-bounded relationship claims backed by evidence. Company enrichment will run asynchronously and will not block neutral meeting-page publication. Public company/person routes may expose only facts that pass the automated relationship evidence and privacy rules.
 
 Production will reuse the Coolify-managed PostgreSQL and rustFS services. The application will receive a dedicated database and least-privilege role plus a dedicated private bucket and bucket-scoped credentials. Releases will migrate application-owned schemas and validate storage access, but will not provision cluster-level resources, deploy replacement storage services, or implement an application-owned backup system.
 
@@ -152,7 +152,7 @@ Production will reuse the Coolify-managed PostgreSQL and rustFS services. The ap
 102. As an operator, I want transient failures retried finitely with jitter and `Retry-After` support, so that temporary municipal failures recover without becoming infinite loops.
 103. As an editor, I want deterministic corruption, authentication failure, invalid content, parser ambiguity, unsupported media, and repeated quality failure converted into review cases, so that retries stop when human judgment is required.
 
-### Identity, company information, and legal gate
+### Identity, company information, and relationship publication
 
 104. As an editor, I want a legal entity created only around a CBE enterprise number, so that a name match never invents a company identity.
 105. As an editor, I want establishment units and trading names attached to their legal entity, so that alternate names do not become duplicate companies.
@@ -161,14 +161,14 @@ Production will reuse the Coolify-managed PostgreSQL and rustFS services. The ap
 108. As an editor, I want typed, time-bounded roles and relationship claims, so that management, ownership, public mandate, contract, donation, declared interest, and office holding remain distinct.
 109. As a reader, I want management never presented as ownership, so that corporate roles are not overstated.
 110. As a reader, I want missing ownership information to produce no ownership claim, so that absence is not filled by inference.
-111. As an editor, I want each publishable relationship claim to retain evidence, effective dates when known, a verification status, and Rico's explicit human verification before publication, so that evidentiary and editorial responsibility remain explicit.
+111. As an editor, I want each publishable relationship claim to retain authoritative evidence, effective dates when known, and a verification status before automatic publication, so that evidentiary responsibility remains explicit without making routine publication wait for personal approval.
 112. As an editor, I want rejected or superseded claims retained historically, so that new evidence changes current presentation without erasing prior review.
 113. As an editor, I want company enrichment to run asynchronously, so that unresolved entities do not block neutral meeting publication.
 114. As a reader, I want verified enrichment to update relevant public coverage through a dated revision later, so that meeting reporting can improve after initial publication.
 115. As a privacy-conscious reader, I want person profiles limited to legal name, sourced professional roles, public mandates, relevant council mentions, and a dated timeline, so that irrelevant private data is not republished.
 116. As a person represented in evidence, I want private addresses, signatures, contact details, identity numbers, and family information excluded, so that public-interest reporting remains proportionate.
-117. As Rico, I want public relationship pages and sensitive relationship presentation disabled until Belgian media/privacy counsel resolves legal gate #12, so that implementation readiness is not mistaken for legal launch approval.
-118. As a neutral-meeting reader, I want meeting, agenda, decision, evidence, and dossier pages available independently of legal gate #12, so that the legal review does not block the core civic publication.
+117. As Rico, I want public relationship pages to fail closed unless every displayed fact passes the automated identity, authoritative-evidence, neutral-wording, and privacy rules, so that implementation readiness is not mistaken for publishable evidence.
+118. As a neutral-meeting reader, I want unresolved identity enrichment to remain independent of meeting, agenda, decision, evidence, and dossier publication, so that optional enrichment never blocks the core civic publication.
 119. As an editor, I want relationship claims based on model inference, name similarity, shared surnames, shared addresses, or third-party graphs to remain internal unreviewed leads, so that they are never published as facts.
 120. As a reader, I want relationship wording to state sourced neutral facts without automatically alleging influence, wrongdoing, or conflict of interest, so that the publication does not exceed its evidence.
 121. As an editor, I want CBE Open Data to provide the structured legal-entity spine under its accepted terms, so that systematic ingestion does not misuse CBE Public Search.
@@ -178,7 +178,7 @@ Production will reuse the Coolify-managed PostgreSQL and rustFS services. The ap
 
 ### Public suggestions and corrections
 
-125. As a reader, I want to suggest missing ownership information in open-ended text without an account, so that I can provide a useful lead with low friction after the legal launch gate permits the page.
+125. As a reader, I want to suggest missing ownership information in open-ended text without an account, so that I can provide a useful private lead with low friction.
 126. As a reader, I want to suggest a correction from a company or person page without an account, so that factual errors can enter review.
 127. As a submitter, I want contact information to be optional and private, so that I can choose whether the editor can follow up without publishing my identity.
 128. As an operator, I want suggestion forms protected by basic rate limits and a honeypot, so that obvious automated abuse is reduced without creating accounts.
@@ -207,7 +207,7 @@ Production will reuse the Coolify-managed PostgreSQL and rustFS services. The ap
 ### 1. Product boundary and delivery sequence
 
 - The neutral municipal publication is the launchable MVP core: commune discovery, source preservation, extraction, normalization, meeting pages, agenda-item coverage, proposals, decisions, evidence citations, dossier timelines, multilingual publication, corrections, withdrawal, and review cases.
-- Identity and relationship foundations may be implemented in the same domain model, but public company/person relationship pages, sensitive relationship claims, and their suggestion forms are launch-disabled until legal gate #12 is resolved. The gate applies to those surfaces and does not block neutral meeting or dossier implementation.
+- Identity and relationship foundations share the domain model. [Add private CBE entity resolution and enrichment](https://github.com/RicoTrevisan/brussels-wtf/issues/29) retains private candidate facts only; [Enable evidence-gated profiles, relationships, and suggestions](https://github.com/RicoTrevisan/brussels-wtf/issues/30) must add the trusted verifier, one-way audit transition, current-fact projection, and public-route seam before company/person pages expose anything. Unresolved enrichment and private suggestions do not block neutral meeting or dossier implementation.
 - Implementation should proceed through tracer bullets that prove one representative meeting end to end before expanding adapter coverage. Ixelles is the preferred first acquisition tracer because its meeting identifiers are strongest. Uccle should prove explicit pre-meeting versions, Forest should prove overwritten/complementary sources and in-session additions, and the City of Brussels should prove item-level supporting-document crawling.
 - Search, audience growth, and broader enrichment must not expand the first complete publication seam.
 
@@ -346,27 +346,28 @@ Production will reuse the Coolify-managed PostgreSQL and rustFS services. The ap
 - Review-case uniqueness is based on failure kind, affected record, and processing generation. A later generation can create a new case; duplicate reports in one generation converge.
 - Private artifact access uses authenticated, short-lived application mediation or equivalent protected access. Private object credentials and permanent object URLs are never exposed to the browser.
 
-### 14. Identity, relationship evidence, and legal gating
+### 14. Identity and relationship evidence
 
 - Use CBE Open Data, under accepted reuse terms, as the systematic legal-entity source. CBE Public Search is for targeted human verification, not bulk ingestion.
 - Preserve CBE enterprise number, source release/update identity, and relevant registered facts. Legal-entity creation requires an enterprise number.
 - Use Belgian Official Gazette acts and official municipal decisions as dated evidence for appointments, resignations, and other explicit facts. NBB accounts, procurement/award records, Court of Audit mandate publications, and other official sources may support only the facts they explicitly establish.
-- Do not depend on bulk UBO access. UBO evidence remains disabled unless legal access eligibility, terms, storage, and republication rights are confirmed through legal gate #12.
+- Do not depend on bulk UBO access. UBO evidence remains disabled unless lawful access eligibility, terms, storage, and republication rights are explicitly established.
 - Person identity requires an explicit identifier or exact name plus at least one corroborating fact such as municipality, dated mandate, organization, or role. Ambiguous candidate identities remain separate.
 - Store typed facts and derive broader intersections only from verified underlying claims. Management never implies ownership; a textual mention is not a relationship; a tender notice is not an award.
-- A relationship claim is not eligible for public presentation until it has direct authoritative evidence, resolved identities, precise neutral wording, applicable dates, and Rico's explicit human verification. Automatic meeting-page publication does not waive this claim-level human requirement.
-- Public profile fields, if legal gate #12 permits launch, are limited to legal name, sourced roles, public mandates, relevant council mentions, and dated timelines. Private addresses, signatures, contacts, identity numbers, and family data are excluded from public output and generation inputs unless strictly necessary for private identity disambiguation.
-- Until legal gate #12 is resolved, sensitive relationship routes return no public relationship content and are excluded from navigation, feeds, and indexing. Internal leads remain private and cannot satisfy a public evidence gate.
-- The gate resolution may require changes to editorial charter, journalistic-purpose basis, source licensing, right-of-reply/correction process, relationship wording, retention/removal policy, or UBO handling. Those requirements supersede this draft where applicable and must be converted into acceptance criteria before enabling the routes.
+- A relationship claim is eligible for automatic public presentation only when it has direct authoritative evidence, resolved identities, precise neutral wording, and applicable dates. Human review is optional provenance, not a publication prerequisite.
+- Public profile fields are limited to legal name, sourced roles, public mandates, relevant council mentions, and dated timelines. Private addresses, signatures, contacts, identity numbers, and family data are excluded from public output and generation inputs unless strictly necessary for private identity disambiguation.
+- Relationship routes, navigation, feeds, and indexing include only verified public projections. Internal leads remain private and cannot satisfy a public evidence gate.
+- Editorial charter, journalistic-purpose basis, source licensing, correction process, relationship wording, retention/removal policy, and UBO handling remain explicit product policies and may tighten the automated rules without introducing a blanket approval state.
 
 ### 15. Public submissions
 
 - Dossier-link correction reports are part of the neutral MVP and create private review items without mutating the link.
-- Ownership and profile correction suggestion forms are implemented or enabled only with the corresponding legally permitted public profile surface.
+- Ownership and profile correction suggestion forms are implemented only with the corresponding public profile surface.
 - Public forms accept open-ended text without accounts, optional private contact information, a honeypot field, and basic rate limiting keyed using privacy-conscious operational data.
 - Submission payloads, contact details, anti-abuse data, reviewer decisions, and retention status remain private. Public publication occurs only through an approved evidence-backed domain action and the applicable publication gate.
 - Approval does not treat user text as authoritative evidence. It either attaches authoritative evidence supplied or discovered during review, or leaves the claim unpublished.
-- Rejections and identity/dossier merge or split dispositions remain in audit history to prevent repeated unsupported associations.
+- Rejections and identity/dossier merge or split dispositions remain in non-sensitive audit history to prevent repeated unsupported associations.
+- Suggestion contact is retained for at most 90 days and at most 30 days after moderation. Keyed anti-abuse values are retained for at most 48 hours. Submission bodies are retained for 365 days. Keyed repeat-suppression fingerprints and reviewer notes have explicit deadlines and are purged by bounded scheduled maintenance; the non-sensitive moderation disposition remains append-only.
 
 ### 16. Queues and process roles
 
@@ -428,9 +429,9 @@ Production will reuse the Coolify-managed PostgreSQL and rustFS services. The ap
 19. **Locale resolution:** verify explicit valid query parameter, persisted selection, first-visit `Accept-Language`, English fallback, invalid input handling, and one stable path per resource.
 20. **Review action immutability:** retry, reclassify, relink, or correct a case; confirm that a new run/artifact/revision exists and raw source bytes, original source version, and previous normalized revision are unchanged.
 21. **Asynchronous enrichment:** publish a neutral meeting with an unresolved mention, later attach a CBE-resolved legal entity and verified facts, and update eligible content through a dated revision without having blocked initial publication.
-22. **Legal launch gate:** verify that neutral meeting and dossier pages render while sensitive relationship routes, navigation, feeds, indexing, and suggestion forms remain disabled; enabling them requires an explicit resolved-gate configuration and the resulting policy checks.
+22. **Automated relationship publication:** verify that neutral meeting and dossier pages render independently, while relationship routes, navigation, feeds, and indexing expose only resolved, directly evidenced, neutrally worded, privacy-safe facts without a human approval prerequisite.
 23. **Relationship evidence safety:** verify that name similarity, shared address, management role, missing ownership, a tender notice, and model inference do not produce ownership, award, conflict, or vague connection claims.
-24. **Suggestion privacy and moderation:** where legally enabled, submit anonymous open text with optional contact, exercise honeypot and rate limiting, verify private storage, and ensure approval still requires authoritative evidence and publication rules.
+24. **Suggestion privacy and moderation:** submit anonymous open text with optional contact from an eligible public profile, exercise honeypot and rate limiting, verify private storage, and ensure approval still requires independently verified evidence and never publishes user text.
 25. **Finite retry behavior:** exercise transient HTTP statuses and `Retry-After`, verify bounded observations and delays, then create one review case after the accepted terminal condition.
 26. **Archive unavailability:** make rustFS inaccessible and verify release/readiness failure, no local fallback, no source-version commitment without verified object storage, and safe diagnostics.
 27. **At-least-once execution:** run the same jobs concurrently or repeatedly and verify authoritative unique constraints prevent duplicate source versions, runs, artifacts, cases, and public revisions.
@@ -464,7 +465,7 @@ Production will reuse the Coolify-managed PostgreSQL and rustFS services. The ap
 - At least one fixture proves OCR fallback under the production image and enforced concurrency/resource policy.
 - rustFS compatibility is proven against a dedicated test bucket before selecting the S3 client.
 - Public pages pass locale, citation, status-separation, accessibility, anchor, correction, and withdrawal acceptance scenarios.
-- Neutral publication passes while legal-gated relationship surfaces remain disabled.
+- Neutral publication passes independently of unresolved relationship enrichment.
 - No completion claim may rely only on unit tests or mocked resource calls when the higher principal seam can exercise the behavior.
 
 ## Out of Scope
@@ -484,8 +485,8 @@ Production will reuse the Coolify-managed PostgreSQL and rustFS services. The ap
 - Publishing accusations, inferred influence, wrongdoing, conflicts of interest, vague company/councillor connections, or relationships based only on a mention, name similarity, shared surname/address, or model inference.
 - Treating management as ownership, a tender as an award, annual accounts as a universal ownership register, or missing data as a positive claim.
 - Bulk UBO ingestion or any UBO-dependent feature before access and republication rights are explicitly resolved.
-- Launching sensitive company/person relationship pages, relationship navigation, or related suggestion forms before legal gate #12 is resolved.
-- A complete right-of-reply workflow unless legal gate #12 makes it a launch requirement. The neutral MVP includes factual correction and dossier-link reporting; any additional legal process follows the gate resolution.
+- Launching company/person relationship pages that expose unresolved, inferred, unsupported, or privacy-excluded facts.
+- A complete right-of-reply workflow. The MVP includes factual correction and dossier-link reporting; any additional legal process is a later policy decision.
 - Buying, configuring, or transferring the `brussels.wtf` domain.
 - Provisioning or deploying PostgreSQL or rustFS from the application.
 - Cluster-level database roles, databases, buckets, storage policies, and credentials created by application releases.
@@ -512,8 +513,8 @@ Production will reuse the Coolify-managed PostgreSQL and rustFS services. The ap
 - **Extraction thresholds:** calibrate page-level Poppler acceptance and OCR routing against representative documents from all four communes.
 - **rustFS client behavior:** provision a test bucket and prove endpoint, region/signing, path-style/addressing, scoped credentials, and representative upload behavior before choosing ReqS3 or the accepted ExAws fallback.
 - **Production resource limits:** set measured queue concurrency and hard OCR CPU, memory, and wall-time values compatible with the shared host.
-- **Legal gate #12:** obtain Belgian media/privacy counsel review and incorporate required editorial charter, journalistic-purpose, source-license, correction/right-of-reply, relationship wording, defamation, retention/removal, and UBO constraints before enabling sensitive pages.
-- **Public submission retention:** define legally acceptable retention and deletion periods for optional contact and anti-abuse metadata, subject to legal gate #12 where related to person/company pages.
+- **Relationship policy evolution:** keep editorial charter, journalistic-purpose, source-license, correction/right-of-reply, relationship wording, defamation, retention/removal, and UBO constraints current as the publication expands.
+- **Public submission retention:** contact is retained for at most 90 days and at most 30 days after moderation; keyed anti-abuse values for at most 48 hours; bodies for 365 days; fingerprints and reviewer notes have explicit purge deadlines. Keep this policy current as the publication expands.
 - **Fixture licensing:** decide which captured authoritative documents may be committed, stored privately for CI, or represented by minimal extracts.
 - **Exact responsive design:** translate the selected timeline prototype behavior into production breakpoints and accessibility acceptance criteria without importing the prototype code blindly.
 - **Recording matching:** determine whether direct/heuristic recording links become a useful later source type; written neutral publication does not depend on it.
@@ -521,4 +522,4 @@ Production will reuse the Coolify-managed PostgreSQL and rustFS services. The ap
 
 ### Delivery note
 
-This specification is intended to be decomposed into dependency-aware tracer-bullet implementation tickets. The first ticket set should prove the shared domain/storage skeleton and one Ixelles meeting from captured municipal index fixture to immutable source version, normalized proposal state, complete multilingual publication, later final-decision revision, and rendered meeting page. Subsequent tickets should add the three remaining adapter-specific behaviors, review dispositions, public dossier corrections, production storage validation, and finally legally gated relationship surfaces after gate #12 is resolved.
+This specification is intended to be decomposed into dependency-aware tracer-bullet implementation tickets. The first ticket set should prove the shared domain/storage skeleton and one Ixelles meeting from captured municipal index fixture to immutable source version, normalized proposal state, complete multilingual publication, later final-decision revision, and rendered meeting page. Subsequent tickets should add the three remaining adapter-specific behaviors, review dispositions, public dossier corrections, production storage validation, and automated evidence-gated relationship surfaces.

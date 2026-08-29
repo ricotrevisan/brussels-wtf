@@ -74,15 +74,31 @@ defmodule BrusselsWtfWeb.ReviewCasePage do
          "/review/artifacts/derived/#{artifact.id}?token=#{BrusselsWtfWeb.ReviewPreview.sign_derived_artifact(artifact.id)}"}
       end)
 
+    suggestion =
+      if review_case.kind == :suggestion do
+        case BrusselsWtf.Suggestions.get_for_review_case(review_case.id, actor) do
+          {:ok, suggestion} -> suggestion
+          _ -> nil
+        end
+      end
+
     assign(conn,
       page_title: "Review case · brussels.wtf",
       review_case: review_case,
+      suggestion: suggestion,
+      suggestion_approval_available:
+        suggestion && BrusselsWtf.Suggestions.approval_available?(suggestion.kind),
       locators: locators,
       source_versions: source_versions,
       previews: previews,
       derived_artifacts: derived_artifacts,
       artifact_previews: artifact_previews,
-      actions: if(review_case.kind == :link_correction, do: @dossier_actions, else: @actions),
+      actions:
+        case review_case.kind do
+          :suggestion -> []
+          :link_correction -> @dossier_actions
+          _ -> @actions
+        end,
       csrf_token: Plug.CSRFProtection.get_csrf_token()
     )
   end
@@ -105,7 +121,97 @@ defmodule BrusselsWtfWeb.ReviewCasePage do
         · Generation <code>{@review_case.processing_generation}</code>
       </p>
 
-      <section class="mt-8" aria-labelledby="source-context">
+      <section
+        :if={@suggestion}
+        class="mt-8 border border-base-300 p-5"
+        aria-labelledby="private-suggestion"
+      >
+        <h2 id="private-suggestion" class="text-2xl font-semibold">Private suggestion</h2>
+        <dl class="mt-4 grid gap-2 md:grid-cols-[12rem_1fr]">
+          <dt>Kind</dt><dd>{humanize(@suggestion.kind)}</dd>
+          <dt>Subject</dt><dd>
+            {humanize(@suggestion.subject_type)} · <code>{@suggestion.subject_id}</code>
+          </dd>
+          <dt>Body</dt><dd class="whitespace-pre-wrap">{@suggestion.body || "Purged"}</dd>
+          <dt>Private contact</dt><dd>{@suggestion.contact || "Not supplied or purged"}</dd>
+          <dt>Body retention</dt><dd>{DateTime.to_iso8601(@suggestion.body_retention_deadline)}</dd>
+          <dt>Contact retention</dt><dd>
+            {DateTime.to_iso8601(@suggestion.contact_retention_deadline)}
+          </dd>
+          <dt>Anti-abuse retention</dt><dd>
+            {DateTime.to_iso8601(@suggestion.anti_abuse_retention_deadline)}
+          </dd>
+          <dt>Fingerprint retention</dt><dd>
+            {DateTime.to_iso8601(@suggestion.fingerprint_retention_deadline)}
+          </dd>
+        </dl>
+
+        <div :if={@suggestion.status == :pending} class="mt-6 grid gap-5 md:grid-cols-2">
+          <form
+            method="post"
+            action={"/review/cases/#{@review_case.id}/suggestion/reject"}
+            class="border border-base-300 p-4"
+          >
+            <input type="hidden" name="_csrf_token" value={@csrf_token} />
+            <h3 class="font-semibold">Reject lead</h3>
+            <label class="mt-3 block">
+              Reason code
+              <input
+                name="reason_code"
+                required
+                maxlength="100"
+                class="input input-bordered mt-1 w-full"
+              />
+            </label>
+            <label class="mt-3 block">
+              Reviewer note <textarea
+                name="note"
+                required
+                maxlength="2000"
+                class="textarea textarea-bordered mt-1 w-full"
+              ></textarea>
+            </label>
+            <button type="submit" class="btn btn-sm mt-3">Reject</button>
+          </form>
+
+          <form
+            :if={@suggestion_approval_available}
+            method="post"
+            action={"/review/cases/#{@review_case.id}/suggestion/approve"}
+            class="border border-base-300 p-4"
+          >
+            <input type="hidden" name="_csrf_token" value={@csrf_token} />
+            <h3 class="font-semibold">Reference verified fact and close lead</h3>
+            <label class="mt-3 block">
+              Verified fact UUID
+              <input name="verified_fact_id" required class="input input-bordered mt-1 w-full" />
+            </label>
+            <label class="mt-3 block">
+              Reviewer note <textarea
+                name="note"
+                required
+                maxlength="2000"
+                class="textarea textarea-bordered mt-1 w-full"
+              ></textarea>
+            </label>
+            <button type="submit" class="btn btn-sm mt-3">Approve reference</button>
+          </form>
+          <p :if={!@suggestion_approval_available} class="border border-base-300 p-4">
+            Approval is unavailable because no trusted verifier supports this fact kind.
+          </p>
+        </div>
+
+        <h3 class="mt-6 font-semibold">Moderation audit</h3>
+        <ol class="mt-2 space-y-2">
+          <li :for={decision <- @suggestion.decisions}>
+            {humanize(decision.action)} by {decision.actor_id} · {decision.reason_code}
+            <p>{decision.note || "Reviewer note purged"}</p>
+            <time>{DateTime.to_iso8601(decision.inserted_at)}</time>
+          </li>
+        </ol>
+      </section>
+
+      <section :if={is_nil(@suggestion)} class="mt-8" aria-labelledby="source-context">
         <h2 id="source-context" class="text-2xl font-semibold">Immutable source context</h2>
         <dl class="mt-4 grid gap-2 md:grid-cols-[12rem_1fr]">
           <dt>Authoritative origin</dt><dd>
@@ -144,7 +250,7 @@ defmodule BrusselsWtfWeb.ReviewCasePage do
         </ul>
       </section>
 
-      <section class="mt-8" aria-labelledby="locator-history">
+      <section :if={is_nil(@suggestion)} class="mt-8" aria-labelledby="locator-history">
         <h2 id="locator-history" class="text-2xl font-semibold">Locator and HTTP history</h2>
         <article :for={locator <- @locators} class="mt-4 border border-base-300 p-4">
           <p class="break-all"><strong>Locator:</strong> {locator.url}</p>
@@ -160,7 +266,7 @@ defmodule BrusselsWtfWeb.ReviewCasePage do
         </article>
       </section>
 
-      <div class="mt-8 grid gap-6 lg:grid-cols-2">
+      <div :if={is_nil(@suggestion)} class="mt-8 grid gap-6 lg:grid-cols-2">
         <section aria-labelledby="extracted">
           <h2 id="extracted" class="text-2xl font-semibold">Extracted / OCR text</h2><pre class="mt-3 whitespace-pre-wrap border border-base-300 p-4">{@review_case.extracted_text || "—"}</pre>
         </section>
@@ -169,13 +275,13 @@ defmodule BrusselsWtfWeb.ReviewCasePage do
         </section>
       </div>
 
-      <div class="mt-8 grid gap-6 lg:grid-cols-3">
+      <div :if={is_nil(@suggestion)} class="mt-8 grid gap-6 lg:grid-cols-3">
         <.context_map title="Quality measurements" value={@review_case.quality_measurements} />
         <.context_map title="Diagnostics and processor logs" value={diagnostics(@review_case)} />
         <.context_map title="Related evidence" value={@review_case.related_evidence} />
       </div>
 
-      <section class="mt-10" aria-labelledby="actions">
+      <section :if={is_nil(@suggestion)} class="mt-10" aria-labelledby="actions">
         <h2 id="actions" class="text-2xl font-semibold">Audited actions</h2>
         <div class="mt-4 grid gap-4 md:grid-cols-2">
           <form
@@ -291,6 +397,7 @@ defmodule BrusselsWtfWeb.ReviewCasePage do
       <section class="mt-10" aria-labelledby="history">
         <h2 id="history" class="text-2xl font-semibold">Notes and prior actions</h2>
         <form
+          :if={is_nil(@suggestion)}
           method="post"
           action={"/review/cases/#{@review_case.id}/notes"}
           class="mt-4 border border-base-300 p-4"
