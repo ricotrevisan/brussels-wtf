@@ -160,7 +160,7 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
             else:
               ~s(<label><input type="checkbox" data-follow-target data-type="#{escape(member.target_type)}" data-identifier="#{escape(member.target_identifier)}" checked> #{copy(conn.assigns.locale, :select)}</label>)
 
-        "<li>#{escape(member.target_type)}: #{escape(member.target_identifier)}#{select}#{remove}</li>"
+        "<li>#{copy(conn.assigns.locale, {:type, member.target_type})}: #{escape(member.target_identifier)}#{select}#{remove}</li>"
       end)
 
     management =
@@ -186,7 +186,7 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
     member_list = if management?, do: "<ul>#{members}</ul>", else: import
 
     html(conn, """
-    <!doctype html><html lang="#{conn.assigns.locale}"><head><meta name="robots" content="#{if collection.visibility == :public and not management?, do: "index, follow", else: "noindex, nofollow"}"><title>#{escape(collection.title)}</title></head><body><main><h1>#{escape(collection.title)}</h1>#{management}#{member_list}<p>This collection contains public resources only. It has no read state or notifications.</p><p>#{copy(conn.assigns.locale, :snapshot)}</p></main></body></html>
+    <!doctype html><html lang="#{conn.assigns.locale}"><head><meta name="robots" content="#{if collection.visibility == :public and not management?, do: "index, follow", else: "noindex, nofollow"}"><title>#{escape(collection.title)}</title></head><body><main><h1>#{escape(collection.title)}</h1>#{management}#{member_list}<p>#{copy(conn.assigns.locale, :collection_scope)}</p><p>#{copy(conn.assigns.locale, :snapshot)}</p></main></body></html>
     """)
   end
 
@@ -209,6 +209,38 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
   defp copy("fr", :javascript), do: "Ce fil local nécessite JavaScript."
   defp copy("nl", :javascript), do: "Deze lokale feed vereist JavaScript."
   defp copy(_, :javascript), do: "This browser-local feed requires JavaScript."
+
+  defp copy("fr", :collection_scope),
+    do:
+      "Cette collection contient uniquement des ressources publiques. Elle ne contient aucun état de lecture ni notification."
+
+  defp copy("nl", :collection_scope),
+    do: "Deze collectie bevat alleen openbare bronnen. Ze bevat geen leesstatus of meldingen."
+
+  defp copy(_, :collection_scope),
+    do: "This collection contains public resources only. It has no read state or notifications."
+
+  defp copy("fr", {:type, type}),
+    do:
+      %{
+        dossier: "Dossier",
+        person: "Personne",
+        legal_entity: "Entité juridique",
+        commune: "Commune"
+      }[type]
+
+  defp copy("nl", {:type, type}),
+    do:
+      %{dossier: "Dossier", person: "Persoon", legal_entity: "Rechtspersoon", commune: "Gemeente"}[
+        type
+      ]
+
+  defp copy(_, {:type, type}),
+    do:
+      %{dossier: "Dossier", person: "Person", legal_entity: "Legal entity", commune: "Commune"}[
+        type
+      ]
+
   defp copy("fr", :select), do: "Sélectionner"
   defp copy("nl", :select), do: "Selecteren"
   defp copy(_, :select), do: "Select"

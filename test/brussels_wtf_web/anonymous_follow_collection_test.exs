@@ -263,10 +263,10 @@ defmodule BrusselsWtfWeb.AnonymousFollowCollectionTest do
         %{
           id: "feed-1",
           target: %{type: target.type, id: target.identifier},
-          eventType: "decision",
+          eventType: :decision,
           publicEventId: "event-1",
           revisionId: "revision-1",
-          url: "/dossiers/#{target.identifier}?lang=#{locale}#revision-1",
+          url: "/meetings/ixelles/42?lang=#{locale}#revision-1",
           title: "Décision <script>",
           occurredAt: "2028-02-29T12:00:00Z"
         }
@@ -295,7 +295,7 @@ defmodule BrusselsWtfWeb.AnonymousFollowCollectionTest do
       })
 
     assert %{"updates" => [update]} = json_response(response, 200)
-    assert update["url"] == "/dossiers/collection-dossier?lang=fr#revision-1"
+    assert update["url"] == "/meetings/ixelles/42?lang=fr#revision-1"
     refute Map.has_key?(get_session(response), :citizen_id)
   end
 
