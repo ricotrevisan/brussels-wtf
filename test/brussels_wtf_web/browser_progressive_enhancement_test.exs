@@ -9,4 +9,11 @@ defmodule BrusselsWtfWeb.BrowserProgressiveEnhancementTest do
 
     assert status == 0, output
   end
+
+  test "browser-local snapshot import and personal feed remain usable" do
+    {output, status} =
+      System.cmd("node", ["--test", "assets/test/personal_feed_test.mjs"], stderr_to_stdout: true)
+
+    assert status == 0, output
+  end
 end

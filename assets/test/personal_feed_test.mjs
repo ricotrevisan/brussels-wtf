@@ -1,0 +1,11 @@
+import test from "node:test"
+import assert from "node:assert/strict"
+import {importSnapshot, ingestUpdates, markRead, cleanup, load} from "../js/personal_feed.mjs"
+const target={type:"dossier",id:"safe-dossier"}
+const store=()=>{const m=new Map();return {getItem:k=>m.get(k)??null,setItem:(k,v)=>m.set(k,v),m}}
+const update=(extra={})=>({id:"revision-1",target,eventType:"factual_correction",url:"/meetings/ixelles/42#item-7",title:"Documented decision updated",occurredAt:"2028-02-29T12:00:00.000Z",...extra})
+test("selective import is a snapshot and qualifying exact-link update can be read",()=>{const s=store(); importSnapshot(s,[target]); ingestUpdates(s,[update()]); markRead(s,"revision-1",new Date("2028-03-01T00:00:00Z")); assert.deepEqual(load(s).follows,[target]); assert.equal(load(s).notifications[0].url,"/meetings/ixelles/42#item-7"); assert.equal(load(s).notifications[0].readAt,"2028-03-01T00:00:00.000Z"); /* later collection state is never consulted */ assert.deepEqual(load(s).follows,[target])})
+test("only stable public target shapes enter storage",()=>{const s=store(); importSnapshot(s,[target,{type:"meeting",id:"x"},{type:"topic",id:"x"},{type:"person",id:"private"},{type:"legal_entity",id:"0123"},{type:"commune",id:"other"}]); assert.deepEqual(load(s).follows,[target])})
+test("excluded lifecycle events never enter the feed",()=>{const s=store();importSnapshot(s,[target]);ingestUpdates(s,[update({id:"t",eventType:"typography_correction"}),update({id:"r",eventType:"retrieval_observation"}),update({id:"p",eventType:"private_review"}),update({id:"u",eventType:"unverified_fact"})]);assert.deepEqual(load(s).notifications,[])})
+test("calendar cleanup has an exact leap-year twelve-month boundary",()=>{const s=store(); importSnapshot(s,[target]); ingestUpdates(s,[update(),update({id:"new",occurredAt:"2028-03-01T12:00:00.000Z"})]); cleanup(s,new Date("2029-02-28T12:00:00.000Z")); assert.deepEqual(load(s).notifications.map(n=>n.id),["revision-1","new"]); cleanup(s,new Date("2029-03-01T12:00:00.001Z")); assert.deepEqual(load(s).notifications,[])})
+test("malformed storage and script-like URLs fail closed",()=>{const s=store();importSnapshot(s,[target]);ingestUpdates(s,[update({url:"javascript:alert(1)"}),update({id:"evil",url:"//evil.test"})]);assert.deepEqual(load(s).notifications,[])})

@@ -60,6 +60,16 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
     end
   end
 
+  def feed(conn, _params) do
+    html(conn, """
+    <!doctype html><html lang="#{escape(conn.assigns[:locale] || "en")}"><head><title>Personal feed</title></head><body><main>
+    <h1>Personal feed</h1>
+    <p>Your follows, notifications, and read state stay only in this browser. They do not sync and are lost when browser data is cleared.</p>
+    <ul data-personal-feed></ul><noscript>This browser-local feed requires JavaScript.</noscript>
+    </main></body></html>
+    """)
+  end
+
   def show(conn, %{"token" => token}) do
     case Follow.view(token) do
       {:ok, collection} -> render_collection(conn, collection, false)
@@ -136,7 +146,13 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
             """,
             else: ""
 
-        "<li>#{escape(member.target_type)}: #{escape(member.target_identifier)}#{remove}</li>"
+        select =
+          if management?,
+            do: "",
+            else:
+              ~s(<label><input type="checkbox" data-follow-target data-type="#{escape(member.target_type)}" data-identifier="#{escape(member.target_identifier)}" checked> Select</label>)
+
+        "<li>#{escape(member.target_type)}: #{escape(member.target_identifier)}#{select}#{remove}</li>"
       end)
 
     management =
@@ -153,8 +169,16 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
         """,
         else: ""
 
+    import =
+      if management?,
+        do: "",
+        else:
+          ~s(<form data-follow-import><ul>#{members}</ul><button type="submit">Import selected into my personal feed</button></form>)
+
+    member_list = if management?, do: "<ul>#{members}</ul>", else: import
+
     html(conn, """
-    <!doctype html><html lang="en"><head><meta name="robots" content="#{if collection.visibility == :public and not management?, do: "index, follow", else: "noindex, nofollow"}"><title>#{escape(collection.title)}</title></head><body><main><h1>#{escape(collection.title)}</h1>#{management}<ul>#{members}</ul><p>This collection contains public resources only. It has no read state or notifications.</p></main></body></html>
+    <!doctype html><html lang="en"><head><meta name="robots" content="#{if collection.visibility == :public and not management?, do: "index, follow", else: "noindex, nofollow"}"><title>#{escape(collection.title)}</title></head><body><main><h1>#{escape(collection.title)}</h1>#{management}#{member_list}<p>This collection contains public resources only. It has no read state or notifications.</p><p>Imported follows stay only in this browser. They do not sync and are lost when browser data is cleared. Import is a snapshot; later collection changes do not alter your follows.</p></main></body></html>
     """)
   end
 
