@@ -60,7 +60,8 @@ config :brussels_wtf,
     BrusselsWtf.Ingestion,
     BrusselsWtf.Council,
     BrusselsWtf.Review,
-    BrusselsWtf.Identity
+    BrusselsWtf.Identity,
+    BrusselsWtf.Follow
   ],
   clock: BrusselsWtf.Clock.System,
   http: BrusselsWtf.HTTP.Req,
