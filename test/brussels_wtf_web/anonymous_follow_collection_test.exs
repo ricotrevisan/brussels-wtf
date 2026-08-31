@@ -258,7 +258,7 @@ defmodule BrusselsWtfWeb.AnonymousFollowCollectionTest do
   end
 
   defmodule UpdateProvider do
-    def list(target, locale) do
+    def list(target, locale, _imported_at) do
       [
         %{
           id: "feed-1",
@@ -288,7 +288,13 @@ defmodule BrusselsWtfWeb.AnonymousFollowCollectionTest do
     response =
       post(conn, "/feed/updates?lang=fr", %{
         targets: [
-          %{type: "dossier", id: "collection-dossier"},
+          %{
+            type: "dossier",
+            id: "collection-dossier",
+            importedAt:
+              DateTime.add(Application.fetch_env!(:brussels_wtf, :clock).utc_now(), -1, :second)
+              |> DateTime.to_iso8601()
+          },
           %{type: "dossier", id: "valid-shaped-but-unpublished"},
           %{type: "meeting", id: "x"}
         ]

@@ -6,6 +6,8 @@ defmodule BrusselsWtf.Follow.PublicUpdates do
     provider =
       Application.get_env(:brussels_wtf, :public_follow_update_provider, __MODULE__.Published)
 
+    now = Application.fetch_env!(:brussels_wtf, :clock).utc_now()
+
     targets = Enum.uniq(targets)
 
     if length(targets) > 100 do
@@ -13,10 +15,12 @@ defmodule BrusselsWtf.Follow.PublicUpdates do
     else
       targets
       |> Enum.flat_map(fn
-        %{"type" => type, "id" => id} when is_binary(type) and is_binary(id) ->
+        %{"type" => type, "id" => id, "importedAt" => imported_at}
+        when is_binary(type) and is_binary(id) and is_binary(imported_at) ->
           with {:ok, target} <- Target.new(parse_type(type), id),
+               {:ok, imported_at} <- valid_imported_at(imported_at, now),
                true <- TargetEligibility.eligible?(target) do
-            provider.list(target, locale)
+            provider.list(target, locale, imported_at)
             |> Enum.filter(fn
               %{target: %{type: output_type, id: output_id}} ->
                 output_type == target.type and output_id == target.identifier
@@ -37,12 +41,34 @@ defmodule BrusselsWtf.Follow.PublicUpdates do
 
   def list(_, _), do: []
 
+  defp valid_imported_at(value, now) do
+    with {:ok, timestamp, 0} <- DateTime.from_iso8601(value),
+         comparison when comparison in [:lt, :eq] <- DateTime.compare(timestamp, now),
+         true <- DateTime.compare(DateTime.shift(timestamp, month: 12), now) in [:gt, :eq] do
+      {:ok, timestamp}
+    else
+      _ -> :error
+    end
+  end
+
   @matrix %{
     dossier: [:linked_agenda_item, :decision, :correction, :merge, :split],
     person: [:verified_public_mandate, :verified_management_role, :relevant_council_item],
     legal_entity: [:verified_management_role, :contract_award, :relevant_council_item],
     commune: [:published_meeting_page, :publication_revision_new_decisions]
   }
+  @revision_events [
+    :linked_agenda_item,
+    :decision,
+    :correction,
+    :merge,
+    :split,
+    :relevant_council_item,
+    :published_meeting_page,
+    :publication_revision_new_decisions
+  ]
+  @fact_events [:verified_public_mandate, :verified_management_role, :contract_award]
+
   defp valid_update?(
          %{
            target: %{type: type, id: id},
@@ -52,15 +78,37 @@ defmodule BrusselsWtf.Follow.PublicUpdates do
            url: url,
            title: title,
            occurredAt: occurred
-         },
+         } = update,
          locale
        )
-       when is_atom(type) and is_binary(id) and is_atom(event) and is_binary(public_id) and
+       when event in @revision_events and is_atom(type) and is_binary(id) and is_binary(public_id) and
               is_binary(revision) and is_binary(url) and is_binary(title) and is_binary(occurred) do
     event in Map.get(@matrix, type, []) and public_id != "" and revision != "" and
-      String.contains?(url, "?lang=#{locale}#") and
+      not Map.has_key?(update, :factId) and String.contains?(url, "?lang=#{locale}#") and
       Regex.match?(
         ~r{^/meetings/(ixelles|uccle|forest|city-of-brussels)/[A-Za-z0-9._~-]+\?lang=(fr|nl|en)#[A-Za-z0-9._~-]+$},
+        url
+      )
+  end
+
+  defp valid_update?(
+         %{
+           target: %{type: type, id: id},
+           eventType: event,
+           publicEventId: public_id,
+           factId: fact,
+           url: url,
+           title: title,
+           occurredAt: occurred
+         } = update,
+         locale
+       )
+       when event in @fact_events and is_atom(type) and is_binary(id) and is_binary(public_id) and
+              is_binary(fact) and is_binary(url) and is_binary(title) and is_binary(occurred) do
+    event in Map.get(@matrix, type, []) and public_id != "" and fact != "" and
+      not Map.has_key?(update, :revisionId) and String.contains?(url, "?lang=#{locale}#") and
+      Regex.match?(
+        ~r"^/(people/[0-9a-f-]{36}|companies/\d{10})\?lang=(fr|nl|en)#fact-[A-Za-z0-9._~-]+$",
         url
       )
   end
@@ -75,7 +123,8 @@ defmodule BrusselsWtf.Follow.PublicUpdates do
   defmodule Published do
     @moduledoc "Projects existing publication-gated meeting state into follow updates."
 
-    def list(%Target{type: type} = target, locale) when type in [:dossier, :commune] do
+    def list(%Target{type: type} = target, locale, imported_at)
+        when type in [:dossier, :commune] do
       BrusselsWtf.Council.MeetingPage
       |> Ash.Query.for_read(:published)
       |> Ash.read!(authorize?: false, domain: BrusselsWtf.Council)
@@ -84,22 +133,35 @@ defmodule BrusselsWtf.Follow.PublicUpdates do
         authorize?: false,
         domain: BrusselsWtf.Council
       )
-      |> Enum.flat_map(&page_updates(&1, target, locale))
+      |> Enum.flat_map(&page_updates(&1, target, locale, imported_at))
     end
 
-    def list(_, _), do: []
+    def list(_, _, _), do: []
 
-    defp page_updates(page, %Target{type: :commune, identifier: slug} = target, locale) do
+    defp page_updates(
+           page,
+           %Target{type: :commune, identifier: slug} = target,
+           locale,
+           imported_at
+         ) do
       if page.council_meeting.commune.slug == slug do
         page.publication_events
-        |> Enum.filter(&(&1.event_type == :published and is_binary(&1.publication_revision_id)))
+        |> Enum.filter(
+          &(&1.event_type == :published and is_binary(&1.publication_revision_id) and
+              DateTime.after?(&1.occurred_at, imported_at))
+        )
         |> Enum.map(&update(&1, target, page, locale, :published_meeting_page, nil))
       else
         []
       end
     end
 
-    defp page_updates(page, %Target{type: :dossier, identifier: slug} = target, locale) do
+    defp page_updates(
+           page,
+           %Target{type: :dossier, identifier: slug} = target,
+           locale,
+           imported_at
+         ) do
       for item <- page.council_meeting.agenda_items,
           link <- item.dossier_links,
           link.status == :active,
@@ -107,7 +169,8 @@ defmodule BrusselsWtf.Follow.PublicUpdates do
           link.dossier_id == dossier_id(slug),
           event <- page.publication_events,
           event.event_type in [:published, :factual_correction, :republished],
-          is_binary(event.publication_revision_id) do
+          is_binary(event.publication_revision_id),
+          DateTime.after?(event.occurred_at, imported_at) do
         kind =
           if item.published_procedural_state == :decision,
             do: :decision,
