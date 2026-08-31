@@ -105,12 +105,27 @@ defmodule BrusselsWtf.Follow.PublicUpdates do
        )
        when event in @fact_events and is_atom(type) and is_binary(id) and is_binary(public_id) and
               is_binary(fact) and is_binary(url) and is_binary(title) and is_binary(occurred) do
+    expected_url =
+      case type do
+        :person -> "/people/#{id}?lang=#{locale}#fact-#{fact}"
+        :legal_entity -> "/companies/#{id}?lang=#{locale}#fact-#{fact}"
+        _ -> nil
+      end
+
+    allowed_keys = [
+      :id,
+      :target,
+      :eventType,
+      :publicEventId,
+      :factId,
+      :url,
+      :title,
+      :occurredAt
+    ]
+
     event in Map.get(@matrix, type, []) and public_id != "" and fact != "" and
-      not Map.has_key?(update, :revisionId) and String.contains?(url, "?lang=#{locale}#") and
-      Regex.match?(
-        ~r"^/(people/[0-9a-f-]{36}|companies/\d{10})\?lang=(fr|nl|en)#fact-[A-Za-z0-9._~-]+$",
-        url
-      )
+      Regex.match?(~r/^[A-Za-z0-9._~-]+$/, fact) and url == expected_url and
+      Enum.all?(Map.keys(update), &(&1 in allowed_keys))
   end
 
   defp valid_update?(_, _), do: false

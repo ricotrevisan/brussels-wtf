@@ -38,6 +38,8 @@ defmodule BrusselsWtfWeb.AnonymousFollowCollectionTest do
       })
 
     %{
+      person: person,
+      company: company,
       unpublished_person: unpublished_person,
       unpublished_company: unpublished_company,
       targets: [
@@ -303,6 +305,110 @@ defmodule BrusselsWtfWeb.AnonymousFollowCollectionTest do
     assert %{"updates" => [update]} = json_response(response, 200)
     assert update["url"] == "/meetings/ixelles/42?lang=fr#revision-1"
     refute Map.has_key?(get_session(response), :citizen_id)
+  end
+
+  defmodule FactMatrixProvider do
+    def list(target, locale, _imported_at) do
+      Application.fetch_env!(:brussels_wtf, :fact_matrix_update).(target, locale)
+    end
+  end
+
+  test "person and legal-entity fact events enforce the authoritative matrix and exact identity route",
+       %{conn: conn, person: person, company: company} do
+    old_provider = Application.get_env(:brussels_wtf, :public_follow_update_provider)
+    Application.put_env(:brussels_wtf, :public_follow_update_provider, FactMatrixProvider)
+
+    on_exit(fn ->
+      Application.delete_env(:brussels_wtf, :fact_matrix_update)
+
+      if old_provider,
+        do: Application.put_env(:brussels_wtf, :public_follow_update_provider, old_provider),
+        else: Application.delete_env(:brussels_wtf, :public_follow_update_provider)
+    end)
+
+    authoritative = [
+      {:person, person.id, [:verified_public_mandate, :verified_management_role]},
+      {:legal_entity, company.enterprise_number, [:verified_management_role, :contract_award]}
+    ]
+
+    for {type, identifier, allowed_events} <- authoritative,
+        event <- [:verified_public_mandate, :verified_management_role, :contract_award] do
+      update = fact_update(type, identifier, event, "fact-123", "nl")
+      put_fact_update(update)
+      updates = request_updates(conn, type, identifier, "nl")
+
+      if event in allowed_events do
+        assert [%{"eventType" => event_type}] = updates
+        assert event_type == Atom.to_string(event)
+      else
+        assert [] == updates
+      end
+    end
+  end
+
+  test "fact events fail closed for factId/revisionId confusion, route mismatches, and extra identities",
+       %{conn: conn, person: person, company: company} do
+    old_provider = Application.get_env(:brussels_wtf, :public_follow_update_provider)
+    Application.put_env(:brussels_wtf, :public_follow_update_provider, FactMatrixProvider)
+
+    on_exit(fn ->
+      Application.delete_env(:brussels_wtf, :fact_matrix_update)
+
+      if old_provider,
+        do: Application.put_env(:brussels_wtf, :public_follow_update_provider, old_provider),
+        else: Application.delete_env(:brussels_wtf, :public_follow_update_provider)
+    end)
+
+    valid = fact_update(:person, person.id, :verified_public_mandate, "fact-123", "fr")
+
+    invalid = [
+      valid |> Map.delete(:factId) |> Map.put(:revisionId, "fact-123"),
+      Map.put(valid, :revisionId, "revision-1"),
+      Map.put(valid, :url, "/people/#{Ecto.UUID.generate()}?lang=fr#fact-fact-123"),
+      Map.put(valid, :url, "/companies/#{company.enterprise_number}?lang=fr#fact-fact-123"),
+      Map.put(valid, :url, "/people/#{person.id}?lang=nl#fact-fact-123"),
+      Map.put(valid, :url, "/people/#{person.id}?lang=fr#fact-other"),
+      Map.put(valid, :personId, person.id),
+      Map.put(valid, :legalEntityId, company.enterprise_number)
+    ]
+
+    for update <- invalid do
+      put_fact_update(update)
+      assert [] == request_updates(conn, :person, person.id, "fr")
+    end
+  end
+
+  defp fact_update(type, identifier, event, fact_id, locale) do
+    segment = if type == :person, do: "people/#{identifier}", else: "companies/#{identifier}"
+
+    %{
+      id: "feed-1",
+      target: %{type: type, id: identifier},
+      eventType: event,
+      publicEventId: "event-1",
+      factId: fact_id,
+      url: "/#{segment}?lang=#{locale}#fact-#{fact_id}",
+      title: "Published fact",
+      occurredAt: "2028-02-29T12:00:00Z"
+    }
+  end
+
+  defp put_fact_update(update) do
+    Application.put_env(:brussels_wtf, :fact_matrix_update, fn _target, _locale -> [update] end)
+  end
+
+  defp request_updates(conn, type, identifier, locale) do
+    imported_at =
+      Application.fetch_env!(:brussels_wtf, :clock).utc_now()
+      |> DateTime.add(-1, :second)
+      |> DateTime.to_iso8601()
+
+    response =
+      post(conn, "/feed/updates?lang=#{locale}", %{
+        targets: [%{type: Atom.to_string(type), id: identifier, importedAt: imported_at}]
+      })
+
+    json_response(response, 200)["updates"]
   end
 
   test "feed and import privacy interface use resolved public locale", %{conn: conn} do

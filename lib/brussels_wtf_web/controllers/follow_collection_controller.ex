@@ -71,7 +71,7 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
     csrf = Plug.CSRFProtection.get_csrf_token()
 
     html(conn, """
-    <!doctype html><html lang="#{locale}"><head><meta name="csrf-token" content="#{csrf}"><title>#{copy(locale, :feed)}</title></head><body><main>
+    <!doctype html><html lang="#{locale}"><head><meta name="csrf-token" content="#{csrf}"><title>#{copy(locale, :feed)}</title><script defer src="/assets/js/personal_feed_entry.js"></script></head><body><main>
     <h1>#{copy(locale, :feed)}</h1><p>#{copy(locale, :privacy)}</p>
     <ul data-personal-feed></ul><noscript>#{copy(locale, :javascript)}</noscript>
     </main></body></html>
@@ -186,7 +186,7 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
     member_list = if management?, do: "<ul>#{members}</ul>", else: import
 
     html(conn, """
-    <!doctype html><html lang="#{conn.assigns.locale}"><head><meta name="robots" content="#{if collection.visibility == :public and not management?, do: "index, follow", else: "noindex, nofollow"}"><title>#{escape(collection.title)}</title></head><body><main><h1>#{escape(collection.title)}</h1>#{management}#{member_list}<p>#{copy(conn.assigns.locale, :collection_scope)}</p><p>#{copy(conn.assigns.locale, :snapshot)}</p></main></body></html>
+    <!doctype html><html lang="#{conn.assigns.locale}"><head><meta name="robots" content="#{if collection.visibility == :public and not management?, do: "index, follow", else: "noindex, nofollow"}"><title>#{escape(collection.title)}</title><script defer src="/assets/js/personal_feed_entry.js"></script></head><body><main><h1>#{escape(collection.title)}</h1>#{management}#{member_list}<p>#{copy(conn.assigns.locale, :collection_scope)}</p><p>#{copy(conn.assigns.locale, :snapshot)}</p></main></body></html>
     """)
   end
 
