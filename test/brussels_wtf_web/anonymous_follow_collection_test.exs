@@ -257,6 +257,54 @@ defmodule BrusselsWtfWeb.AnonymousFollowCollectionTest do
     end
   end
 
+  defmodule UpdateProvider do
+    def list(target, locale) do
+      [
+        %{
+          id: "feed-1",
+          target: %{type: target.type, id: target.identifier},
+          eventType: "decision",
+          publicEventId: "event-1",
+          revisionId: "revision-1",
+          url: "/dossiers/#{target.identifier}?lang=#{locale}#revision-1",
+          title: "Décision <script>",
+          occurredAt: "2028-02-29T12:00:00Z"
+        }
+      ]
+    end
+  end
+
+  test "public update read seam reuses current eligibility and locale without citizen identity",
+       %{conn: conn} do
+    old = Application.get_env(:brussels_wtf, :public_follow_update_provider)
+    Application.put_env(:brussels_wtf, :public_follow_update_provider, UpdateProvider)
+
+    on_exit(fn ->
+      if old,
+        do: Application.put_env(:brussels_wtf, :public_follow_update_provider, old),
+        else: Application.delete_env(:brussels_wtf, :public_follow_update_provider)
+    end)
+
+    response =
+      post(conn, "/feed/updates?lang=fr", %{
+        targets: [
+          %{type: "dossier", id: "collection-dossier"},
+          %{type: "dossier", id: "valid-shaped-but-unpublished"},
+          %{type: "meeting", id: "x"}
+        ]
+      })
+
+    assert %{"updates" => [update]} = json_response(response, 200)
+    assert update["url"] == "/dossiers/collection-dossier?lang=fr#revision-1"
+    refute Map.has_key?(get_session(response), :citizen_id)
+  end
+
+  test "feed and import privacy interface use resolved public locale", %{conn: conn} do
+    assert html_response(get(conn, "/feed?lang=fr"), 200) =~ "Fil personnel"
+    assert html_response(get(recycle(conn), "/feed?lang=nl"), 200) =~ "Persoonlijke feed"
+    assert html_response(get(recycle(conn), "/feed?lang=en"), 200) =~ "do not sync"
+  end
+
   defp management_session(conn) do
     create = post(conn, "/collections", %{})
     create_body = html_response(create, 200)

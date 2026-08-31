@@ -41,6 +41,7 @@ defmodule BrusselsWtfWeb.Router do
     dstar("/companies/:enterprise_number", PublicProfilePage)
     dstar("/people/:id", PublicProfilePage)
     get "/feed", FollowCollectionController, :feed
+    post "/feed/updates", FollowCollectionController, :updates
     post "/collections", FollowCollectionController, :create
     get "/collections/manage-capability", FollowCollectionController, :bootstrap
     post "/collections/manage-capability", FollowCollectionController, :exchange
