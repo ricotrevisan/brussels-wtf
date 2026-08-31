@@ -40,6 +40,12 @@ defmodule BrusselsWtfWeb.Router do
     dstar("/dossiers/:slug", DossierPage)
     dstar("/companies/:enterprise_number", PublicProfilePage)
     dstar("/people/:id", PublicProfilePage)
+    post "/collections", FollowCollectionController, :create
+    get "/collections/:token", FollowCollectionController, :show
+    get "/collections/manage/:secret", FollowCollectionController, :manage
+    patch "/collections/manage/:secret", FollowCollectionController, :update
+    post "/collections/manage/:secret/members", FollowCollectionController, :add
+    delete "/collections/manage/:secret/members", FollowCollectionController, :remove
     post "/dossiers/:slug/links/:link_id/reports", DossierReportController, :create
 
     post "/companies/:enterprise_number/suggestions/:kind", SuggestionController, :create
