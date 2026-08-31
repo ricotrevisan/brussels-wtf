@@ -2,10 +2,33 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
   use BrusselsWtfWeb, :controller
   alias BrusselsWtf.Follow
 
+  @session_key :follow_management_collection_id
+
   def create(conn, _params) do
     case Follow.create_collection() do
-      {:ok, _collection, secret} -> redirect(conn, to: "/collections/manage/#{secret}")
-      _ -> send_resp(conn, 422, "Collection could not be created")
+      {:ok, _collection, secret} ->
+        conn
+        |> private_headers()
+        |> redirect(to: "/collections/manage-capability?secret=" <> URI.encode_www_form(secret))
+
+      _ ->
+        send_resp(conn, 422, "Collection could not be created")
+    end
+  end
+
+  def exchange(conn, _params) do
+    secret = conn.query_string |> URI.decode_query() |> Map.get("secret")
+
+    case Follow.exchange(secret) do
+      {:ok, collection} ->
+        conn
+        |> configure_session(renew: true)
+        |> put_session(@session_key, collection.id)
+        |> private_headers()
+        |> redirect(to: "/collections/manage")
+
+      _ ->
+        conn |> private_headers() |> send_resp(404, "Not found")
     end
   end
 
@@ -16,109 +39,109 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
     end
   end
 
-  def manage(conn, %{"secret" => secret}) do
-    case Follow.manage(secret) do
-      {:ok, collection} -> render_collection(conn, collection, true)
-      _ -> send_resp(conn, 404, "Not found")
+  def manage(conn, _params) do
+    with {:ok, id} <- management_id(conn),
+         {:ok, collection} <- Follow.manage_session(id) do
+      render_collection(conn, collection, true)
+    else
+      _ -> conn |> private_headers() |> send_resp(404, "Not found")
     end
   end
 
-  def update(conn, %{"secret" => secret, "visibility" => visibility}) do
-    case Follow.set_visibility(secret, parse_visibility(visibility)) do
-      {:ok, _} -> redirect(conn, to: "/collections/manage/#{secret}")
-      _ -> send_resp(conn, 422, "Invalid collection change")
+  def update(conn, %{"visibility" => visibility}) do
+    with {:ok, id} <- management_id(conn),
+         {:ok, _} <- Follow.set_visibility_session(id, parse_visibility(visibility)) do
+      conn |> private_headers() |> redirect(to: "/collections/manage")
+    else
+      _ -> conn |> private_headers() |> send_resp(422, "Invalid collection change")
     end
   end
 
-  def add(conn, %{"secret" => secret, "target_type" => type, "target_identifier" => id}) do
-    case Follow.add_member(secret, parse_type(type), id) do
-      {:ok, _} -> redirect(conn, to: "/collections/manage/#{secret}")
-      _ -> send_resp(conn, 422, "This public resource cannot be added")
+  def add(conn, %{"target_type" => type, "target_identifier" => identifier}) do
+    with {:ok, id} <- management_id(conn),
+         {:ok, _} <- Follow.add_member_session(id, parse_type(type), identifier) do
+      conn |> private_headers() |> redirect(to: "/collections/manage")
+    else
+      _ -> conn |> private_headers() |> send_resp(422, "This public resource cannot be added")
     end
   end
 
-  def remove(conn, %{"secret" => secret, "target_type" => type, "target_identifier" => id}) do
-    case Follow.remove_member(secret, parse_type(type), id) do
-      {:ok, _} -> redirect(conn, to: "/collections/manage/#{secret}")
-      _ -> send_resp(conn, 404, "Not found")
+  def remove(conn, %{"target_type" => type, "target_identifier" => identifier}) do
+    with {:ok, id} <- management_id(conn),
+         {:ok, _} <- Follow.remove_member_session(id, parse_type(type), identifier) do
+      conn |> private_headers() |> redirect(to: "/collections/manage")
+    else
+      _ -> conn |> private_headers() |> send_resp(404, "Not found")
+    end
+  end
+
+  defp management_id(conn) do
+    case get_session(conn, @session_key) do
+      id when is_binary(id) -> {:ok, id}
+      _ -> {:error, :not_found}
     end
   end
 
   defp render_collection(conn, collection, management?) do
     conn =
-      if collection.visibility == :public,
-        do: conn,
-        else: put_resp_header(conn, "x-robots-tag", "noindex, nofollow")
+      conn
+      |> put_resp_header("referrer-policy", "no-referrer")
+      |> then(fn conn ->
+        if collection.visibility == :public and not management?,
+          do: conn,
+          else: put_resp_header(conn, "x-robots-tag", "noindex, nofollow")
+      end)
+      |> then(fn conn -> if management?, do: private_headers(conn), else: conn end)
 
     csrf_token = Plug.CSRFProtection.get_csrf_token()
 
     members =
       Enum.map_join(collection.members, "", fn member ->
         remove =
-          if management? do
-            """
-            <form action="members" method="post">
-              <input type="hidden" name="_csrf_token" value="#{csrf_token}">
-              <input type="hidden" name="_method" value="delete">
-              <input type="hidden" name="target_type" value="#{escape(member.target_type)}">
-              <input type="hidden" name="target_identifier" value="#{escape(member.target_identifier)}">
-              <button type="submit">Remove</button>
-            </form>
-            """
-          else
-            ""
-          end
+          if management?,
+            do: """
+              <form action="/collections/manage/members" method="post">
+                <input type="hidden" name="_csrf_token" value="#{csrf_token}"><input type="hidden" name="_method" value="delete">
+                <input type="hidden" name="target_type" value="#{escape(member.target_type)}"><input type="hidden" name="target_identifier" value="#{escape(member.target_identifier)}">
+                <button type="submit">Remove</button>
+              </form>
+            """,
+            else: ""
 
         "<li>#{escape(member.target_type)}: #{escape(member.target_identifier)}#{remove}</li>"
       end)
 
     management =
-      if management? do
-        """
-        <p>Management access</p>
-        <p><a href="/collections/#{escape(collection.view_token)}">Public view</a></p>
-        <form action="" method="post">
-          <input type="hidden" name="_csrf_token" value="#{csrf_token}">
-          <input type="hidden" name="_method" value="patch">
-          <label>Visibility
-            <select name="visibility">
-              #{visibility_options(collection.visibility)}
-            </select>
-          </label>
-          <button type="submit">Change visibility</button>
-        </form>
-        <form action="members" method="post">
-          <input type="hidden" name="_csrf_token" value="#{csrf_token}">
-          <label>Resource type
-            <select name="target_type">
-              <option value="dossier">Dossier</option>
-              <option value="person">Person</option>
-              <option value="legal_entity">Legal entity</option>
-              <option value="commune">Commune</option>
-            </select>
-          </label>
-          <label>Stable public identifier <input name="target_identifier" required></label>
-          <button type="submit">Add public resource</button>
-        </form>
-        """
-      else
-        ""
-      end
+      if management?,
+        do: """
+          <p>Management access</p><p><a href="/collections/#{escape(collection.view_token)}">Public view</a></p>
+          <form action="/collections/manage" method="post"><input type="hidden" name="_csrf_token" value="#{csrf_token}"><input type="hidden" name="_method" value="patch">
+            <label>Visibility <select name="visibility">#{visibility_options(collection.visibility)}</select></label><button type="submit">Change visibility</button>
+          </form>
+          <form action="/collections/manage/members" method="post"><input type="hidden" name="_csrf_token" value="#{csrf_token}">
+            <label>Resource type <select name="target_type"><option value="dossier">Dossier</option><option value="person">Person</option><option value="legal_entity">Legal entity</option><option value="commune">Commune</option></select></label>
+            <label>Stable public identifier <input name="target_identifier" required></label><button type="submit">Add public resource</button>
+          </form>
+        """,
+        else: ""
 
-    html(
-      conn,
-      """
-      <!doctype html><html lang="en"><head><meta name="robots" content="#{if collection.visibility == :public, do: "index, follow", else: "noindex, nofollow"}"><title>#{escape(collection.title)}</title></head><body><main><h1>#{escape(collection.title)}</h1>#{management}<ul>#{members}</ul><p>This collection contains public resources only. It has no read state or notifications.</p></main></body></html>
-      """
-    )
+    html(conn, """
+    <!doctype html><html lang="en"><head><meta name="robots" content="#{if collection.visibility == :public and not management?, do: "index, follow", else: "noindex, nofollow"}"><title>#{escape(collection.title)}</title></head><body><main><h1>#{escape(collection.title)}</h1>#{management}<ul>#{members}</ul><p>This collection contains public resources only. It has no read state or notifications.</p></main></body></html>
+    """)
   end
 
-  defp visibility_options(current) do
-    Enum.map_join([:public, :unlisted, :private], fn visibility ->
-      selected = if visibility == current, do: " selected", else: ""
-      "<option value=\"#{visibility}\"#{selected}>#{visibility}</option>"
-    end)
-  end
+  defp private_headers(conn),
+    do:
+      conn
+      |> put_resp_header("referrer-policy", "no-referrer")
+      |> put_resp_header("cache-control", "no-store")
+      |> put_resp_header("x-robots-tag", "noindex, nofollow")
+
+  defp visibility_options(current),
+    do:
+      Enum.map_join([:public, :unlisted, :private], fn v ->
+        "<option value=\"#{v}\"#{if v == current, do: " selected", else: ""}>#{v}</option>"
+      end)
 
   defp escape(value),
     do: value |> to_string() |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string()

@@ -1,140 +1,196 @@
 defmodule BrusselsWtf.Follow do
   @moduledoc "Anonymous follow collections with separate view and management capabilities."
-  import Ecto.Query
-  alias BrusselsWtf.{Repo, Follow.Collection, Follow.Member}
-  @year 365 * 24 * 60 * 60
 
-  def create_collection do
+  use Ash.Domain, otp_app: :brussels_wtf
+
+  require Ash.Query
+  alias BrusselsWtf.Follow.{Collection, Member, Target, TargetEligibility}
+
+  resources do
+    resource Collection
+    resource Member
+  end
+
+  def create_collection(now \\ Application.fetch_env!(:brussels_wtf, :clock).utc_now()) do
     view = token()
     secret = token()
-    now = DateTime.utc_now()
 
-    changes = %{
-      view_token: view,
-      management_secret_hash: hash(secret),
-      visibility: :unlisted,
-      title: "Brussels follow collection",
-      last_used_at: now
-    }
+    result =
+      Collection
+      |> Ash.Changeset.for_create(:create, %{
+        view_token: view,
+        management_secret_hash: hash(secret),
+        title: "Brussels follow collection",
+        last_used_at: now
+      })
+      |> Ash.create(authorize?: true, domain: __MODULE__)
 
-    with {:ok, collection} <- %Collection{} |> Ecto.Changeset.change(changes) |> Repo.insert() do
-      {:ok, collection, secret}
+    case result do
+      {:ok, collection} -> {:ok, collection, secret}
+      error -> error
     end
   end
 
   def view(view_token) do
-    case Repo.one(from c in Collection, where: c.view_token == ^view_token, preload: :members) do
-      %{visibility: :private} -> {:error, :not_found}
-      nil -> {:error, :not_found}
-      collection -> {:ok, collection}
+    result =
+      Collection
+      |> Ash.Query.for_read(:by_view_token, %{view_token: view_token})
+      |> Ash.read_one(authorize?: true, domain: __MODULE__)
+      |> not_found()
+
+    with {:ok, collection} <- result do
+      Ash.load(collection, :members,
+        actor: actor(collection.id),
+        authorize?: true,
+        domain: __MODULE__
+      )
     end
   end
 
-  def manage(secret) do
-    case Repo.one(
-           from c in Collection,
-             where: c.management_secret_hash == ^hash(secret),
-             preload: :members
-         ) do
-      nil -> {:error, :not_found}
-      collection -> {:ok, collection}
+  def exchange(secret, now \\ Application.fetch_env!(:brussels_wtf, :clock).utc_now()) do
+    with {:ok, collection} <- capability_collection(secret) do
+      update(collection, :consume_capability, %{last_used_at: now}, nil)
     end
   end
 
-  def set_visibility(secret, visibility) when visibility in [:public, :unlisted, :private] do
-    with {:ok, c} <- manage(secret),
-         do: c |> Ecto.Changeset.change(visibility: visibility) |> Repo.update()
+  def manage_session(
+        collection_id,
+        now \\ Application.fetch_env!(:brussels_wtf, :clock).utc_now()
+      ) do
+    actor = actor(collection_id)
+
+    with {:ok, collection} <- managed_collection(collection_id, actor),
+         {:ok, touched} <- update(collection, :touch, %{last_used_at: now}, actor) do
+      Ash.load(touched, :members, actor: actor, authorize?: true, domain: __MODULE__)
+    end
   end
 
-  def set_visibility(_, _), do: {:error, :invalid_visibility}
+  def set_visibility_session(
+        collection_id,
+        visibility,
+        now \\ Application.fetch_env!(:brussels_wtf, :clock).utc_now()
+      )
 
-  def add_member(secret, type, identifier)
-      when type in [:dossier, :person, :legal_entity, :commune] do
-    with {:ok, c} <- manage(secret), true <- eligible?(type, identifier) do
-      %Member{}
-      |> Ecto.Changeset.change(
-        collection_id: c.id,
-        target_type: type,
-        target_identifier: identifier
-      )
-      |> Repo.insert(
-        on_conflict: :nothing,
-        conflict_target: [:collection_id, :target_type, :target_identifier]
-      )
-      |> case do
-        {:ok, _} -> regenerate(c.id)
-        error -> error
-      end
+  def set_visibility_session(collection_id, visibility, now)
+      when visibility in [:public, :unlisted, :private] do
+    actor = actor(collection_id)
+
+    with {:ok, collection} <- managed_collection(collection_id, actor) do
+      update(collection, :set_visibility, %{visibility: visibility, last_used_at: now}, actor)
+    end
+  end
+
+  def set_visibility_session(_, _, _), do: {:error, :invalid_visibility}
+
+  def add_member_session(
+        collection_id,
+        type,
+        identifier,
+        now \\ Application.fetch_env!(:brussels_wtf, :clock).utc_now()
+      ) do
+    actor = actor(collection_id)
+
+    with {:ok, target} <- Target.new(type, identifier),
+         true <- TargetEligibility.eligible?(target),
+         {:ok, collection} <- managed_collection(collection_id, actor),
+         {:ok, _member} <- add_member(collection.id, target, actor),
+         {:ok, updated} <- regenerate(collection, actor, now) do
+      {:ok, updated}
     else
       false -> {:error, :ineligible}
       error -> error
     end
   end
 
-  def add_member(_, _, _), do: {:error, :ineligible}
+  def remove_member_session(
+        collection_id,
+        type,
+        identifier,
+        now \\ Application.fetch_env!(:brussels_wtf, :clock).utc_now()
+      ) do
+    actor = actor(collection_id)
 
-  def remove_member(secret, type, identifier) do
-    with {:ok, c} <- manage(secret) do
-      Repo.delete_all(
-        from m in Member,
-          where:
-            m.collection_id == ^c.id and m.target_type == ^type and
-              m.target_identifier == ^identifier
-      )
-
-      regenerate(c.id)
+    with {:ok, target} <- Target.new(type, identifier),
+         {:ok, collection} <- managed_collection(collection_id, actor),
+         :ok <- remove_members(collection.id, target, actor),
+         {:ok, updated} <- regenerate(collection, actor, now) do
+      {:ok, updated}
     end
   end
 
-  def expire_unused(now \\ DateTime.utc_now()) do
-    cutoff = DateTime.add(now, -@year, :second)
-    {count, _} = Repo.delete_all(from c in Collection, where: c.last_used_at < ^cutoff)
-    count
+  def expire_unused(now \\ Application.fetch_env!(:brussels_wtf, :clock).utc_now()) do
+    Collection
+    |> Ash.read!(authorize?: false, domain: __MODULE__)
+    |> Enum.filter(&(DateTime.compare(DateTime.shift(&1.last_used_at, month: 12), now) != :gt))
+    |> Enum.count(fn collection ->
+      Ash.destroy(collection, action: :expire, authorize?: true, domain: __MODULE__) == :ok
+    end)
   end
 
-  defp regenerate(id) do
-    c = Repo.get!(Collection, id) |> Repo.preload(:members, force: true)
+  defp capability_collection(secret) when is_binary(secret) do
+    Collection
+    |> Ash.Query.for_read(:exchange_capability, %{management_secret_hash: hash(secret)})
+    |> Ash.read_one(authorize?: true, domain: __MODULE__)
+    |> not_found()
+  end
+
+  defp capability_collection(_), do: {:error, :not_found}
+
+  defp managed_collection(id, actor) do
+    Collection
+    |> Ash.Query.for_read(:manage, %{id: id})
+    |> Ash.read_one(actor: actor, authorize?: true, domain: __MODULE__)
+    |> not_found()
+  end
+
+  defp add_member(collection_id, target, actor) do
+    Member
+    |> Ash.Changeset.for_create(:add, %{
+      collection_id: collection_id,
+      target_type: target.type,
+      target_identifier: target.identifier
+    })
+    |> Ash.create(actor: actor, authorize?: true, domain: __MODULE__)
+  end
+
+  defp remove_members(collection_id, target, actor) do
+    Member
+    |> Ash.Query.filter(
+      collection_id == ^collection_id and target_type == ^target.type and
+        target_identifier == ^target.identifier
+    )
+    |> Ash.read!(actor: actor, authorize?: true, domain: __MODULE__)
+    |> Enum.each(&Ash.destroy!(&1, actor: actor, authorize?: true, domain: __MODULE__))
+
+    :ok
+  end
+
+  defp regenerate(collection, actor, now) do
+    members =
+      Member
+      |> Ash.Query.filter(collection_id == ^collection.id)
+      |> Ash.read!(actor: actor, authorize?: true, domain: __MODULE__)
+
+    count = length(members)
 
     title =
-      case c.members do
-        [] ->
-          "Brussels follow collection"
+      if count == 0,
+        do: "Brussels follow collection",
+        else: "Following #{count} public #{if count == 1, do: "resource", else: "resources"}"
 
-        ms ->
-          "Following #{length(ms)} public #{if length(ms) == 1, do: "resource", else: "resources"}"
-      end
-
-    c |> Ecto.Changeset.change(title: title, last_used_at: DateTime.utc_now()) |> Repo.update()
+    update(collection, :set_title, %{title: title, last_used_at: now}, actor)
   end
 
-  defp eligible?(:dossier, slug),
-    do:
-      Repo.exists?(
-        from d in "dossiers", where: field(d, :slug) == ^slug and field(d, :status) == "active"
-      )
-
-  defp eligible?(:commune, slug),
-    do: Repo.exists?(from c in "communes", where: field(c, :slug) == ^slug)
-
-  defp eligible?(:legal_entity, number),
-    do:
-      Repo.exists?(
-        from e in "legal_entities",
-          where: field(e, :enterprise_number) == ^number and field(e, :status) == "active"
-      )
-
-  defp eligible?(:person, id) do
-    with {:ok, uuid} <- Ecto.UUID.cast(id) do
-      Repo.exists?(
-        from p in "people",
-          where: field(p, :id) == type(^uuid, :binary_id) and field(p, :status) == "active"
-      ) and
-        BrusselsWtf.Identity.PublicProjection.ever_public_person?(uuid)
-    else
-      _ -> false
-    end
+  defp update(record, action, attrs, actor) do
+    record
+    |> Ash.Changeset.for_update(action, attrs)
+    |> Ash.update(actor: actor, authorize?: true, domain: __MODULE__)
   end
 
+  defp not_found({:ok, nil}), do: {:error, :not_found}
+  defp not_found({:error, %Ash.Error.Forbidden{}}), do: {:error, :not_found}
+  defp not_found(result), do: result
+  defp actor(id), do: %{collection_id: id}
   defp token, do: 32 |> :crypto.strong_rand_bytes() |> Base.url_encode64(padding: false)
   defp hash(secret), do: :crypto.hash(:sha256, secret)
 end

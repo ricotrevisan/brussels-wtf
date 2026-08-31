@@ -41,11 +41,12 @@ defmodule BrusselsWtfWeb.Router do
     dstar("/companies/:enterprise_number", PublicProfilePage)
     dstar("/people/:id", PublicProfilePage)
     post "/collections", FollowCollectionController, :create
+    get "/collections/manage-capability", FollowCollectionController, :exchange
+    get "/collections/manage", FollowCollectionController, :manage
     get "/collections/:token", FollowCollectionController, :show
-    get "/collections/manage/:secret", FollowCollectionController, :manage
-    patch "/collections/manage/:secret", FollowCollectionController, :update
-    post "/collections/manage/:secret/members", FollowCollectionController, :add
-    delete "/collections/manage/:secret/members", FollowCollectionController, :remove
+    patch "/collections/manage", FollowCollectionController, :update
+    post "/collections/manage/members", FollowCollectionController, :add
+    delete "/collections/manage/members", FollowCollectionController, :remove
     post "/dossiers/:slug/links/:link_id/reports", DossierReportController, :create
 
     post "/companies/:enterprise_number/suggestions/:kind", SuggestionController, :create

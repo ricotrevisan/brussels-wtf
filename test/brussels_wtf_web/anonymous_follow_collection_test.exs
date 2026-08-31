@@ -1,6 +1,7 @@
 defmodule BrusselsWtfWeb.AnonymousFollowCollectionTest do
   use BrusselsWtfWeb.ConnCase, async: false
-  alias BrusselsWtf.{Council, Follow, Repo}
+  import ExUnit.CaptureLog
+  alias BrusselsWtf.{Council, Follow}
   alias BrusselsWtf.Test.PublicProfileFixture
 
   setup do
@@ -31,78 +32,168 @@ defmodule BrusselsWtfWeb.AnonymousFollowCollectionTest do
     }
   end
 
-  test "browser manages every allowed public resource while the view capability is read-only", %{
+  test "one-time management capability becomes a clean secure session", %{conn: conn} do
+    create = post(conn, "/collections", %{})
+    [capability_url] = get_resp_header(create, "location")
+    %URI{query: query} = URI.parse(capability_url)
+    secret = URI.decode_query(query)["secret"]
+    assert get_resp_header(create, "referrer-policy") == ["no-referrer"]
+    assert get_resp_header(create, "cache-control") == ["no-store"]
+
+    log =
+      capture_log(fn ->
+        exchange = get(recycle(create), capability_url)
+        assert redirected_to(exchange) == "/collections/manage"
+        refute inspect(exchange.resp_headers) =~ secret
+        refute exchange.resp_body =~ secret
+        assert get_resp_header(exchange, "referrer-policy") == ["no-referrer"]
+        assert get_resp_header(exchange, "cache-control") == ["no-store"]
+
+        assert html_response(get(recycle(exchange), "/collections/manage"), 200) =~
+                 "Management access"
+      end)
+
+    refute log =~ secret
+    assert response(get(recycle(create), capability_url), 404)
+  end
+
+  test "browser manages every eligible public resource through the clean URL", %{
     conn: conn,
     targets: targets
   } do
-    response = post(conn, "/collections", %{})
-    [management_url] = get_resp_header(response, "location")
-    secret = management_url |> String.split("/") |> List.last()
-    {:ok, collection} = Follow.manage(secret)
-    public_url = "/collections/#{collection.view_token}"
-
-    management_html = html_response(get(conn, management_url), 200)
-    assert management_html =~ ~s(<form action="" method="post")
-    assert management_html =~ ~s(<form action="members" method="post")
-    refute management_html =~ secret
+    conn = management_session(conn)
+    management_html = html_response(get(conn, "/collections/manage"), 200)
+    refute management_html =~ "secret="
     refute management_html =~ "textarea"
 
-    Enum.each(targets, fn {type, identifier} ->
-      assert redirected_to(
-               post(conn, management_url <> "/members", %{
-                 target_type: type,
-                 target_identifier: identifier
-               })
-             ) == management_url
-    end)
+    conn =
+      Enum.reduce(targets, conn, fn {type, identifier}, conn ->
+        response =
+          post(recycle(conn), "/collections/manage/members", %{
+            target_type: type,
+            target_identifier: to_string(identifier)
+          })
 
-    public_html = html_response(get(conn, public_url), 200)
-    Enum.each(targets, fn {_type, identifier} -> assert public_html =~ to_string(identifier) end)
+        assert redirected_to(response) == "/collections/manage"
+        response
+      end)
+
+    manage = get(recycle(conn), "/collections/manage")
+
+    public_url =
+      manage.resp_body |> then(&Regex.run(~r/href="(\/collections\/[^"]+)"/, &1)) |> Enum.at(1)
+
+    public_html = html_response(get(recycle(manage), public_url), 200)
+    Enum.each(targets, fn {_, identifier} -> assert public_html =~ to_string(identifier) end)
     refute public_html =~ "Management access"
-    refute public_html =~ "notifications" <> " history"
 
-    # A public view capability cannot mutate membership or visibility.
+    conn =
+      Enum.reduce(targets, manage, fn {type, identifier}, conn ->
+        response =
+          delete(recycle(conn), "/collections/manage/members", %{
+            target_type: type,
+            target_identifier: to_string(identifier)
+          })
+
+        assert redirected_to(response) == "/collections/manage"
+        response
+      end)
+
+    refute html_response(get(recycle(conn), public_url), 200) =~ "collection-dossier"
+  end
+
+  test "view, invalid session, and another collection cannot mutate", %{
+    conn: conn,
+    targets: [{type, id} | _]
+  } do
+    owner_a = management_session(conn)
+    owner_b = management_session(build_conn())
+
+    assert redirected_to(
+             post(recycle(owner_a), "/collections/manage/members", %{
+               target_type: type,
+               target_identifier: to_string(id)
+             })
+           ) == "/collections/manage"
+
+    refute html_response(get(recycle(owner_b), "/collections/manage"), 200) =~ to_string(id)
+
     assert response(
-             post(conn, "/collections/manage/#{collection.view_token}/members", %{
-               target_type: "commune",
-               target_identifier: "ixelles"
+             post(build_conn(), "/collections/manage/members", %{
+               target_type: type,
+               target_identifier: to_string(id)
              }),
              422
            )
-
-    assert response(
-             patch(conn, "/collections/manage/#{collection.view_token}", %{visibility: "public"}),
-             422
-           )
-
-    assert redirected_to(patch(conn, management_url, %{visibility: "public"})) == management_url
-    assert html_response(get(conn, public_url), 200) =~ to_string(Enum.at(targets, 1) |> elem(1))
-    assert redirected_to(patch(conn, management_url, %{visibility: "unlisted"})) == management_url
-    unlisted = get(conn, public_url)
-    assert html_response(unlisted, 200) =~ "collection-dossier"
-    assert get_resp_header(unlisted, "x-robots-tag") == ["noindex, nofollow"]
-    assert redirected_to(patch(conn, management_url, %{visibility: "private"})) == management_url
-    assert response(get(conn, public_url), 404)
-
-    assert redirected_to(patch(conn, management_url, %{visibility: "unlisted"})) == management_url
-
-    Enum.each(targets, fn {type, identifier} ->
-      assert redirected_to(
-               delete(conn, management_url <> "/members", %{
-                 target_type: type,
-                 target_identifier: to_string(identifier)
-               })
-             ) == management_url
-    end)
-
-    refute html_response(get(conn, public_url), 200) =~ "collection-dossier"
   end
 
-  test "unused anonymous collections expire deterministically" do
-    {:ok, collection, _secret} = Follow.create_collection()
-    old = DateTime.add(DateTime.utc_now(), -(366 * 24 * 60 * 60), :second)
-    collection |> Ecto.Changeset.change(last_used_at: old) |> Repo.update!()
-    assert Follow.expire_unused(DateTime.utc_now()) == 1
-    refute Repo.get(BrusselsWtf.Follow.Collection, collection.id)
+  test "private and unverified targets fail closed", %{conn: conn} do
+    conn = management_session(conn)
+
+    for {type, id} <- [
+          {"meeting", "x"},
+          {"topic", "x"},
+          {"person", Ecto.UUID.generate()},
+          {"legal_entity", "0123456749-not-canonical"},
+          {"dossier", "missing"},
+          {"commune", "missing"}
+        ] do
+      assert response(
+               post(recycle(conn), "/collections/manage/members", %{
+                 target_type: type,
+                 target_identifier: id
+               }),
+               422
+             )
+    end
+  end
+
+  test "visibility fails closed and every management use refreshes last_used_at", %{conn: conn} do
+    conn = management_session(conn)
+    first = managed_collection(conn)
+    later = DateTime.add(first.last_used_at, 60, :second)
+    assert {:ok, touched} = Follow.manage_session(first.id, later)
+    assert touched.last_used_at == later
+
+    assert redirected_to(patch(recycle(conn), "/collections/manage", %{visibility: "private"})) ==
+             "/collections/manage"
+
+    assert response(get(recycle(conn), "/collections/#{first.view_token}"), 404)
+  end
+
+  test "calendar expiry includes the exact twelve-month boundary" do
+    now = ~U[2028-02-29 12:00:00.000000Z]
+    anniversary = ~U[2029-02-28 12:00:00.000000Z]
+    {:ok, before, _} = Follow.create_collection(DateTime.add(now, 1, :day))
+    {:ok, boundary, _} = Follow.create_collection(now)
+    assert Follow.expire_unused(anniversary) == 1
+    assert {:error, :not_found} = Follow.manage_session(boundary.id, anniversary)
+    assert {:ok, _} = Follow.manage_session(before.id, anniversary)
+  end
+
+  test "unsafe mutation without CSRF is rejected" do
+    assert_raise Plug.CSRFProtection.InvalidCSRFTokenError, fn ->
+      Plug.Test.conn(
+        :post,
+        "/collections/manage/members",
+        "target_type=commune&target_identifier=ixelles"
+      )
+      |> Plug.Conn.put_req_header("content-type", "application/x-www-form-urlencoded")
+      |> BrusselsWtfWeb.Endpoint.call([])
+    end
+  end
+
+  defp management_session(conn) do
+    create = post(conn, "/collections", %{})
+    exchange = get(recycle(create), redirected_to(create))
+    assert redirected_to(exchange) == "/collections/manage"
+    recycle(exchange)
+  end
+
+  defp managed_collection(conn) do
+    html = html_response(get(recycle(conn), "/collections/manage"), 200)
+    [_, token] = Regex.run(~r/href="\/collections\/([^"]+)"/, html)
+    {:ok, collection} = Follow.view(token)
+    collection
   end
 end
