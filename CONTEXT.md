@@ -128,6 +128,14 @@ A public open-ended text submission proposing missing ownership information. It 
 
 A public open-ended text submission from a company or person page. It follows the same private review workflow as an ownership suggestion. Approved identity merges, profile corrections, and relationship changes retain audit history and redirect retired duplicate profiles.
 
+## Follow collection
+
+A named list of public dossiers, people, legal entities, and communes that can be shared independently of whether any visitor follows its members. A collection has public, unlisted, or private visibility. It never contains a visitor's read state or notification history.
+
+## Personal follow feed
+
+A citizen's private set of followed public resources together with updates and read state. A citizen may import selected members of a follow collection into this feed without changing or claiming the collection.
+
 ## Evidence
 
 A source-backed record supporting or contradicting a factual claim. Evidence identifies its source, relevant excerpt or location, retrieval time, and applicable time period.
