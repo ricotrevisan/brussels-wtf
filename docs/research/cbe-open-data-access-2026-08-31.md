@@ -46,7 +46,9 @@ No licence clause grants indefinite retention of stale facts or requires deletio
 
 ## Identity and fail-closed rules
 
-A Belgian legal entity resolves automatically only from a normalized **ten-digit enterprise number whose Belgian check digits validate**: strip permitted presentation punctuation, require ten digits, require the first digit to be `0` or `1`, and require the final two digits to equal `97 - (first eight digits mod 97)` (with `97` for a zero remainder). Preserve the supplied formatted value and evidence. Names, phonetic names, addresses, postcodes, establishments, and model similarity are search hints only and never identity keys.
+**Source facts:** the CBE cookbook defines `EntityNumber` in the dotted formats `9999.999.999` or `9.999.999.999` and uses it to relate the Open Data files.[^cookbook] OpenPeppol's official Belgian enterprise-number validation rule requires exactly ten digits and its Belgian `mod97-0208` check.[^peppol-rule]
+
+**Project policy:** a Belgian legal entity resolves automatically only from that enterprise number after removing the cookbook's presentation dots and validating the resulting ten digits with the OpenPeppol rule. Preserve the source value and evidence. Do not silently repair a number or infer one. Names, phonetic names, addresses, postcodes, establishments, and model similarity are search hints only and never identity keys. This is deliberately stricter than accepting a value merely because it occupies the CBE field.
 
 * Missing, malformed, or invalid enterprise number: publish no entity/link; create a review case.
 * Duplicate/redirect: Public Search says a closed duplicate number redirects to the retained number.[^public-search] Never silently merge. Preserve both identifiers and the redirect evidence, then require a source-supported alias/redirect record or review.
@@ -66,3 +68,4 @@ Public Search is for targeted, entity-by-entity human verification links only. I
 [^catalogue]: FPS Economy, [Catalogue of reusable CBE Open Data fields](https://economie.fgov.be/sites/default/files/Files/Entreprises/BCE/Catalogue-des-donnees-reutilisables-BCE-opendata.pdf) (field allowlist and active-data scope; retrieved 2026-08-31).
 [^cookbook]: FPS Economy, [CBE Open Data cookbook R018.00](https://economie.fgov.be/sites/default/files/Files/Entreprises/BCE/Cookbook-BCE-Open-Data.pdf) (access, daily/31-day lifecycle, no history, file/update semantics, schema; retrieved 2026-08-31).
 [^public-search]: FPS Economy, [CBE Public Search](https://economie.fgov.be/fr/themes/entreprises/banque-carrefour-des/services-pour-tous/consultation-et-recherche-de/banque-carrefour-des) (human query scope, next-day data, duplicate redirects, and explicit reuse/systematic-download prohibition; page updated 7 November 2025).
+[^peppol-rule]: OpenPeppol, [PEPPOL-COMMON-R043: Belgian enterprise number format](https://docs.peppol.eu/poacc/billing/3.0/rules/ubl-peppol/PEPPOL-COMMON-R043/) (primary validation specification requiring ten digits and the `mod97-0208` check; accessed 2026-08-31).
