@@ -41,7 +41,8 @@ defmodule BrusselsWtfWeb.Router do
     dstar("/companies/:enterprise_number", PublicProfilePage)
     dstar("/people/:id", PublicProfilePage)
     post "/collections", FollowCollectionController, :create
-    get "/collections/manage-capability", FollowCollectionController, :exchange
+    get "/collections/manage-capability", FollowCollectionController, :bootstrap
+    post "/collections/manage-capability", FollowCollectionController, :exchange
     get "/collections/manage", FollowCollectionController, :manage
     get "/collections/:token", FollowCollectionController, :show
     patch "/collections/manage", FollowCollectionController, :update

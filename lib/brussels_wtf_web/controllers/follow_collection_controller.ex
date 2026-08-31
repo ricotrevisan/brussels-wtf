@@ -7,17 +7,45 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
   def create(conn, _params) do
     case Follow.create_collection() do
       {:ok, _collection, secret} ->
+        management_url =
+          "/collections/manage-capability#capability=" <> URI.encode_www_form(secret)
+
         conn
         |> private_headers()
-        |> redirect(to: "/collections/manage-capability?secret=" <> URI.encode_www_form(secret))
+        |> html("""
+        <!doctype html><html lang="en"><head><meta name="referrer" content="no-referrer"><meta name="robots" content="noindex, nofollow"><title>Collection created</title></head><body>
+        <main><h1>Collection created</h1><p>Save this management link. It is the only way to recover management access.</p><p><a id="management-link" href="#{management_url}">Manage collection</a></p></main>
+        </body></html>
+        """)
 
       _ ->
         send_resp(conn, 422, "Collection could not be created")
     end
   end
 
+  def bootstrap(conn, _params) do
+    csrf = Plug.CSRFProtection.get_csrf_token()
+
+    conn
+    |> private_headers()
+    |> html("""
+    <!doctype html><html lang="en"><head><meta name="referrer" content="no-referrer"><meta name="robots" content="noindex, nofollow"><title>Open collection management</title></head><body>
+    <main><p>Opening collection management…</p></main>
+    <script>
+    (() => {
+      const capability = new URLSearchParams(location.hash.slice(1)).get("capability");
+      history.replaceState(null, "", location.pathname);
+      if (!capability) { document.querySelector("p").textContent = "Invalid management link"; return; }
+      fetch(location.pathname, {method: "POST", credentials: "same-origin", headers: {"x-csrf-token": "#{csrf}", "x-follow-capability": capability}})
+        .then(response => { if (!response.ok) throw new Error("invalid"); location.replace("/collections/manage"); })
+        .catch(() => { document.querySelector("p").textContent = "Invalid management link"; });
+    })();
+    </script></body></html>
+    """)
+  end
+
   def exchange(conn, _params) do
-    secret = conn.query_string |> URI.decode_query() |> Map.get("secret")
+    secret = conn |> get_req_header("x-follow-capability") |> List.first()
 
     case Follow.exchange(secret) do
       {:ok, collection} ->
@@ -25,7 +53,7 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
         |> configure_session(renew: true)
         |> put_session(@session_key, collection.id)
         |> private_headers()
-        |> redirect(to: "/collections/manage")
+        |> send_resp(204, "")
 
       _ ->
         conn |> private_headers() |> send_resp(404, "Not found")

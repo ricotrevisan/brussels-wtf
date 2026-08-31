@@ -38,12 +38,6 @@ defmodule BrusselsWtf.Follow.Collection do
       prepare build(load: [:members])
     end
 
-    update :consume_capability do
-      accept [:last_used_at]
-      require_atomic? false
-      change set_attribute(:management_secret_hash, nil)
-    end
-
     update :touch do
       accept [:last_used_at]
       require_atomic? false
@@ -65,8 +59,12 @@ defmodule BrusselsWtf.Follow.Collection do
   end
 
   policies do
-    policy action([:create, :by_view_token, :exchange_capability, :consume_capability, :expire]) do
+    policy action([:create, :by_view_token, :exchange_capability]) do
       authorize_if always()
+    end
+
+    policy action(:expire) do
+      authorize_if actor_attribute_equals(:role, :maintenance)
     end
 
     policy action([:manage, :touch, :set_visibility, :set_title]) do
@@ -77,7 +75,7 @@ defmodule BrusselsWtf.Follow.Collection do
   attributes do
     uuid_v7_primary_key :id
     attribute :view_token, :string, allow_nil?: false, public?: true
-    attribute :management_secret_hash, :binary, sensitive?: true
+    attribute :management_secret_hash, :binary, allow_nil?: false, sensitive?: true
 
     attribute :visibility, :atom do
       allow_nil? false

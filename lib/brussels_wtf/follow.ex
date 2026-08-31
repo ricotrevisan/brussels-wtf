@@ -49,7 +49,7 @@ defmodule BrusselsWtf.Follow do
 
   def exchange(secret, now \\ Application.fetch_env!(:brussels_wtf, :clock).utc_now()) do
     with {:ok, collection} <- capability_collection(secret) do
-      update(collection, :consume_capability, %{last_used_at: now}, nil)
+      update(collection, :touch, %{last_used_at: now}, actor(collection.id))
     end
   end
 
@@ -123,7 +123,12 @@ defmodule BrusselsWtf.Follow do
     |> Ash.read!(authorize?: false, domain: __MODULE__)
     |> Enum.filter(&(DateTime.compare(DateTime.shift(&1.last_used_at, month: 12), now) != :gt))
     |> Enum.count(fn collection ->
-      Ash.destroy(collection, action: :expire, authorize?: true, domain: __MODULE__) == :ok
+      Ash.destroy(collection,
+        action: :expire,
+        actor: %{role: :maintenance},
+        authorize?: true,
+        domain: __MODULE__
+      ) == :ok
     end)
   end
 

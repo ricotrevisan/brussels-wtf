@@ -5,7 +5,7 @@ defmodule BrusselsWtf.Repo.Migrations.CreateFollowCollections do
     create table(:follow_collections, primary_key: false) do
       add :id, :uuid, primary_key: true
       add :view_token, :text, null: false
-      add :management_secret_hash, :binary
+      add :management_secret_hash, :binary, null: false
       add :visibility, :text, null: false, default: "unlisted"
       add :title, :text, null: false
       add :last_used_at, :utc_datetime_usec, null: false

@@ -22,7 +22,24 @@ defmodule BrusselsWtfWeb.AnonymousFollowCollectionTest do
         localized_titles: %{}
       })
 
+    unpublished_person =
+      BrusselsWtf.Identity.record_person!(%{
+        legal_name: "Unpublished Collection Person",
+        explicit_identifier: "private-collection-person",
+        resolution_basis: :explicit_identifier,
+        corroborating_facts: %{}
+      })
+
+    unpublished_company =
+      PublicProfileFixture.company!(%{
+        enterprise_number: "0123456848",
+        release_key: "unpublished-cbe",
+        sha256: "not-a-public-checksum"
+      })
+
     %{
+      unpublished_person: unpublished_person,
+      unpublished_company: unpublished_company,
       targets: [
         {"dossier", dossier.slug},
         {"person", person.id},
@@ -32,29 +49,61 @@ defmodule BrusselsWtfWeb.AnonymousFollowCollectionTest do
     }
   end
 
-  test "one-time management capability becomes a clean secure session", %{conn: conn} do
+  test "fragment management capability is reusable and becomes a clean secure session", %{
+    conn: conn
+  } do
     create = post(conn, "/collections", %{})
-    [capability_url] = get_resp_header(create, "location")
-    %URI{query: query} = URI.parse(capability_url)
-    secret = URI.decode_query(query)["secret"]
+    create_body = html_response(create, 200)
+    saved_url = Regex.run(~r/id="management-link" href="([^"]+)"/, create_body) |> Enum.at(1)
+    assert get_resp_header(create, "location") == []
+    %URI{path: bootstrap_path, fragment: "capability=" <> encoded_secret} = URI.parse(saved_url)
+    secret = URI.decode_www_form(encoded_secret)
+    refute saved_url =~ "?"
     assert get_resp_header(create, "referrer-policy") == ["no-referrer"]
-    assert get_resp_header(create, "cache-control") == ["no-store"]
 
     log =
       capture_log(fn ->
-        exchange = get(recycle(create), capability_url)
-        assert redirected_to(exchange) == "/collections/manage"
-        refute inspect(exchange.resp_headers) =~ secret
-        refute exchange.resp_body =~ secret
+        page = get(recycle(create), bootstrap_path)
+        body = html_response(page, 200)
+        refute page.request_path =~ secret
+        refute body =~ secret
+        assert body =~ "history.replaceState"
+        assert body =~ ~s(credentials: "same-origin")
+        csrf = Regex.run(~r/"x-csrf-token": "([^"]+)"/, body) |> Enum.at(1)
+
+        exchange =
+          page
+          |> recycle()
+          |> put_req_header("x-csrf-token", csrf)
+          |> put_req_header("x-follow-capability", secret)
+          |> post(bootstrap_path, %{})
+
+        assert response(exchange, 204) == ""
         assert get_resp_header(exchange, "referrer-policy") == ["no-referrer"]
-        assert get_resp_header(exchange, "cache-control") == ["no-store"]
 
         assert html_response(get(recycle(exchange), "/collections/manage"), 200) =~
+                 "Management access"
+
+        # A saved fragment URL restores management after the session cookie is lost.
+        second_page = get(build_conn(), bootstrap_path)
+
+        second_csrf =
+          Regex.run(~r/"x-csrf-token": "([^"]+)"/, second_page.resp_body) |> Enum.at(1)
+
+        restored =
+          second_page
+          |> recycle()
+          |> put_req_header("x-csrf-token", second_csrf)
+          |> put_req_header("x-follow-capability", secret)
+          |> post(bootstrap_path, %{})
+
+        assert response(restored, 204) == ""
+
+        assert html_response(get(recycle(restored), "/collections/manage"), 200) =~
                  "Management access"
       end)
 
     refute log =~ secret
-    assert response(get(recycle(create), capability_url), 404)
   end
 
   test "browser manages every eligible public resource through the clean URL", %{
@@ -127,13 +176,19 @@ defmodule BrusselsWtfWeb.AnonymousFollowCollectionTest do
            )
   end
 
-  test "private and unverified targets fail closed", %{conn: conn} do
+  test "private and unverified targets fail closed", %{
+    conn: conn,
+    unpublished_person: person,
+    unpublished_company: company
+  } do
     conn = management_session(conn)
 
     for {type, id} <- [
           {"meeting", "x"},
           {"topic", "x"},
           {"person", Ecto.UUID.generate()},
+          {"person", person.id},
+          {"legal_entity", company.enterprise_number},
           {"legal_entity", "0123456749-not-canonical"},
           {"dossier", "missing"},
           {"commune", "missing"}
@@ -171,6 +226,25 @@ defmodule BrusselsWtfWeb.AnonymousFollowCollectionTest do
     assert {:ok, _} = Follow.manage_session(before.id, anniversary)
   end
 
+  test "Ash policies deny generic reads and require system authority for expiry" do
+    {:ok, collection, _secret} = Follow.create_collection(~U[2027-01-01 00:00:00.000000Z])
+
+    assert {:error, %Ash.Error.Forbidden{}} =
+             BrusselsWtf.Follow.Collection
+             |> Ash.Query.for_read(:read)
+             |> Ash.read(authorize?: true, domain: Follow)
+
+    assert {:error, %Ash.Error.Forbidden{}} =
+             Ash.destroy(collection, action: :expire, authorize?: true, domain: Follow)
+
+    assert Follow.expire_unused(~U[2028-01-01 00:00:00.000000Z]) == 1
+  end
+
+  test "capability validation is enforced by the Ash exchange action" do
+    {:ok, _collection, _secret} = Follow.create_collection()
+    assert {:error, :not_found} = Follow.exchange("wrong-capability")
+  end
+
   test "unsafe mutation without CSRF is rejected" do
     assert_raise Plug.CSRFProtection.InvalidCSRFTokenError, fn ->
       Plug.Test.conn(
@@ -185,9 +259,19 @@ defmodule BrusselsWtfWeb.AnonymousFollowCollectionTest do
 
   defp management_session(conn) do
     create = post(conn, "/collections", %{})
-    exchange = get(recycle(create), redirected_to(create))
-    assert redirected_to(exchange) == "/collections/manage"
-    recycle(exchange)
+    create_body = html_response(create, 200)
+    saved_url = Regex.run(~r/id="management-link" href="([^"]+)"/, create_body) |> Enum.at(1)
+    uri = URI.parse(saved_url)
+    secret = uri.fragment |> String.replace_prefix("capability=", "") |> URI.decode_www_form()
+    page = get(recycle(create), uri.path)
+    csrf = Regex.run(~r/"x-csrf-token": "([^"]+)"/, page.resp_body) |> Enum.at(1)
+
+    page
+    |> recycle()
+    |> put_req_header("x-csrf-token", csrf)
+    |> put_req_header("x-follow-capability", secret)
+    |> post(uri.path, %{})
+    |> recycle()
   end
 
   defp managed_collection(conn) do
