@@ -224,17 +224,18 @@ defmodule BrusselsWtf.Follow do
   end
 
   def mark_read(citizen, id) do
-    with {:ok, update} <-
-           Ash.get(FeedUpdate, id,
-             action: :mine_by_id,
-             args: %{id: id},
-             actor: citizen_actor(citizen),
-             authorize?: true,
-             domain: __MODULE__
-           ) do
+    actor = citizen_actor(citizen)
+
+    with {:ok, %FeedUpdate{} = update} <-
+           FeedUpdate
+           |> Ash.Query.for_read(:mine_by_id, %{id: id}, actor: actor)
+           |> Ash.read_one(actor: actor, authorize?: true, domain: __MODULE__) do
       update
       |> Ash.Changeset.for_update(:mark_read)
-      |> Ash.update(actor: citizen_actor(citizen), authorize?: true, domain: __MODULE__)
+      |> Ash.update(actor: actor, authorize?: true, domain: __MODULE__)
+    else
+      {:ok, nil} -> {:error, :not_found}
+      error -> error
     end
   end
 
