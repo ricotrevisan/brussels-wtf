@@ -78,8 +78,9 @@ defmodule BrusselsWtfWeb.PersonalFeedBrowserTest do
     args =
       [
         "run",
-        "--with-requirements",
-        "test/browser/requirements.txt",
+        "--project",
+        "test/browser",
+        "--frozen",
         "python",
         "test/browser/personal_feed.py",
         phase,
@@ -89,14 +90,14 @@ defmodule BrusselsWtfWeb.PersonalFeedBrowserTest do
         profile
       ] ++ if(collection, do: ["--collection", collection], else: [])
 
-    {output, status} =
-      System.cmd("uv", args,
-        stderr_to_stdout: true,
-        env: [
-          {"PLAYWRIGHT_CHROMIUM_EXECUTABLE",
-           System.get_env("PLAYWRIGHT_CHROMIUM_EXECUTABLE", "/usr/bin/chromium")}
-        ]
-      )
+    options =
+      [stderr_to_stdout: true] ++
+        case System.get_env("PLAYWRIGHT_CHROMIUM_EXECUTABLE") do
+          nil -> []
+          executable -> [env: [{"PLAYWRIGHT_CHROMIUM_EXECUTABLE", executable}]]
+        end
+
+    {output, status} = System.cmd("uv", args, options)
 
     assert status == 0, output
   end

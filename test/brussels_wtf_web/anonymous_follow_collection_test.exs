@@ -6,7 +6,9 @@ defmodule BrusselsWtfWeb.AnonymousFollowCollectionTest do
 
   setup do
     fixture = PublicProfileFixture.load!(["Collection Person"])
-    %{person: person} = PublicProfileFixture.publish_person!(fixture, "Collection Person", 1)
+
+    %{person: person, fact: person_fact} =
+      PublicProfileFixture.publish_person!(fixture, "Collection Person", 1)
 
     company =
       PublicProfileFixture.company!(%{
@@ -39,6 +41,7 @@ defmodule BrusselsWtfWeb.AnonymousFollowCollectionTest do
 
     %{
       person: person,
+      person_fact: person_fact,
       company: company,
       unpublished_person: unpublished_person,
       unpublished_company: unpublished_company,
@@ -314,7 +317,7 @@ defmodule BrusselsWtfWeb.AnonymousFollowCollectionTest do
   end
 
   test "person and legal-entity fact events enforce the authoritative matrix and exact identity route",
-       %{conn: conn, person: person, company: company} do
+       %{conn: conn, person: person, person_fact: person_fact, company: company} do
     old_provider = Application.get_env(:brussels_wtf, :public_follow_update_provider)
     Application.put_env(:brussels_wtf, :public_follow_update_provider, FactMatrixProvider)
 
@@ -327,13 +330,15 @@ defmodule BrusselsWtfWeb.AnonymousFollowCollectionTest do
     end)
 
     authoritative = [
-      {:person, person.id, [:verified_public_mandate, :verified_management_role]},
-      {:legal_entity, company.enterprise_number, [:verified_management_role, :contract_award]}
+      {:person, person.id, [:verified_public_mandate]},
+      # No current public projection supports these fact kinds for a company.
+      {:legal_entity, company.enterprise_number, []}
     ]
 
     for {type, identifier, allowed_events} <- authoritative,
         event <- [:verified_public_mandate, :verified_management_role, :contract_award] do
-      update = fact_update(type, identifier, event, "fact-123", "nl")
+      fact_id = if type == :person, do: person_fact.id, else: "unsupported-fact"
+      update = fact_update(type, identifier, event, fact_id, "nl")
       put_fact_update(update)
       updates = request_updates(conn, type, identifier, "nl")
 
@@ -347,7 +352,7 @@ defmodule BrusselsWtfWeb.AnonymousFollowCollectionTest do
   end
 
   test "fact events fail closed for factId/revisionId confusion, route mismatches, and extra identities",
-       %{conn: conn, person: person, company: company} do
+       %{conn: conn, person: person, person_fact: person_fact, company: company} do
     old_provider = Application.get_env(:brussels_wtf, :public_follow_update_provider)
     Application.put_env(:brussels_wtf, :public_follow_update_provider, FactMatrixProvider)
 
@@ -359,17 +364,22 @@ defmodule BrusselsWtfWeb.AnonymousFollowCollectionTest do
         else: Application.delete_env(:brussels_wtf, :public_follow_update_provider)
     end)
 
-    valid = fact_update(:person, person.id, :verified_public_mandate, "fact-123", "fr")
+    valid = fact_update(:person, person.id, :verified_public_mandate, person_fact.id, "fr")
 
     invalid = [
       valid |> Map.delete(:factId) |> Map.put(:revisionId, "fact-123"),
       Map.put(valid, :revisionId, "revision-1"),
-      Map.put(valid, :url, "/people/#{Ecto.UUID.generate()}?lang=fr#fact-fact-123"),
-      Map.put(valid, :url, "/companies/#{company.enterprise_number}?lang=fr#fact-fact-123"),
-      Map.put(valid, :url, "/people/#{person.id}?lang=nl#fact-fact-123"),
+      Map.put(valid, :url, "/people/#{Ecto.UUID.generate()}?lang=fr#fact-#{person_fact.id}"),
+      Map.put(
+        valid,
+        :url,
+        "/companies/#{company.enterprise_number}?lang=fr#fact-#{person_fact.id}"
+      ),
+      Map.put(valid, :url, "/people/#{person.id}?lang=nl#fact-#{person_fact.id}"),
       Map.put(valid, :url, "/people/#{person.id}?lang=fr#fact-other"),
       Map.put(valid, :personId, person.id),
-      Map.put(valid, :legalEntityId, company.enterprise_number)
+      Map.put(valid, :legalEntityId, company.enterprise_number),
+      fact_update(:person, person.id, :verified_public_mandate, Ecto.UUID.generate(), "fr")
     ]
 
     for update <- invalid do
@@ -409,6 +419,47 @@ defmodule BrusselsWtfWeb.AnonymousFollowCollectionTest do
       })
 
     json_response(response, 200)["updates"]
+  end
+
+  test "persisted public projection emits only currently representable person and company events",
+       %{conn: conn, person: person, person_fact: fact, company: company} do
+    Application.put_env(
+      :brussels_wtf,
+      :public_follow_update_provider,
+      BrusselsWtf.Follow.PublicUpdates.Published
+    )
+
+    BrusselsWtf.Clock.Controlled.set(fact.verified_at)
+    imported_before = fact.verified_at |> DateTime.add(-1, :microsecond) |> DateTime.to_iso8601()
+    imported_at = DateTime.to_iso8601(fact.verified_at)
+
+    assert %{"updates" => [update]} =
+             conn
+             |> post("/feed/updates?lang=nl", %{
+               targets: [%{type: "person", id: person.id, importedAt: imported_before}]
+             })
+             |> json_response(200)
+
+    assert update["eventType"] == "verified_public_mandate"
+    assert update["factId"] == fact.id
+    refute Map.has_key?(update, "revisionId")
+    assert update["url"] == "/people/#{person.id}?lang=nl#fact-#{fact.id}"
+
+    # The boundary is strict and existing storage has no public projection for
+    # management roles, contract awards, or identity-linked council items.
+    assert %{"updates" => []} =
+             conn
+             |> post("/feed/updates?lang=nl", %{
+               targets: [
+                 %{type: "person", id: person.id, importedAt: imported_at},
+                 %{
+                   type: "legal_entity",
+                   id: company.enterprise_number,
+                   importedAt: imported_before
+                 }
+               ]
+             })
+             |> json_response(200)
   end
 
   test "feed and import privacy interface use resolved public locale", %{conn: conn} do

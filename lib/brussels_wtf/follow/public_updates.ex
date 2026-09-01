@@ -125,10 +125,28 @@ defmodule BrusselsWtf.Follow.PublicUpdates do
 
     event in Map.get(@matrix, type, []) and public_id != "" and fact != "" and
       Regex.match?(~r/^[A-Za-z0-9._~-]+$/, fact) and url == expected_url and
-      Enum.all?(Map.keys(update), &(&1 in allowed_keys))
+      Enum.all?(Map.keys(update), &(&1 in allowed_keys)) and public_fact?(type, id, fact, event)
   end
 
   defp valid_update?(_, _), do: false
+
+  defp public_fact?(:person, person_id, fact_id, event) do
+    BrusselsWtf.Identity.PublicProjection.list!(%{subject_type: :person, subject_id: person_id})
+    |> Enum.any?(fn projection ->
+      projection.fact_id == fact_id and fact_event(projection.kind) == event
+    end)
+  rescue
+    _ -> false
+  end
+
+  # No legal-entity fact kind has a current evidence/privacy public projection.
+  defp public_fact?(:legal_entity, _enterprise_number, _fact_id, _event), do: false
+  defp public_fact?(_, _, _, _), do: false
+
+  defp fact_event(:public_mandate), do: :verified_public_mandate
+  defp fact_event(:management), do: :verified_management_role
+  defp fact_event(:contract), do: :contract_award
+  defp fact_event(_), do: :unsupported
 
   defp parse_type(type) when type in ~w(dossier person legal_entity commune),
     do: String.to_existing_atom(type)
@@ -151,7 +169,32 @@ defmodule BrusselsWtf.Follow.PublicUpdates do
       |> Enum.flat_map(&page_updates(&1, target, locale, imported_at))
     end
 
+    def list(%Target{type: :person, identifier: person_id} = target, locale, imported_at) do
+      BrusselsWtf.Identity.PublicProjection.list!(%{
+        subject_type: :person,
+        subject_id: person_id
+      })
+      |> Enum.filter(&DateTime.after?(&1.verified_at, imported_at))
+      |> Enum.map(&fact_update(&1, target, locale))
+    end
+
+    # Management, contract-award, and relevant-council-item updates stay closed until
+    # their persisted claims have a source-specific public projection.
+    def list(%Target{type: :legal_entity}, _, _), do: []
     def list(_, _, _), do: []
+
+    defp fact_update(fact, target, locale) do
+      %{
+        id: "#{target.type}:#{target.identifier}:#{fact.fact_id}",
+        target: %{type: target.type, id: target.identifier},
+        eventType: :verified_public_mandate,
+        publicEventId: fact.fact_id,
+        factId: fact.fact_id,
+        url: "/people/#{target.identifier}?lang=#{locale}#fact-#{fact.fact_id}",
+        title: "#{fact.subject_name} — #{fact.object_name}",
+        occurredAt: DateTime.to_iso8601(fact.verified_at)
+      }
+    end
 
     defp page_updates(
            page,

@@ -1,0 +1,5 @@
+[project]
+name = "brussels-wtf-browser-tests"
+version = "0.0.0"
+requires-python = ">=3.11,<3.12"
+dependencies = ["playwright==1.55.0"]
