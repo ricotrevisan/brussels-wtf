@@ -1,7 +1,7 @@
 import argparse,json,os
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-p=argparse.ArgumentParser(); p.add_argument("--base",required=True); p.add_argument("--mail",required=True); a=p.parse_args()
+p=argparse.ArgumentParser(); p.add_argument("--base",required=True); p.add_argument("--mail",required=True); p.add_argument("--expired",required=True); a=p.parse_args()
 with sync_playwright() as pw:
   opts={"headless":True}; exe=os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE")
   if exe: opts["executable_path"]=exe
@@ -17,5 +17,6 @@ with sync_playwright() as pw:
   assert cookies["_brussels_wtf_key"]["value"] != before
   text=page.locator("body").inner_text(); assert "Import selected local follows" in text and "Separately claim an anonymous collection" in text
   page.goto(a.base+"/citizen/magic-link?token="+token); page.get_by_role("button",name="Sign in").click(); assert page.locator("body").inner_text().find("invalid or expired") >= 0
+  page.context.clear_cookies(); expired=Path(a.expired).read_text().strip(); page.goto(a.base+"/citizen/magic-link?token="+expired); page.get_by_role("button",name="Sign in").click(); assert "invalid or expired" in page.locator("body").inner_text(); assert not any(c["name"]=="citizen_session" for c in page.context.cookies())
   denied=page.goto(a.base+"/review"); assert "/review/login" in page.url
   browser.close()

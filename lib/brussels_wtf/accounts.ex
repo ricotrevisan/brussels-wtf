@@ -2,6 +2,7 @@ defmodule BrusselsWtf.Accounts do
   @moduledoc "Citizen-only authentication through single-use email magic links."
   use Ash.Domain, otp_app: :brussels_wtf
   require Ash.Query
+  require Logger
   alias BrusselsWtf.Accounts.{Citizen, Session}
 
   resources do
@@ -20,6 +21,7 @@ defmodule BrusselsWtf.Accounts do
         "email" => String.downcase(String.trim(email))
       })
 
+    Logger.warning("citizen_magic_link_requested")
     :ok
   rescue
     _ -> :ok
@@ -47,12 +49,17 @@ defmodule BrusselsWtf.Accounts do
              last_active_at: now,
              expires_at: DateTime.add(now, 90, :day)
            }) do
+      Logger.warning("citizen_magic_link_consumed")
       {:ok, citizen, session}
     else
-      _ -> {:error, :invalid_or_expired}
+      _ ->
+        Logger.warning("citizen_magic_link_rejected")
+        {:error, :invalid_or_expired}
     end
   rescue
-    _ -> {:error, :invalid_or_expired}
+    _ ->
+      Logger.warning("citizen_magic_link_rejected")
+      {:error, :invalid_or_expired}
   end
 
   def consume(_), do: {:error, :invalid_or_expired}
@@ -94,6 +101,7 @@ defmodule BrusselsWtf.Accounts do
              domain: __MODULE__
            ) do
       revoke_sessions(citizen.id)
+      Logger.warning("citizen_email_changed_sessions_revoked")
       {:ok, changed}
     end
   end

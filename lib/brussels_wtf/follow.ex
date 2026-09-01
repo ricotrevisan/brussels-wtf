@@ -4,6 +4,7 @@ defmodule BrusselsWtf.Follow do
   use Ash.Domain, otp_app: :brussels_wtf
 
   require Ash.Query
+  require Logger
   alias BrusselsWtf.Follow.{CitizenFollow, Collection, Member, Target, TargetEligibility}
 
   resources do
@@ -170,6 +171,8 @@ defmodule BrusselsWtf.Follow do
   end
 
   defp capability_collection(secret) when is_binary(secret) do
+    Logger.warning("follow_collection_capability_checked")
+
     Collection
     |> Ash.Query.for_read(:exchange_capability, %{management_secret_hash: hash(secret)})
     |> Ash.read_one(authorize?: true, domain: __MODULE__)

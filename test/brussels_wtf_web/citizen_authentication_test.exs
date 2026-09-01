@@ -1,5 +1,6 @@
 defmodule BrusselsWtfWeb.CitizenAuthenticationTest do
   use BrusselsWtfWeb.ConnCase, async: false
+  import ExUnit.CaptureLog
   alias BrusselsWtf.{Accounts, Clock.Controlled}
 
   setup do
@@ -86,5 +87,53 @@ defmodule BrusselsWtfWeb.CitizenAuthenticationTest do
       |> Ash.read!(actor: %{id: citizen.id, principal: :citizen}, domain: BrusselsWtf.Follow)
 
     assert Enum.map(follows, &{&1.target_type, &1.target_identifier}) == [{:commune, "ixelles"}]
+  end
+
+  test "actual request and security-path logs redact citizen secrets", %{conn: conn} do
+    email = "logger-secret@example.test"
+    capability = "capability-do-not-log-123"
+
+    logs =
+      capture_log([level: :debug], fn ->
+        request =
+          post(conn, ~p"/citizen/magic-link", %{
+            "email" => email,
+            "management_secret" => capability
+          })
+
+        assert request.status == 200
+        assert_receive {:magic_link, ^email, token, _}
+        Process.put(:captured_raw_token, token)
+
+        assert post(recycle(conn), ~p"/citizen/magic-link/consume", %{"token" => token}).status ==
+                 302
+
+        assert post(recycle(conn), ~p"/citizen/magic-link/consume", %{"token" => token}).status ==
+                 422
+
+        Accounts.request_link("change-log@example.test")
+        assert_receive {:magic_link, _, change_token, _}
+        {:ok, citizen, _} = Accounts.consume(change_token)
+        assert {:ok, _} = Accounts.change_email(citizen, "changed-log@example.test")
+        assert {:error, :not_found} = BrusselsWtf.Follow.exchange(capability)
+      end)
+
+    token = Process.get(:captured_raw_token)
+    assert byte_size(logs) > 0
+
+    for secret <- [
+          email,
+          token,
+          capability,
+          "change-log@example.test",
+          "changed-log@example.test"
+        ] do
+      refute logs =~ secret
+    end
+
+    assert logs =~ "citizen_magic_link_requested"
+    assert logs =~ "citizen_magic_link_rejected"
+    assert logs =~ "citizen_email_changed_sessions_revoked"
+    assert logs =~ "follow_collection_capability_checked"
   end
 end
