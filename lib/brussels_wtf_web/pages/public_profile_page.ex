@@ -63,6 +63,12 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
     <main id="content" class="mx-auto max-w-4xl px-4 py-8 text-base-content" tabindex="-1">
       <p class="text-sm text-base-content/70">{profile_label(@locale, @profile)}</p>
       <h1 class="mt-2 text-3xl font-semibold tracking-tight">{profile_name(@profile)}</h1>
+      <form method="post" action="/citizen/feed/follows" class="mt-4">
+        <input type="hidden" name="_csrf_token" value={@csrf_token} />
+        <input type="hidden" name="target_type" value={follow_type(@profile)} />
+        <input type="hidden" name="target_identifier" value={follow_identifier(@profile)} />
+        <button type="submit" class="btn btn-sm" data-follow-control>{text(@locale, :follow)}</button>
+      </form>
 
       <dl :if={match?(%PublicProfile.Company{}, @profile)} class="mt-6 grid gap-3 sm:grid-cols-2">
         <div>
@@ -255,6 +261,11 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
     |> Phoenix.Controller.render(:"404")
   end
 
+  defp follow_type(%PublicProfile.Company{}), do: "legal_entity"
+  defp follow_type(%PublicProfile.Person{}), do: "person"
+  defp follow_identifier(%PublicProfile.Company{enterprise_number: id}), do: id
+  defp follow_identifier(%PublicProfile.Person{id: id}), do: id
+
   defp profile_name(%PublicProfile.Company{registered_name: name}), do: name
   defp profile_name(%PublicProfile.Person{legal_name: name}), do: name
   defp profile_label(locale, %PublicProfile.Company{}), do: text(locale, :company_profile)
@@ -329,6 +340,7 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
   defp en_text do
     %{
       skip: "Skip to content",
+      follow: "Follow updates about this profile",
       language: "Language",
       company_profile: "Company profile",
       person_profile: "Person profile",
@@ -356,6 +368,7 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
   defp fr_text do
     %{
       skip: "Aller au contenu",
+      follow: "Suivre les mises à jour de ce profil",
       language: "Langue",
       company_profile: "Profil d’entreprise",
       person_profile: "Profil de personne",
@@ -383,6 +396,7 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
   defp nl_text do
     %{
       skip: "Naar inhoud",
+      follow: "Updates over dit profiel volgen",
       language: "Taal",
       company_profile: "Bedrijfsprofiel",
       person_profile: "Persoonsprofiel",

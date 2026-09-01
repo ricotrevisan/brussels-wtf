@@ -36,6 +36,12 @@ defmodule BrusselsWtfWeb.Router do
     get "/citizen/magic-link", CitizenSessionController, :confirm
     post "/citizen/magic-link/consume", CitizenSessionController, :consume
     delete "/citizen/session", CitizenSessionController, :delete
+    get "/citizen/account", CitizenSessionController, :account
+    delete "/citizen/account", CitizenSessionController, :delete_account
+    post "/citizen/feed/follows", FollowCollectionController, :follow
+    post "/citizen/feed/:id/read", FollowCollectionController, :mark_read
+    post "/citizen/collections/:id/visibility", FollowCollectionController, :registered_visibility
+    post "/citizen/collections/:id/members", FollowCollectionController, :registered_add
     patch "/citizen/email", CitizenSessionController, :change_email
     get "/citizen/registration", CitizenSessionController, :registration
     post "/citizen/registration/import-follows", CitizenSessionController, :import_follows
@@ -56,7 +62,31 @@ defmodule BrusselsWtfWeb.Router do
     get "/collections/manage-capability", FollowCollectionController, :bootstrap
     post "/collections/manage-capability", FollowCollectionController, :exchange
     get "/collections/manage", FollowCollectionController, :manage
+    get "/collections/private/:id", SharedCollectionController, :private_show
     get "/collections/:token", FollowCollectionController, :show
+    get "/citizen/collections/:id", SharedCollectionController, :owner_show
+    post "/citizen/collections/:id/grants", SharedCollectionController, :grant
+    delete "/citizen/collections/:id/grants/:grant_id", SharedCollectionController, :revoke
+    post "/citizen/collections/:id/transfer-offers", SharedCollectionController, :offer_transfer
+
+    delete "/citizen/collections/:id/transfer-offers/:offer_id",
+           SharedCollectionController,
+           :cancel_transfer
+
+    delete "/citizen/collections/:id", SharedCollectionController, :delete_collection
+    get "/citizen/collection-transfers/:id", SharedCollectionController, :transfer_show
+    post "/citizen/collection-transfers/:id/accept", SharedCollectionController, :accept_transfer
+    post "/citizen/collection-transfers/:id/reject", SharedCollectionController, :reject_transfer
+    get "/citizen/account/deletion", SharedCollectionController, :deletion_resolution
+
+    post "/citizen/collections/:id/inactivity-resolution",
+         SharedCollectionController,
+         :select_inactivity_resolution
+
+    delete "/citizen/collections/:id/inactivity-resolution",
+           SharedCollectionController,
+           :revoke_inactivity_resolution
+
     patch "/collections/manage", FollowCollectionController, :update
     post "/collections/manage/members", FollowCollectionController, :add
     delete "/collections/manage/members", FollowCollectionController, :remove

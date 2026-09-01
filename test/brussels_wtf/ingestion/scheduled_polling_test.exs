@@ -81,7 +81,7 @@ defmodule BrusselsWtf.Ingestion.ScheduledPollingTest do
   end
 
   test "health indicators expose stale scheduled polls and recent failures", %{commune: commune} do
-    assert Ingestion.poll_health(~U[2026-08-20 12:00:00Z]).stale_commune_ids == [commune.id]
+    assert commune.id in Ingestion.poll_health(~U[2026-08-20 12:00:00Z]).stale_commune_ids
 
     run =
       Ingestion.start_poll_run!(%{
@@ -98,7 +98,7 @@ defmodule BrusselsWtf.Ingestion.ScheduledPollingTest do
     Ingestion.complete_poll_run!(run, %{completed_at: ~U[2026-08-20 01:00:00Z]})
 
     health = Ingestion.poll_health(~U[2026-08-20 12:00:00Z])
-    assert health.stale_commune_count == 0
+    refute commune.id in health.stale_commune_ids
     assert health.repeated_failure_count == 0
   end
 

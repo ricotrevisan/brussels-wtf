@@ -83,12 +83,26 @@ defmodule BrusselsWtf.Follow.PublicUpdates do
        )
        when event in @revision_events and is_atom(type) and is_binary(id) and is_binary(public_id) and
               is_binary(revision) and is_binary(url) and is_binary(title) and is_binary(occurred) do
+    allowed_url? =
+      case event do
+        event when event in [:merge, :split] ->
+          url == "/dossiers/#{id}?lang=#{locale}#event-#{public_id}" or
+            (String.contains?(url, "?lang=#{locale}#") and
+               Regex.match?(
+                 ~r{^/meetings/(ixelles|uccle|forest|city-of-brussels)/[A-Za-z0-9._~-]+\?lang=(fr|nl|en)#[A-Za-z0-9._~-]+$},
+                 url
+               ))
+
+        _ ->
+          String.contains?(url, "?lang=#{locale}#") and
+            Regex.match?(
+              ~r{^/meetings/(ixelles|uccle|forest|city-of-brussels)/[A-Za-z0-9._~-]+\?lang=(fr|nl|en)#[A-Za-z0-9._~-]+$},
+              url
+            )
+      end
+
     event in Map.get(@matrix, type, []) and public_id != "" and revision != "" and
-      not Map.has_key?(update, :factId) and String.contains?(url, "?lang=#{locale}#") and
-      Regex.match?(
-        ~r{^/meetings/(ixelles|uccle|forest|city-of-brussels)/[A-Za-z0-9._~-]+\?lang=(fr|nl|en)#[A-Za-z0-9._~-]+$},
-        url
-      )
+      not Map.has_key?(update, :factId) and allowed_url?
   end
 
   defp valid_update?(
@@ -154,40 +168,61 @@ defmodule BrusselsWtf.Follow.PublicUpdates do
   defp parse_type(_), do: :invalid
 
   defmodule Published do
-    @moduledoc "Projects existing publication-gated meeting state into follow updates."
+    @moduledoc "Projects authoritative persisted public state into follow updates."
+    require Ash.Query
 
     def list(%Target{type: type} = target, locale, imported_at)
         when type in [:dossier, :commune] do
-      BrusselsWtf.Council.MeetingPage
-      |> Ash.Query.for_read(:published)
-      |> Ash.read!(authorize?: false, domain: BrusselsWtf.Council)
-      |> Ash.load!(
-        [:publication_events, council_meeting: [:commune, agenda_items: [:dossier_links]]],
-        authorize?: false,
-        domain: BrusselsWtf.Council
-      )
-      |> Enum.flat_map(&page_updates(&1, target, locale, imported_at))
+      pages =
+        BrusselsWtf.Council.MeetingPage
+        |> Ash.Query.for_read(:published)
+        |> Ash.read!(authorize?: false, domain: BrusselsWtf.Council)
+        |> Ash.load!(
+          [
+            :publication_events,
+            :publication_revisions,
+            council_meeting: [
+              :commune,
+              agenda_items: [:published_decision, dossier_links: [:dossier]]
+            ]
+          ],
+          authorize?: false,
+          domain: BrusselsWtf.Council
+        )
+
+      updates = Enum.flat_map(pages, &page_updates(&1, target, locale, imported_at))
+
+      case target.type do
+        :dossier -> updates ++ dossier_action_updates(target, locale, imported_at)
+        _ -> updates
+      end
+    rescue
+      _ -> []
     end
 
     def list(%Target{type: :person, identifier: person_id} = target, locale, imported_at) do
-      BrusselsWtf.Identity.PublicProjection.list!(%{
-        subject_type: :person,
-        subject_id: person_id
-      })
+      BrusselsWtf.Identity.PublicProjection.list!(%{subject_type: :person, subject_id: person_id})
       |> Enum.filter(&DateTime.after?(&1.verified_at, imported_at))
       |> Enum.map(&fact_update(&1, target, locale))
+    rescue
+      _ -> []
     end
 
-    # Management, contract-award, and relevant-council-item updates stay closed until
-    # their persisted claims have a source-specific public projection.
+    # Issue #49 remains fail-closed: legal-entity facts have no complete public projection.
     def list(%Target{type: :legal_entity}, _, _), do: []
     def list(_, _, _), do: []
 
     defp fact_update(fact, target, locale) do
+      kind =
+        case fact.kind do
+          :public_mandate -> :verified_public_mandate
+          :management -> :verified_management_role
+        end
+
       %{
         id: "#{target.type}:#{target.identifier}:#{fact.fact_id}",
         target: %{type: target.type, id: target.identifier},
-        eventType: :verified_public_mandate,
+        eventType: kind,
         publicEventId: fact.fact_id,
         factId: fact.fact_id,
         url: "/people/#{target.identifier}?lang=#{locale}#fact-#{fact.fact_id}",
@@ -204,11 +239,30 @@ defmodule BrusselsWtf.Follow.PublicUpdates do
          ) do
       if page.council_meeting.commune.slug == slug do
         page.publication_events
-        |> Enum.filter(
-          &(&1.event_type == :published and is_binary(&1.publication_revision_id) and
-              DateTime.after?(&1.occurred_at, imported_at))
-        )
-        |> Enum.map(&update(&1, target, page, locale, :published_meeting_page, nil))
+        |> Enum.filter(&eligible_publication_event?(&1, page, imported_at))
+        |> Enum.flat_map(fn event ->
+          case event.event_type do
+            :published ->
+              [meeting_update(event, target, page, locale, :published_meeting_page, nil)]
+
+            :republished ->
+              if revision_adds_decisions?(page, event.publication_revision_id),
+                do: [
+                  meeting_update(
+                    event,
+                    target,
+                    page,
+                    locale,
+                    :publication_revision_new_decisions,
+                    nil
+                  )
+                ],
+                else: []
+
+            _ ->
+              []
+          end
+        end)
       else
         []
       end
@@ -220,51 +274,131 @@ defmodule BrusselsWtf.Follow.PublicUpdates do
            locale,
            imported_at
          ) do
-      for item <- page.council_meeting.agenda_items,
-          link <- item.dossier_links,
-          link.status == :active,
-          link.disposition == :confirmed,
-          link.dossier_id == dossier_id(slug),
-          event <- page.publication_events,
-          event.event_type in [:published, :factual_correction, :republished],
-          is_binary(event.publication_revision_id),
-          DateTime.after?(event.occurred_at, imported_at) do
-        kind =
-          if item.published_procedural_state == :decision,
-            do: :decision,
-            else: :linked_agenda_item
+      dossier =
+        Enum.find_value(page.council_meeting.agenda_items, fn item ->
+          Enum.find(item.dossier_links, &(&1.dossier.slug == slug))
+        end)
 
-        update(event, target, page, locale, kind, item)
+      if is_nil(dossier) do
+        []
+      else
+        Enum.flat_map(page.council_meeting.agenda_items, fn item ->
+          links = Enum.filter(item.dossier_links, &public_link?(&1, slug))
+
+          Enum.flat_map(links, fn link ->
+            linked =
+              if DateTime.after?(link.inserted_at, imported_at),
+                do: [meeting_update(link, target, page, locale, :linked_agenda_item, item)],
+                else: []
+
+            decision = item.published_decision
+
+            decided =
+              if decision && not decision.synthetic && decision.source_version_id &&
+                   DateTime.after?(decision.inserted_at, imported_at) do
+                [meeting_update(decision, target, page, locale, :decision, item)]
+              else
+                []
+              end
+
+            corrections =
+              page.publication_events
+              |> Enum.filter(fn event ->
+                event.event_type == :factual_correction and
+                  eligible_publication_event?(event, page, imported_at)
+              end)
+              |> Enum.map(&meeting_update(&1, target, page, locale, :correction, item))
+
+            linked ++ decided ++ corrections
+          end)
+        end)
       end
     end
 
-    defp update(event, target, page, locale, kind, item) do
+    defp public_link?(link, slug),
+      do: link.status == :active and link.disposition == :confirmed and link.dossier.slug == slug
+
+    defp eligible_publication_event?(event, page, imported_at),
+      do:
+        is_binary(event.publication_revision_id) and
+          event.publication_revision_id == page.current_revision_id and
+          DateTime.after?(event.occurred_at, imported_at) and
+          event.event_type not in [:typography_correction, :withdrawn]
+
+    defp revision_adds_decisions?(page, revision_id) do
+      revision = Enum.find(page.publication_revisions, &(&1.id == revision_id))
+
+      previous =
+        revision &&
+          Enum.find(page.publication_revisions, &(&1.id == revision.previous_revision_id))
+
+      decision_keys(revision) -- decision_keys(previous) != []
+    end
+
+    defp decision_keys(nil), do: []
+
+    defp decision_keys(revision) do
+      revision.content
+      |> Map.get("items", %{})
+      |> Enum.filter(fn {_key, item} ->
+        item
+        |> Map.get("variants", %{})
+        |> Map.values()
+        |> Enum.any?(&(Map.get(&1, "decision_summary") not in [nil, ""]))
+      end)
+      |> Enum.map(&elem(&1, 0))
+    end
+
+    defp dossier_action_updates(target, locale, imported_at) do
+      dossier = BrusselsWtf.Council.get_dossier!(target.identifier)
+
+      BrusselsWtf.Council.DossierAction
+      |> Ash.Query.filter(action in [:merge, :split] and subject_id == ^dossier.id)
+      |> Ash.read!(authorize?: false, domain: BrusselsWtf.Council)
+      |> Enum.filter(&DateTime.after?(&1.inserted_at, imported_at))
+      |> Enum.map(fn action ->
+        %{
+          id: "dossier:#{target.identifier}:#{action.id}",
+          target: %{type: :dossier, id: target.identifier},
+          eventType: action.action,
+          publicEventId: action.id,
+          revisionId: action.id,
+          url: "/dossiers/#{target.identifier}?lang=#{locale}#event-#{action.id}",
+          title: dossier.title,
+          occurredAt: DateTime.to_iso8601(action.inserted_at)
+        }
+      end)
+    rescue
+      _ -> []
+    end
+
+    defp meeting_update(record, target, page, locale, kind, item) do
       meeting = page.council_meeting
 
-      anchor =
-        if item, do: "##{item.stable_anchor}", else: "#revision-#{event.publication_revision_id}"
+      revision_id =
+        if Map.has_key?(record, :publication_revision_id),
+          do: record.publication_revision_id,
+          else: page.current_revision_id
+
+      occurred_at =
+        if Map.has_key?(record, :occurred_at), do: record.occurred_at, else: record.inserted_at
+
+      anchor = if item, do: "##{item.stable_anchor}", else: "#revision-#{revision_id}"
 
       title =
         if item, do: item.source_wording, else: "#{meeting.commune.name} council publication"
 
       %{
-        id: "#{target.type}:#{target.identifier}:#{event.id}",
+        id: "#{target.type}:#{target.identifier}:#{record.id}",
         target: %{type: target.type, id: target.identifier},
         eventType: kind,
-        publicEventId: event.id,
-        revisionId: event.publication_revision_id,
+        publicEventId: record.id,
+        revisionId: revision_id,
         url:
           "/meetings/#{meeting.commune.slug}/#{URI.encode(meeting.municipal_identifier)}?lang=#{locale}#{anchor}",
         title: title,
-        occurredAt: DateTime.to_iso8601(event.occurred_at)
+        occurredAt: DateTime.to_iso8601(occurred_at)
       }
-    end
-
-    defp dossier_id(slug) do
-      case BrusselsWtf.Council.get_dossier(slug) do
-        {:ok, dossier} -> dossier.id
-        _ -> nil
-      end
     end
   end
 end

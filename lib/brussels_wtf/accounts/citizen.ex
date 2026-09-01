@@ -45,6 +45,15 @@ defmodule BrusselsWtf.Accounts.Citizen do
   actions do
     defaults [:read]
 
+    read :retention_candidates do
+    end
+
+    read :system_by_id do
+      get? true
+      argument :id, :uuid, allow_nil?: false
+      filter expr(id == ^arg(:id))
+    end
+
     read :get_by_subject do
       argument :subject, :string, allow_nil?: false
       get? true
@@ -74,6 +83,10 @@ defmodule BrusselsWtf.Accounts.Citizen do
       authorize_if expr(id == ^actor(:id) and ^actor(:principal) == :citizen)
     end
 
+    policy action([:retention_candidates, :system_by_id]) do
+      authorize_if actor_attribute_equals(:principal, :system)
+    end
+
     policy action([:apply_email_change, :delete_account]) do
       authorize_if actor_attribute_equals(:principal, :system)
     end
@@ -83,6 +96,12 @@ defmodule BrusselsWtf.Accounts.Citizen do
     uuid_v7_primary_key :id
     attribute :email, :string, allow_nil?: false, sensitive?: true, public?: false
     attribute :last_sign_in_at, :utc_datetime_usec
+
+    attribute :preferred_locale, :string,
+      allow_nil?: false,
+      default: "en",
+      constraints: [match: ~r/^(fr|nl|en)$/]
+
     timestamps()
   end
 

@@ -134,6 +134,7 @@ config :brussels_wtf, Oban,
   plugins: [
     {Oban.Plugins.Cron,
      crontab: [
+       {"*/5 * * * *", BrusselsWtf.Workers.SynchronizeRegisteredFeeds, args: %{}},
        {"0 */6 * * *", BrusselsWtf.Workers.PollCommune,
         args: %{commune_slug: "ixelles", kind: "scheduled"}},
        {"15 */6 * * *", BrusselsWtf.Workers.PollCommune,
@@ -155,7 +156,9 @@ config :brussels_wtf, Oban,
           scope: "previous-year"
         }},
        {"30 2 * * *", BrusselsWtf.Workers.PurgeSuggestions, args: %{}},
-       {"*/15 * * * *", BrusselsWtf.Workers.PurgeExpiredMagicLinks, args: %{}}
+       {"*/15 * * * *", BrusselsWtf.Workers.PurgeExpiredMagicLinks, args: %{}},
+       {"10 3 * * *", BrusselsWtf.Workers.ProcessCitizenInactivity, args: %{}},
+       {"30 3 * * *", BrusselsWtf.Workers.PurgeCitizenFeedUpdates, args: %{}}
      ]}
   ],
   queues: [

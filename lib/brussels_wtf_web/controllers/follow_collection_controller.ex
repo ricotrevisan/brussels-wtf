@@ -70,12 +70,105 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
     locale = conn.assigns.locale
     csrf = Plug.CSRFProtection.get_csrf_token()
 
-    html(conn, """
-    <!doctype html><html lang="#{locale}"><head><meta name="csrf-token" content="#{csrf}"><title>#{copy(locale, :feed)}</title><script defer src="/assets/js/personal_feed_entry.js"></script></head><body><main>
-    <h1>#{copy(locale, :feed)}</h1><p>#{copy(locale, :privacy)}</p>
-    <ul data-personal-feed></ul><noscript>#{copy(locale, :javascript)}</noscript>
-    </main></body></html>
-    """)
+    case BrusselsWtf.Accounts.authenticate_session(get_session(conn, :citizen_session_id)) do
+      {:ok, citizen} ->
+        {:ok, updates} = Follow.registered_feed(citizen)
+        retention_notice = retention_notice(citizen, locale)
+
+        items =
+          Enum.map_join(updates, "", fn update ->
+            read = if update.read_at, do: copy(locale, :read), else: copy(locale, :unread)
+
+            url = localized_update_url(update.public_url, locale)
+
+            label =
+              "#{copy(locale, {:event, update.event_kind})} — " <>
+                "#{copy(locale, {:type, update.target_type})}"
+
+            ~s(<li data-update-id="#{update.id}" data-read="#{not is_nil(update.read_at)}"><a href="#{escape(url)}">#{escape(label)}</a> <span>#{read}</span><form method="post" action="/citizen/feed/#{update.id}/read"><input type="hidden" name="_csrf_token" value="#{csrf}"><button>#{copy(locale, :mark_read)}</button></form></li>)
+          end)
+
+        html(
+          conn,
+          ~s(<!doctype html><html lang="#{locale}"><head><title>#{copy(locale, :feed)}</title></head><body><main><h1>#{copy(locale, :feed)}</h1><p>#{copy(locale, :synced)}</p>#{retention_notice}<ul data-registered-feed>#{items}</ul></main></body></html>)
+        )
+
+      _ ->
+        html(
+          conn,
+          ~s(<!doctype html><html lang="#{locale}"><head><meta name="csrf-token" content="#{csrf}"><title>#{copy(locale, :feed)}</title><script defer src="/assets/js/personal_feed_entry.js"></script></head><body><main><h1>#{copy(locale, :feed)}</h1><p>#{copy(locale, :privacy)}</p><ul data-personal-feed></ul><noscript>#{copy(locale, :javascript)}</noscript></main></body></html>)
+        )
+    end
+  end
+
+  def follow(conn, %{"target_type" => type, "target_identifier" => identifier}) do
+    with {:ok, citizen} <-
+           BrusselsWtf.Accounts.authenticate_session(get_session(conn, :citizen_session_id)),
+         type when type != :invalid <- parse_type(type),
+         {:ok, [_ | _]} <- Follow.import_citizen_follows(citizen, [{type, identifier}]) do
+      redirect(conn, to: "/feed?lang=#{conn.assigns.locale}")
+    else
+      _ -> send_resp(conn, 422, "")
+    end
+  end
+
+  def mark_read(conn, %{"id" => id}) do
+    with {:ok, citizen} <-
+           BrusselsWtf.Accounts.authenticate_session(get_session(conn, :citizen_session_id)),
+         {:ok, _} <- Follow.mark_read(citizen, id) do
+      redirect(conn, to: "/feed?lang=#{conn.assigns.locale}")
+    else
+      _ -> send_resp(conn, 404, "")
+    end
+  end
+
+  def registered_manage(conn, %{"id" => id}) do
+    with {:ok, citizen} <-
+           BrusselsWtf.Accounts.authenticate_session(get_session(conn, :citizen_session_id)),
+         {:ok, collection} <- Follow.owner_collection(citizen, id) do
+      csrf = Plug.CSRFProtection.get_csrf_token()
+      locale = conn.assigns.locale
+
+      members =
+        Enum.map_join(collection.members, "", fn m ->
+          "<li>#{escape(m.target_type)}: #{escape(m.target_identifier)}</li>"
+        end)
+
+      html(
+        conn,
+        ~s(<!doctype html><html lang="#{locale}"><body><main><h1>#{copy(locale, :manage_private)}</h1><p>#{copy(locale, :owner_only)}</p><ul>#{members}</ul><form method="post" action="/citizen/collections/#{id}/visibility"><input type="hidden" name="_csrf_token" value="#{csrf}"><select name="visibility">#{visibility_options(collection.visibility)}</select><button>#{copy(locale, :change)}</button></form><form method="post" action="/citizen/collections/#{id}/members"><input type="hidden" name="_csrf_token" value="#{csrf}"><select name="target_type"><option>dossier</option><option>person</option><option value="legal_entity">legal entity</option><option>commune</option></select><input name="target_identifier" required><button>#{copy(locale, :add)}</button></form><form method="post" action="/citizen/collections/#{id}/grants"><input type="hidden" name="_csrf_token" value="#{csrf}"><input name="citizen_id" required><button>#{copy(locale, :grant)}</button></form></main></body></html>)
+      )
+    else
+      _ -> send_resp(conn, 404, "Not found")
+    end
+  end
+
+  def registered_visibility(conn, %{"id" => id, "visibility" => visibility}) do
+    with {:ok, c} <-
+           BrusselsWtf.Accounts.authenticate_session(get_session(conn, :citizen_session_id)),
+         {:ok, _} <- Follow.owner_set_visibility(c, id, parse_visibility(visibility)),
+         do: redirect(conn, to: "/citizen/collections/#{id}")
+  end
+
+  def registered_add(conn, %{"id" => id, "target_type" => type, "target_identifier" => identifier}) do
+    with {:ok, c} <-
+           BrusselsWtf.Accounts.authenticate_session(get_session(conn, :citizen_session_id)),
+         {:ok, _} <- Follow.owner_add_member(c, id, parse_type(type), identifier),
+         do: redirect(conn, to: "/citizen/collections/#{id}")
+  end
+
+  def registered_grant(conn, %{"id" => id, "citizen_id" => recipient}) do
+    with {:ok, c} <-
+           BrusselsWtf.Accounts.authenticate_session(get_session(conn, :citizen_session_id)),
+         {:ok, _} <- Follow.grant_private_view(c, id, recipient),
+         do: redirect(conn, to: "/citizen/collections/#{id}")
+  end
+
+  def registered_revoke(conn, %{"id" => id, "grant_id" => grant}) do
+    with {:ok, c} <-
+           BrusselsWtf.Accounts.authenticate_session(get_session(conn, :citizen_session_id)),
+         :ok <- Follow.revoke_private_view(c, id, grant),
+         do: redirect(conn, to: "/citizen/collections/#{id}")
   end
 
   def show(conn, %{"token" => token}) do
@@ -194,6 +287,40 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
   defp copy("nl", :feed), do: "Persoonlijke feed"
   defp copy(_, :feed), do: "Personal feed"
 
+  defp copy("fr", :synced), do: "Votre fil privé est synchronisé entre vos sessions."
+  defp copy("nl", :synced), do: "Uw privéfeed wordt tussen sessies gesynchroniseerd."
+  defp copy(_, :synced), do: "Your private feed is synced across sessions."
+  defp copy("fr", :read), do: "Lu"
+  defp copy("nl", :read), do: "Gelezen"
+  defp copy(_, :read), do: "Read"
+  defp copy("fr", :unread), do: "Non lu"
+  defp copy("nl", :unread), do: "Ongelezen"
+  defp copy(_, :unread), do: "Unread"
+  defp copy("fr", :mark_read), do: "Marquer comme lu"
+  defp copy("nl", :mark_read), do: "Als gelezen markeren"
+  defp copy(_, :mark_read), do: "Mark read"
+
+  defp copy("fr", :manage_private), do: "Gérer la collection"
+  defp copy("nl", :manage_private), do: "Collectie beheren"
+  defp copy(_, :manage_private), do: "Manage collection"
+
+  defp copy("fr", :owner_only),
+    do: "Seul le propriétaire peut modifier. Les invités peuvent uniquement consulter."
+
+  defp copy("nl", :owner_only),
+    do: "Alleen de eigenaar kan wijzigen. Genodigden kunnen alleen bekijken."
+
+  defp copy(_, :owner_only), do: "Only the owner can edit. Invited citizens can only view."
+  defp copy("fr", :change), do: "Modifier"
+  defp copy("nl", :change), do: "Wijzigen"
+  defp copy(_, :change), do: "Change"
+  defp copy("fr", :add), do: "Ajouter"
+  defp copy("nl", :add), do: "Toevoegen"
+  defp copy(_, :add), do: "Add"
+  defp copy("fr", :grant), do: "Inviter en lecture seule"
+  defp copy("nl", :grant), do: "Uitnodigen als alleen-lezen"
+  defp copy(_, :grant), do: "Invite view-only"
+
   defp copy("fr", :privacy),
     do:
       "Vos suivis, notifications et états de lecture restent uniquement dans ce navigateur. Ils ne sont pas synchronisés et sont perdus si ses données sont effacées."
@@ -241,6 +368,56 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
         type
       ]
 
+  defp copy(locale, {:event, event}) do
+    labels = %{
+      "en" => %{
+        linked_agenda_item: "Agenda item linked",
+        decision: "Documented decision",
+        correction: "Factual correction",
+        merge: "Dossiers merged",
+        split: "Dossier split",
+        relevant_council_item: "Relevant council item",
+        published_meeting_page: "Meeting page published",
+        publication_revision_new_decisions: "New documented decisions",
+        verified_public_mandate: "Verified public mandate",
+        verified_management_role: "Verified management role",
+        contract_award: "Verified contract award"
+      },
+      "fr" => %{
+        linked_agenda_item: "Point lié au dossier",
+        decision: "Décision documentée",
+        correction: "Correction factuelle",
+        merge: "Dossiers fusionnés",
+        split: "Dossier scindé",
+        relevant_council_item: "Point pertinent du conseil",
+        published_meeting_page: "Page de séance publiée",
+        publication_revision_new_decisions: "Nouvelles décisions documentées",
+        verified_public_mandate: "Mandat public vérifié",
+        verified_management_role: "Fonction de gestion vérifiée",
+        contract_award: "Attribution de marché vérifiée"
+      },
+      "nl" => %{
+        linked_agenda_item: "Agendapunt aan dossier gekoppeld",
+        decision: "Gedocumenteerde beslissing",
+        correction: "Feitelijke correctie",
+        merge: "Dossiers samengevoegd",
+        split: "Dossier gesplitst",
+        relevant_council_item: "Relevant gemeenteraadspunt",
+        published_meeting_page: "Vergaderpagina gepubliceerd",
+        publication_revision_new_decisions: "Nieuwe gedocumenteerde beslissingen",
+        verified_public_mandate: "Geverifieerd openbaar mandaat",
+        verified_management_role: "Geverifieerde bestuursfunctie",
+        contract_award: "Geverifieerde overheidsopdracht"
+      }
+    }
+
+    labels |> Map.fetch!(locale) |> Map.get(event, copy(locale, :update))
+  end
+
+  defp copy("fr", :update), do: "Mise à jour publique"
+  defp copy("nl", :update), do: "Openbare update"
+  defp copy(_, :update), do: "Public update"
+
   defp copy("fr", :select), do: "Sélectionner"
   defp copy("nl", :select), do: "Selecteren"
   defp copy(_, :select), do: "Select"
@@ -259,6 +436,18 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
   defp copy(_, :snapshot),
     do:
       "Imported follows stay only in this browser. They do not sync and are lost when browser data is cleared. Import is a snapshot; later collection changes do not alter your follows."
+
+  defp localized_update_url(url, locale) do
+    uri = URI.parse(url)
+
+    query =
+      (uri.query || "")
+      |> URI.decode_query()
+      |> Map.put("lang", locale)
+      |> URI.encode_query()
+
+    URI.to_string(%{uri | query: query})
+  end
 
   defp private_headers(conn),
     do:
@@ -282,4 +471,32 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
   defp parse_type(_), do: :invalid
   defp parse_visibility(v) when v in ~w(public unlisted private), do: String.to_existing_atom(v)
   defp parse_visibility(_), do: :invalid
+
+  defp retention_notice(citizen, locale) do
+    case BrusselsWtf.Accounts.inactivity_notice(citizen) do
+      {:warning, days, deletion_at} ->
+        date = Calendar.strftime(deletion_at, "%Y-%m-%d")
+
+        text =
+          case locale do
+            "fr" ->
+              "Votre compte sera supprimé dans #{days} jours (#{date}). Connectez-vous pour le conserver."
+
+            "nl" ->
+              "Uw account wordt over #{days} dagen verwijderd (#{date}). Meld u aan om het te behouden."
+
+            _ ->
+              "Your account will be deleted in #{days} days (#{date}). Sign in to keep it."
+          end
+
+        ~s(<aside data-inactivity-warning>#{escape(text)}</aside>)
+
+      {:deadline, deletion_at} ->
+        date = Calendar.strftime(deletion_at, "%Y-%m-%d")
+        ~s(<aside data-inactivity-warning>#{escape(date)}</aside>)
+
+      nil ->
+        ""
+    end
+  end
 end

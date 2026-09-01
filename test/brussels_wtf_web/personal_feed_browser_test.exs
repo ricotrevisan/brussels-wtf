@@ -53,7 +53,7 @@ defmodule BrusselsWtfWeb.PersonalFeedBrowserTest do
       Council.MeetingPage
       |> Ash.Query.for_read(:published)
       |> Ash.read!(authorize?: false, domain: Council)
-      |> hd()
+      |> Enum.find(&(&1.current_revision_id != nil))
 
     imported = DateTime.utc_now()
 

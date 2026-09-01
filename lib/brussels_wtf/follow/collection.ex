@@ -38,11 +38,37 @@ defmodule BrusselsWtf.Follow.Collection do
       prepare build(load: [:members])
     end
 
+    read :owned do
+      filter expr(owner_citizen_id == ^actor(:id))
+    end
+
+    read :get_for_transfer do
+      get? true
+      argument :id, :uuid, allow_nil?: false
+      filter expr(id == ^arg(:id))
+    end
+
+    read :manage_owned do
+      get? true
+      argument :id, :uuid, allow_nil?: false
+      filter expr(id == ^arg(:id) and owner_citizen_id == ^actor(:id))
+      prepare build(load: [:members])
+    end
+
+    read :view_granted do
+      get? true
+      argument :id, :uuid, allow_nil?: false
+      filter expr(id == ^arg(:id) and visibility == :private and grants.citizen_id == ^actor(:id))
+      prepare build(load: [:members])
+    end
+
     update :claim do
       accept []
       argument :owner_citizen_id, :uuid, allow_nil?: false
       filter expr(is_nil(owner_citizen_id))
+      validate attribute_equals(:ownership_kind, :anonymous)
       change set_attribute(:owner_citizen_id, arg(:owner_citizen_id))
+      change set_attribute(:ownership_kind, :registered)
     end
 
     update :touch do
@@ -58,6 +84,20 @@ defmodule BrusselsWtf.Follow.Collection do
     update :set_title do
       accept [:title, :last_used_at]
       require_atomic? false
+    end
+
+    update :transfer_owned do
+      accept [:owner_citizen_id]
+      argument :expected_owner_citizen_id, :uuid, allow_nil?: false
+      filter expr(owner_citizen_id == ^arg(:expected_owner_citizen_id))
+      require_atomic? false
+    end
+
+    destroy :delete_owned do
+      filter expr(owner_citizen_id == ^actor(:id))
+    end
+
+    destroy :delete_for_account do
     end
 
     destroy :expire do
@@ -84,6 +124,18 @@ defmodule BrusselsWtf.Follow.Collection do
     policy action([:manage, :touch, :set_visibility, :set_title]) do
       authorize_if expr(id == ^actor(:collection_id))
     end
+
+    policy action([:owned, :manage_owned, :delete_owned]) do
+      authorize_if expr(^actor(:principal) == :citizen and owner_citizen_id == ^actor(:id))
+    end
+
+    policy action(:view_granted) do
+      authorize_if expr(^actor(:principal) == :citizen and grants.citizen_id == ^actor(:id))
+    end
+
+    policy action([:get_for_transfer, :transfer_owned, :delete_for_account]) do
+      authorize_if actor_attribute_equals(:principal, :system)
+    end
   end
 
   attributes do
@@ -99,6 +151,13 @@ defmodule BrusselsWtf.Follow.Collection do
     end
 
     attribute :owner_citizen_id, :uuid, public?: true
+
+    attribute :ownership_kind, :atom do
+      allow_nil? false
+      default :anonymous
+      constraints one_of: [:anonymous, :registered]
+    end
+
     attribute :title, :string, allow_nil?: false, public?: true
     attribute :last_used_at, :utc_datetime_usec, allow_nil?: false
     timestamps()
@@ -106,6 +165,12 @@ defmodule BrusselsWtf.Follow.Collection do
 
   relationships do
     has_many :members, BrusselsWtf.Follow.Member
+
+    has_many :grants, BrusselsWtf.Follow.CollectionGrant do
+      read_action :mine
+    end
+
+    has_many :transfer_offers, BrusselsWtf.Follow.CollectionTransferOffer
   end
 
   identities do
