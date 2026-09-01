@@ -20,7 +20,7 @@ defmodule BrusselsWtf.Follow.FeedUpdate do
       filter expr(citizen_id == ^actor(:id))
     end
 
-    create :deliver do
+    create :deliver_once do
       accept [
         :citizen_id,
         :target_type,
@@ -30,9 +30,12 @@ defmodule BrusselsWtf.Follow.FeedUpdate do
         :public_url,
         :occurred_at
       ]
+    end
 
-      upsert? true
-      upsert_identity :delivery_identity
+    read :for_delivery_identity do
+      argument :citizen_id, :uuid, allow_nil?: false
+      argument :event_identity, :string, allow_nil?: false
+      filter expr(citizen_id == ^arg(:citizen_id) and event_identity == ^arg(:event_identity))
     end
 
     update :mark_read do
@@ -50,7 +53,7 @@ defmodule BrusselsWtf.Follow.FeedUpdate do
       authorize_if expr(citizen_id == ^actor(:id) and ^actor(:principal) == :citizen)
     end
 
-    policy action([:read, :deliver, :purge]) do
+    policy action([:read, :for_delivery_identity, :deliver_once, :purge]) do
       authorize_if actor_attribute_equals(:principal, :system)
     end
   end
@@ -73,6 +76,6 @@ defmodule BrusselsWtf.Follow.FeedUpdate do
   end
 
   identities do
-    identity :delivery_identity, [:citizen_id, :target_type, :target_identifier, :event_identity]
+    identity :delivery_identity, [:citizen_id, :event_identity]
   end
 end

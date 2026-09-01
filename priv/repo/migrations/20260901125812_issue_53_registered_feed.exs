@@ -90,7 +90,7 @@ defmodule BrusselsWtf.Repo.Migrations.Issue53RegisteredFeed do
 
     create unique_index(
              :citizen_feed_updates,
-             [:citizen_id, :target_type, :target_identifier, :event_identity],
+             [:citizen_id, :event_identity],
              name: "citizen_feed_updates_delivery_identity_index"
            )
   end
@@ -98,7 +98,7 @@ defmodule BrusselsWtf.Repo.Migrations.Issue53RegisteredFeed do
   def down do
     drop_if_exists unique_index(
                      :citizen_feed_updates,
-                     [:citizen_id, :target_type, :target_identifier, :event_identity],
+                     [:citizen_id, :event_identity],
                      name: "citizen_feed_updates_delivery_identity_index"
                    )
 

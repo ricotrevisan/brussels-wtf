@@ -20,10 +20,20 @@ defmodule BrusselsWtf.Follow.CitizenFollow do
       filter expr(citizen_id == ^actor(:id))
     end
 
+    create :follow do
+      accept [:citizen_id, :target_type, :target_identifier]
+      upsert? true
+      upsert_identity :unique_follow
+    end
+
     create :import do
       accept [:citizen_id, :target_type, :target_identifier]
       upsert? true
       upsert_identity :unique_follow
+    end
+
+    read :all_for_sync do
+      prepare build(sort: [inserted_at: :asc, id: :asc])
     end
 
     destroy :remove do
@@ -32,8 +42,12 @@ defmodule BrusselsWtf.Follow.CitizenFollow do
   end
 
   policies do
-    policy action_type([:read, :create, :destroy]) do
+    policy action([:read, :mine, :follow, :import, :remove]) do
       authorize_if expr(citizen_id == ^actor(:id) and ^actor(:principal) == :citizen)
+    end
+
+    policy action(:all_for_sync) do
+      authorize_if actor_attribute_equals(:principal, :system)
     end
   end
 

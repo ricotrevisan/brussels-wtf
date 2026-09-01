@@ -49,56 +49,112 @@ defmodule BrusselsWtf.Follow do
     end)
   end
 
-  @qualifying %{
-    dossier: [:linked_agenda_item, :decision, :correction, :merge, :split],
-    person: [:verified_public_mandate, :verified_management_role, :relevant_council_item],
-    legal_entity: [:verified_management_role, :contract_award, :relevant_council_item],
-    commune: [:published_meeting_page, :revision_with_new_decisions]
-  }
-
-  @doc "Deliver one immutable update to every follower. Non-public and excluded events fail closed."
-  def publish_update(
-        %{
-          target_type: type,
-          target_identifier: identifier,
-          kind: kind,
-          identity: identity,
-          public_url: url,
-          occurred_at: at
-        } = event
-      ) do
-    if event[:public?] == true and kind in Map.get(@qualifying, type, []) and
-         is_binary(identity) and is_binary(url) and String.starts_with?(url, "/") do
-      actor = %{principal: :system}
-
+  @doc "Create a durable follow through the citizen authorization boundary."
+  def follow(citizen, type, identifier) do
+    with {:ok, target} <- Target.new(type, identifier),
+         true <- TargetEligibility.eligible?(target) do
       CitizenFollow
-      |> Ash.Query.filter(target_type == ^type and target_identifier == ^identifier)
-      |> Ash.read!(actor: actor, authorize?: false, domain: __MODULE__)
-      |> Enum.reduce_while({:ok, []}, fn follow, {:ok, delivered} ->
-        result =
-          FeedUpdate
-          |> Ash.Changeset.for_create(:deliver, %{
-            citizen_id: follow.citizen_id,
-            target_type: type,
-            target_identifier: identifier,
-            event_identity: identity,
-            event_kind: kind,
-            public_url: url,
-            occurred_at: at
-          })
-          |> Ash.create(actor: actor, authorize?: true, domain: __MODULE__)
-
-        case result do
-          {:ok, update} -> {:cont, {:ok, [update | delivered]}}
-          error -> {:halt, error}
-        end
-      end)
+      |> Ash.Changeset.for_create(:follow, %{
+        citizen_id: citizen.id,
+        target_type: target.type,
+        target_identifier: target.identifier
+      })
+      |> Ash.create(actor: citizen_actor(citizen), authorize?: true, domain: __MODULE__)
     else
-      {:ok, []}
+      _ -> {:error, :ineligible}
     end
   end
 
-  def publish_update(_), do: {:ok, []}
+  @doc "Synchronize every persisted follow from the authoritative public projections."
+  def synchronize_registered_feeds do
+    actor = %{principal: :system}
+
+    CitizenFollow
+    |> Ash.Query.for_read(:all_for_sync)
+    |> Ash.read!(actor: actor, authorize?: true, domain: __MODULE__)
+    |> Enum.reduce_while({:ok, 0}, fn follow, {:ok, count} ->
+      case synchronize_follow(follow, actor) do
+        {:ok, delivered} -> {:cont, {:ok, count + delivered}}
+        {:error, error} -> {:halt, {:error, error}}
+      end
+    end)
+  end
+
+  defp synchronize_follow(follow, actor) do
+    target = %Target{type: follow.target_type, identifier: follow.target_identifier}
+
+    BrusselsWtf.Follow.PublicUpdates.list(
+      [
+        %{
+          "type" => Atom.to_string(target.type),
+          "id" => target.identifier,
+          "importedAt" => DateTime.to_iso8601(follow.inserted_at)
+        }
+      ],
+      "en"
+    )
+    |> Enum.reduce_while({:ok, 0}, fn update, {:ok, count} ->
+      attrs = %{
+        citizen_id: follow.citizen_id,
+        target_type: follow.target_type,
+        target_identifier: follow.target_identifier,
+        event_identity: update.publicEventId,
+        event_kind: update.eventType,
+        public_url: update.url,
+        occurred_at: parse_occurred_at!(update.occurredAt)
+      }
+
+      case deliver_exactly_once(attrs, actor) do
+        {:ok, :created} -> {:cont, {:ok, count + 1}}
+        {:ok, :existing} -> {:cont, {:ok, count}}
+        {:error, error} -> {:halt, {:error, error}}
+      end
+    end)
+  end
+
+  defp deliver_exactly_once(attrs, actor) do
+    existing =
+      FeedUpdate
+      |> Ash.Query.for_read(:for_delivery_identity, %{
+        citizen_id: attrs.citizen_id,
+        event_identity: attrs.event_identity
+      })
+      |> Ash.read_one!(actor: actor, authorize?: true, domain: __MODULE__)
+
+    case existing do
+      nil ->
+        case FeedUpdate
+             |> Ash.Changeset.for_create(:deliver_once, attrs)
+             |> Ash.create(actor: actor, authorize?: true, domain: __MODULE__) do
+          {:ok, _} -> {:ok, :created}
+          {:error, _} -> deliver_exactly_once(attrs, actor)
+        end
+
+      record ->
+        if delivery_bytes(record) == delivery_bytes(attrs),
+          do: {:ok, :existing},
+          else: {:error, :public_event_identity_reused}
+    end
+  end
+
+  defp delivery_bytes(value) do
+    [
+      :citizen_id,
+      :target_type,
+      :target_identifier,
+      :event_identity,
+      :event_kind,
+      :public_url,
+      :occurred_at
+    ]
+    |> Enum.map(&Map.fetch!(value, &1))
+    |> :erlang.term_to_binary()
+  end
+
+  defp parse_occurred_at!(value) do
+    {:ok, timestamp, 0} = DateTime.from_iso8601(value)
+    timestamp
+  end
 
   def registered_feed(citizen) do
     actor = citizen_actor(citizen)

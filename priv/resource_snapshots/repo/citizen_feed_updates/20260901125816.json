@@ -152,14 +152,6 @@
         },
         {
           "type": "atom",
-          "value": "target_type"
-        },
-        {
-          "type": "atom",
-          "value": "target_identifier"
-        },
-        {
-          "type": "atom",
           "value": "event_identity"
         }
       ],

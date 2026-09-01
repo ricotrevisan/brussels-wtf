@@ -134,6 +134,7 @@ config :brussels_wtf, Oban,
   plugins: [
     {Oban.Plugins.Cron,
      crontab: [
+       {"*/5 * * * *", BrusselsWtf.Workers.SynchronizeRegisteredFeeds},
        {"0 */6 * * *", BrusselsWtf.Workers.PollCommune,
         args: %{commune_slug: "ixelles", kind: "scheduled"}},
        {"15 */6 * * *", BrusselsWtf.Workers.PollCommune,

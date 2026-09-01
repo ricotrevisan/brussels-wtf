@@ -17,70 +17,48 @@ defmodule BrusselsWtf.FollowRegisteredTest do
     :ok
   end
 
-  test "the exact trigger matrix is idempotent and citizen-private" do
+  test "caller assertions cannot publish and delivery identity is immutable and citizen-private" do
     {alice, _} = citizen("alice-feed@example.test")
     {bob, _} = citizen("bob-feed@example.test")
-    actor = %{id: alice.id, principal: :citizen}
 
-    matrix = %{
-      dossier: [:linked_agenda_item, :decision, :correction, :merge, :split],
-      person: [:verified_public_mandate, :verified_management_role, :relevant_council_item],
-      legal_entity: [:verified_management_role, :contract_award, :relevant_council_item],
-      commune: [:published_meeting_page, :revision_with_new_decisions]
+    refute function_exported?(Follow, :publish_update, 1)
+    assert {:ok, _follow} = Follow.follow(alice, :commune, "ixelles")
+
+    attrs = %{
+      citizen_id: alice.id,
+      target_type: :commune,
+      target_identifier: "ixelles",
+      event_identity: Ash.UUID.generate(),
+      event_kind: :published_meeting_page,
+      public_url: "/meetings/ixelles/42?lang=en#revision-one",
+      occurred_at: ~U[2026-09-02 12:00:00Z]
     }
 
-    Enum.each(matrix, fn {type, kinds} ->
-      {:ok, _} =
-        CitizenFollow
-        |> Ash.Changeset.for_create(:import, %{
-          citizen_id: alice.id,
-          target_type: type,
-          target_identifier: "target"
-        })
-        |> Ash.create(actor: actor, authorize?: true, domain: Follow)
-
-      Enum.each(kinds, fn kind ->
-        event = %{
-          target_type: type,
-          target_identifier: "target",
-          kind: kind,
-          identity: "#{type}:#{kind}",
-          public_url: "/exact/#{type}/#{kind}",
-          occurred_at: ~U[2026-09-02 12:00:00Z],
-          public?: true
-        }
-
-        assert {:ok, [_]} = Follow.publish_update(event)
-        assert {:ok, [_]} = Follow.publish_update(event)
-      end)
-    end)
-
-    assert {:ok, updates} = Follow.registered_feed(alice)
-    assert length(updates) == 13
-    assert Enum.all?(updates, &String.starts_with?(&1.public_url, "/exact/"))
-
-    assert {:ok, []} =
-             Follow.publish_update(%{
-               target_type: :dossier,
-               target_identifier: "target",
-               kind: :typography_only,
-               identity: "excluded",
-               public_url: "/no",
-               occurred_at: ~U[2026-09-02 12:00:00Z],
-               public?: true
-             })
-
-    assert {:ok, []} =
-             Ash.read(FeedUpdate,
-               actor: %{id: bob.id, principal: :citizen},
+    assert {:error, _} =
+             FeedUpdate
+             |> Ash.Changeset.for_create(:deliver_once, attrs)
+             |> Ash.create(
+               actor: %{id: alice.id, principal: :citizen},
                authorize?: true,
                domain: Follow
              )
 
-    [first | _] = updates
-    assert {:ok, marked} = Follow.mark_read(alice, first.id)
+    assert {:ok, original} =
+             FeedUpdate
+             |> Ash.Changeset.for_create(:deliver_once, attrs)
+             |> Ash.create(actor: %{principal: :system}, authorize?: true, domain: Follow)
+
+    assert {:error, _} =
+             FeedUpdate
+             |> Ash.Changeset.for_create(:deliver_once, %{attrs | public_url: "/spoofed"})
+             |> Ash.create(actor: %{principal: :system}, authorize?: true, domain: Follow)
+
+    assert {:ok, [visible]} = Follow.registered_feed(alice)
+    assert visible.id == original.id
+    assert {:ok, []} = Follow.registered_feed(bob)
+    assert {:error, _} = Follow.mark_read(bob, original.id)
+    assert {:ok, marked} = Follow.mark_read(alice, original.id)
     assert marked.read_at
-    assert {:error, _} = Follow.mark_read(bob, first.id)
   end
 
   test "cleanup uses the twelve month maximum and warning does not change sign-in" do
