@@ -4,11 +4,49 @@ defmodule BrusselsWtf.Follow do
   use Ash.Domain, otp_app: :brussels_wtf
 
   require Ash.Query
-  alias BrusselsWtf.Follow.{Collection, Member, Target, TargetEligibility}
+  require Logger
+  alias BrusselsWtf.Follow.{CitizenFollow, Collection, Member, Target, TargetEligibility}
 
   resources do
     resource Collection
     resource Member
+    resource CitizenFollow
+  end
+
+  def import_citizen_follows(citizen, targets) when is_list(targets) do
+    actor = %{id: citizen.id, principal: :citizen}
+
+    Enum.reduce_while(targets, {:ok, []}, fn {type, identifier}, {:ok, records} ->
+      with {:ok, target} <- Target.new(type, identifier),
+           true <- TargetEligibility.eligible?(target),
+           {:ok, follow} <-
+             CitizenFollow
+             |> Ash.Changeset.for_create(:import, %{
+               citizen_id: citizen.id,
+               target_type: type,
+               target_identifier: identifier
+             })
+             |> Ash.create(actor: actor, authorize?: true, domain: __MODULE__) do
+        {:cont, {:ok, [follow | records]}}
+      else
+        _ -> {:halt, {:error, :ineligible}}
+      end
+    end)
+  end
+
+  def claim_collection(secret, citizen) do
+    with {:ok, collection} <- capability_collection(secret),
+         true <- is_nil(collection.owner_citizen_id) do
+      collection
+      |> Ash.Changeset.for_update(:claim, %{owner_citizen_id: citizen.id})
+      |> Ash.update(
+        actor: %{id: citizen.id, principal: :citizen},
+        authorize?: true,
+        domain: __MODULE__
+      )
+    else
+      _ -> {:error, :not_found}
+    end
   end
 
   def create_collection(now \\ Application.fetch_env!(:brussels_wtf, :clock).utc_now()) do
@@ -133,6 +171,8 @@ defmodule BrusselsWtf.Follow do
   end
 
   defp capability_collection(secret) when is_binary(secret) do
+    Logger.warning("follow_collection_capability_checked")
+
     Collection
     |> Ash.Query.for_read(:exchange_capability, %{management_secret_hash: hash(secret)})
     |> Ash.read_one(authorize?: true, domain: __MODULE__)

@@ -31,6 +31,16 @@ defmodule BrusselsWtfWeb.Router do
   scope "/", BrusselsWtfWeb do
     pipe_through :browser
 
+    get "/citizen/sign-in", CitizenSessionController, :new
+    post "/citizen/magic-link", CitizenSessionController, :create
+    get "/citizen/magic-link", CitizenSessionController, :confirm
+    post "/citizen/magic-link/consume", CitizenSessionController, :consume
+    delete "/citizen/session", CitizenSessionController, :delete
+    patch "/citizen/email", CitizenSessionController, :change_email
+    get "/citizen/registration", CitizenSessionController, :registration
+    post "/citizen/registration/import-follows", CitizenSessionController, :import_follows
+    post "/citizen/registration/claim-collection", CitizenSessionController, :claim_collection
+
     get "/review/login", ReviewSessionController, :new
     post "/review/session", ReviewSessionController, :create
     delete "/review/session", ReviewSessionController, :delete

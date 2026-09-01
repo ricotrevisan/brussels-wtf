@@ -61,7 +61,8 @@ config :brussels_wtf,
     BrusselsWtf.Council,
     BrusselsWtf.Review,
     BrusselsWtf.Identity,
-    BrusselsWtf.Follow
+    BrusselsWtf.Follow,
+    BrusselsWtf.Accounts
   ],
   clock: BrusselsWtf.Clock.System,
   http: BrusselsWtf.HTTP.Req,
@@ -98,6 +99,9 @@ config :brussels_wtf,
   },
   allow_synthetic_seeds: false,
   automatic_transcription: false,
+  citizen_mailer: BrusselsWtf.Accounts.Mail.Memory,
+  citizen_token_signing_secret: String.duplicate("dev-only-citizen-token-secret-", 3),
+  citizen_session: [idle_days: 30, absolute_days: 90],
   session_cookie_secure: false,
   review_auth: [
     actor_id: "rico",
@@ -150,7 +154,8 @@ config :brussels_wtf, Oban,
           kind: "scheduled",
           scope: "previous-year"
         }},
-       {"30 2 * * *", BrusselsWtf.Workers.PurgeSuggestions, args: %{}}
+       {"30 2 * * *", BrusselsWtf.Workers.PurgeSuggestions, args: %{}},
+       {"*/15 * * * *", BrusselsWtf.Workers.PurgeExpiredMagicLinks, args: %{}}
      ]}
   ],
   queues: [
@@ -225,7 +230,10 @@ config :logger, :default_formatter,
 
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
+config :phoenix, :filter_parameters, ["email", "token", "management_secret", "citizen_session"]
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"
+
+config :ash_authentication, return_error_on_invalid_magic_link_token?: true

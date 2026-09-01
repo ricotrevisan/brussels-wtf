@@ -43,6 +43,7 @@ defmodule BrusselsWtf.MixProject do
     [
       {:ash, "~> 3.0"},
       {:ash_phoenix, "~> 2.0"},
+      {:ash_authentication, "~> 4.0"},
       {:ash_postgres, "~> 2.0"},
       {:simple_sat, "~> 0.1.4"},
       {:oban, "~> 2.23"},
@@ -102,7 +103,7 @@ defmodule BrusselsWtf.MixProject do
       "test.browser": [
         "assets.setup",
         "assets.build",
-        "test --include browser test/brussels_wtf_web/personal_feed_browser_test.exs"
+        "test --include browser test/brussels_wtf_web/personal_feed_browser_test.exs test/brussels_wtf_web/citizen_auth_browser_test.exs"
       ],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
       "assets.build": ["compile", "tailwind brussels_wtf", "esbuild brussels_wtf"],
