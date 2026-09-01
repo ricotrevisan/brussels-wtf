@@ -1,5 +1,6 @@
 defmodule BrusselsWtfWeb.CitizenSessionController do
   use BrusselsWtfWeb, :controller
+  require Logger
   alias BrusselsWtf.Accounts
 
   @generic %{
@@ -47,6 +48,7 @@ defmodule BrusselsWtfWeb.CitizenSessionController do
   # The JWT is available to browser script only through the URL fragment. Fragments
   # are not sent in HTTP requests. Clear it before any network operation.
   def confirm(conn, _) do
+    Logger.warning("citizen_magic_link_fragment_bootstrap")
     csrf = Plug.CSRFProtection.get_csrf_token()
     copy = copy(conn)
 

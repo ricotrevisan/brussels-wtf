@@ -314,6 +314,99 @@ defmodule BrusselsWtfWeb.CitizenAuthenticationTest do
     assert persisted.owner_citizen_id == hd(owners)
   end
 
+  test "email security transaction rolls back every revocation stage and blocks direct mutation" do
+    for stage <- [:sessions, :outstanding_links, :authentication_tokens, :email] do
+      email = "rollback-#{stage}@example.test"
+      Accounts.request_link(email)
+      assert_receive {:magic_link, _, sign_in_link, _}
+      {:ok, citizen, session} = Accounts.consume(token_from_link(sign_in_link))
+      Accounts.request_link(email)
+      assert_receive {:magic_link, _, outstanding_link, _}
+      outstanding = token_from_link(outstanding_link)
+      before = auth_counts()
+
+      Application.put_env(:brussels_wtf, :account_security_failure, stage)
+
+      assert {:error, {:injected_failure, ^stage}} =
+               Accounts.change_email(citizen, "new-#{email}")
+
+      Application.delete_env(:brussels_wtf, :account_security_failure)
+
+      assert auth_counts() == before
+
+      assert {:ok, persisted} =
+               Ash.get(BrusselsWtf.Accounts.Citizen, citizen.id,
+                 actor: %{id: citizen.id, principal: :citizen},
+                 authorize?: true,
+                 domain: Accounts
+               )
+
+      assert persisted.email == email
+      assert {:ok, _} = Accounts.authenticate_session(session.id)
+      assert {:ok, _, _} = Accounts.consume(outstanding)
+    end
+
+    Accounts.request_link("boundary-email@example.test")
+    assert_receive {:magic_link, _, link, _}
+    {:ok, citizen, _} = Accounts.consume(token_from_link(link))
+
+    assert {:error, _} =
+             citizen
+             |> Ash.Changeset.for_update(:apply_email_change, %{email: "bypass@example.test"})
+             |> Ash.update(
+               actor: %{id: citizen.id, principal: :citizen},
+               authorize?: true,
+               domain: Accounts
+             )
+  after
+    Application.delete_env(:brussels_wtf, :account_security_failure)
+  end
+
+  test "account deletion removes outstanding links sessions and authentication tokens" do
+    Accounts.request_link("delete@example.test")
+    assert_receive {:magic_link, _, link, _}
+    {:ok, citizen, _session} = Accounts.consume(token_from_link(link))
+    Accounts.request_link("delete@example.test")
+    assert_receive {:magic_link, _, outstanding, _}
+    assert elem(auth_counts(), 0) > 0
+    assert elem(auth_counts(), 1) > 0
+    assert elem(auth_counts(), 2) > 0
+
+    outstanding_token = token_from_link(outstanding)
+    {:ok, %{"jti" => outstanding_jti}} = Joken.peek_claims(outstanding_token)
+    assert {:ok, :ok} = Accounts.delete_account(citizen)
+
+    assert [[0]] =
+             BrusselsWtf.Repo.query!(
+               "SELECT count(*) FROM citizen_sessions WHERE citizen_id = $1",
+               [Ecto.UUID.dump!(citizen.id)]
+             ).rows
+
+    assert [[0]] =
+             BrusselsWtf.Repo.query!(
+               "SELECT count(*) FROM citizen_authentication_tokens WHERE subject LIKE $1 OR jti = $2",
+               ["%" <> citizen.id <> "%", outstanding_jti]
+             ).rows
+
+    assert {:error, :invalid_or_expired} = Accounts.consume(outstanding_token)
+
+    assert {:error, _} =
+             Ash.get(BrusselsWtf.Accounts.Citizen, citizen.id,
+               actor: %{id: citizen.id, principal: :citizen},
+               authorize?: true,
+               domain: Accounts
+             )
+  end
+
+  defp auth_counts do
+    rows = fn table ->
+      BrusselsWtf.Repo.query!("SELECT count(*) FROM " <> table).rows |> hd() |> hd()
+    end
+
+    {rows.("citizen_sessions"), rows.("citizen_outstanding_magic_links"),
+     rows.("citizen_authentication_tokens")}
+  end
+
   defp token_from_link(link) do
     link |> URI.parse() |> Map.fetch!(:fragment) |> URI.decode_query() |> Map.fetch!("token")
   end

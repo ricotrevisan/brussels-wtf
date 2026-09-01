@@ -13,6 +13,10 @@ defmodule BrusselsWtf.Accounts.Token do
   end
 
   actions do
+    read :read do
+      primary? true
+    end
+
     destroy :revoke_stored do
     end
   end

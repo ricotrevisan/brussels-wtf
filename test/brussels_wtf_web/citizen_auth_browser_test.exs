@@ -1,5 +1,6 @@
 defmodule BrusselsWtfWeb.CitizenAuthBrowserTest do
   use BrusselsWtf.DataCase, async: false
+  import ExUnit.CaptureLog, only: [capture_log: 2]
   @moduletag :browser
   @port 4103
   test "real Chromium uses one isolated magic link and sees independent opt-ins" do
@@ -88,8 +89,28 @@ defmodule BrusselsWtfWeb.CitizenAuthBrowserTest do
           executable -> [env: [{"PLAYWRIGHT_CHROMIUM_EXECUTABLE", executable}]]
         end
 
-    {output, status} = System.cmd("uv", args, opts)
+    {logs, {output, status}} =
+      with_log(fn -> System.cmd("uv", args, opts) end)
+
     assert status == 0, output
+
+    for secret <- [
+          issued,
+          expired,
+          "expired-browser@example.test",
+          "browser@example.test",
+          "outstanding-magic-link:expired-browser@example.test",
+          management_secret
+        ] do
+      refute logs =~ secret
+      refute output =~ secret
+    end
+
+    refute logs =~ "#token="
+    refute output =~ "#token="
+    assert logs =~ "citizen_magic_link_fragment_bootstrap"
+    assert logs =~ "citizen_magic_link_consumed"
+    assert logs =~ "citizen_magic_link_rejected"
 
     assert [%{target_type: :commune, target_identifier: "ixelles"}] =
              Ash.read!(BrusselsWtf.Follow.CitizenFollow,
@@ -99,5 +120,19 @@ defmodule BrusselsWtfWeb.CitizenAuthBrowserTest do
 
     assert {:ok, %{owner_citizen_id: owner}} = BrusselsWtf.Follow.view(collection.view_token)
     assert is_binary(owner)
+  end
+
+  defp with_log(fun) do
+    parent = self()
+    ref = make_ref()
+
+    logs =
+      capture_log([level: :debug], fn ->
+        send(parent, {ref, fun.()})
+      end)
+
+    receive do
+      {^ref, result} -> {logs, result}
+    end
   end
 end

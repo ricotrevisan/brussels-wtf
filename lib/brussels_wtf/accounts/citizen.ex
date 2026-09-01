@@ -56,9 +56,12 @@ defmodule BrusselsWtf.Accounts.Citizen do
       require_atomic? false
     end
 
-    update :change_email do
+    update :apply_email_change do
       accept [:email]
       require_atomic? false
+    end
+
+    destroy :delete_account do
     end
   end
 
@@ -67,8 +70,12 @@ defmodule BrusselsWtf.Accounts.Citizen do
       authorize_if always()
     end
 
-    policy action([:read, :record_sign_in, :change_email]) do
+    policy action([:read, :record_sign_in]) do
       authorize_if expr(id == ^actor(:id) and ^actor(:principal) == :citizen)
+    end
+
+    policy action([:apply_email_change, :delete_account]) do
+      authorize_if actor_attribute_equals(:principal, :system)
     end
   end
 

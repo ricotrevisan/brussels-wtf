@@ -121,30 +121,82 @@ defmodule BrusselsWtf.Accounts do
 
   def authenticate_session(_), do: {:error, :expired}
 
-  def change_email(citizen, email) do
-    with {:ok, changed} <-
-           citizen
-           |> Ash.Changeset.for_update(:change_email, %{
-             email: String.downcase(String.trim(email))
-           })
-           |> Ash.update(
-             actor: %{id: citizen.id, principal: :citizen},
-             authorize?: true,
-             domain: __MODULE__
-           ) do
-      revoke_sessions(citizen.id)
-      revoke_outstanding_magic_links(citizen.email)
-      strategy = AshAuthentication.Info.strategy!(Citizen, :log_out_everywhere)
+  @doc "Changes email only if every old authentication capability is revoked atomically."
+  def change_email(%Citizen{} = citizen, email) when is_binary(email) do
+    security_transaction(fn ->
+      :ok = maybe_fail(:sessions)
+      :ok = revoke_sessions_checked(citizen.id)
+      :ok = maybe_fail(:outstanding_links)
+      :ok = revoke_outstanding_magic_links_checked(citizen.email)
+      :ok = maybe_fail(:authentication_tokens)
+      :ok = revoke_authentication_tokens_checked(citizen)
+      :ok = maybe_fail(:email)
 
-      _ =
-        AshAuthentication.Strategy.action(strategy, :log_out_everywhere, %{
-          "user_id" => citizen.id
-        })
+      citizen
+      |> Ash.Changeset.for_update(:apply_email_change, %{
+        email: String.downcase(String.trim(email))
+      })
+      |> Ash.update(actor: %{principal: :system}, authorize?: true, domain: __MODULE__)
+      |> checked_value()
+    end)
+    |> case do
+      {:ok, changed} ->
+        Logger.warning("citizen_email_changed_sessions_revoked")
+        {:ok, changed}
 
-      Logger.warning("citizen_email_changed_sessions_revoked")
-      {:ok, changed}
+      {:error, reason} ->
+        {:error, reason}
     end
   end
+
+  @doc "Deletes an account and all authentication state in one transaction."
+  def delete_account(%Citizen{} = citizen) do
+    security_transaction(fn ->
+      outstanding_jtis = outstanding_magic_link_jtis_checked(citizen.email)
+      :ok = revoke_sessions_checked(citizen.id)
+      :ok = revoke_outstanding_magic_links_checked(citizen.email)
+      :ok = purge_authentication_tokens_checked(citizen, outstanding_jtis)
+
+      citizen
+      |> Ash.destroy(
+        action: :delete_account,
+        actor: %{principal: :system},
+        authorize?: true,
+        domain: __MODULE__
+      )
+      |> checked_ok()
+
+      :ok
+    end)
+  end
+
+  defp security_transaction(fun) do
+    case BrusselsWtf.Repo.transaction(fn ->
+           try do
+             fun.()
+           catch
+             {:security_failure, reason} -> BrusselsWtf.Repo.rollback(reason)
+           end
+         end) do
+      {:ok, value} -> {:ok, value}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp maybe_fail(stage) do
+    case Application.get_env(:brussels_wtf, :account_security_failure) do
+      ^stage -> throw({:security_failure, {:injected_failure, stage}})
+      fun when is_function(fun, 1) -> checked_ok(fun.(stage))
+      _ -> :ok
+    end
+  end
+
+  defp checked_value({:ok, value}), do: value
+  defp checked_value({:error, reason}), do: throw({:security_failure, reason})
+  defp checked_ok(:ok), do: :ok
+  defp checked_ok({:ok, _}), do: :ok
+  defp checked_ok({:error, reason}), do: throw({:security_failure, reason})
+  defp checked_ok(other), do: throw({:security_failure, {:unexpected_result, other}})
 
   defp outstanding_magic_link(jti) when is_binary(jti) do
     actor = %{principal: :system}
@@ -178,29 +230,49 @@ defmodule BrusselsWtf.Accounts do
     end
   end
 
-  defp revoke_outstanding_magic_links(email) do
+  defp revoke_outstanding_magic_links_checked(email) do
     actor = %{principal: :system}
 
-    BrusselsWtf.Accounts.OutstandingMagicLink
-    |> Ash.Query.filter(email_hash == ^email_hash(email))
-    |> Ash.read!(actor: actor, authorize?: true, domain: __MODULE__)
-    |> Enum.each(fn link ->
-      case BrusselsWtf.Accounts.Token
-           |> Ash.Query.for_read(:get_token, %{jti: link.jti, purpose: "magic_link"})
-           |> Ash.read_one(authorize?: false, domain: __MODULE__) do
-        {:ok, token_record} when not is_nil(token_record) ->
-          Ash.destroy!(token_record,
-            action: :revoke_stored,
-            authorize?: false,
-            domain: __MODULE__
-          )
+    links =
+      OutstandingMagicLink
+      |> Ash.Query.filter(email_hash == ^email_hash(email))
+      |> Ash.read(actor: actor, authorize?: true, domain: __MODULE__)
+      |> checked_value()
 
-        _ ->
-          :ok
-      end
-
-      Ash.destroy!(link, action: :remove, actor: actor, authorize?: true, domain: __MODULE__)
+    Enum.each(links, fn link ->
+      OutstandingMagicLink
+      |> Ash.get(link.id, actor: actor, authorize?: true, domain: __MODULE__)
+      |> checked_value()
+      |> Ash.destroy(action: :remove, actor: actor, authorize?: true, domain: __MODULE__)
+      |> checked_ok()
     end)
+
+    :ok
+  end
+
+  defp revoke_authentication_tokens_checked(citizen) do
+    strategy = AshAuthentication.Info.strategy!(Citizen, :log_out_everywhere)
+
+    AshAuthentication.Strategy.action(strategy, :log_out_everywhere, %{"user" => citizen})
+    |> checked_ok()
+  end
+
+  defp outstanding_magic_link_jtis_checked(email) do
+    OutstandingMagicLink
+    |> Ash.Query.filter(email_hash == ^email_hash(email))
+    |> Ash.read(actor: %{principal: :system}, authorize?: true, domain: __MODULE__)
+    |> checked_value()
+    |> Enum.map(& &1.jti)
+  end
+
+  defp purge_authentication_tokens_checked(citizen, outstanding_jtis) do
+    case BrusselsWtf.Repo.query(
+           "DELETE FROM citizen_authentication_tokens WHERE subject LIKE $1 OR jti = ANY($2)",
+           ["%" <> citizen.id <> "%", outstanding_jtis]
+         ) do
+      {:ok, _} -> :ok
+      {:error, reason} -> throw({:security_failure, reason})
+    end
   end
 
   defp email_hash(email) do
@@ -228,13 +300,20 @@ defmodule BrusselsWtf.Accounts do
     :ok
   end
 
-  def revoke_sessions(citizen_id) do
-    Session
-    |> Ash.Query.filter(citizen_id == ^citizen_id)
-    |> Ash.read!(actor: %{principal: :system}, authorize?: true, domain: __MODULE__)
-    |> Enum.each(
-      &Ash.destroy!(&1, actor: %{principal: :system}, authorize?: true, domain: __MODULE__)
-    )
+  def revoke_sessions(citizen_id), do: revoke_sessions_checked(citizen_id)
+
+  defp revoke_sessions_checked(citizen_id) do
+    sessions =
+      Session
+      |> Ash.Query.filter(citizen_id == ^citizen_id)
+      |> Ash.read(actor: %{principal: :system}, authorize?: true, domain: __MODULE__)
+      |> checked_value()
+
+    Enum.each(sessions, fn session ->
+      session
+      |> Ash.destroy(actor: %{principal: :system}, authorize?: true, domain: __MODULE__)
+      |> checked_ok()
+    end)
 
     :ok
   end
