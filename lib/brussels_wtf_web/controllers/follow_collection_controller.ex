@@ -79,7 +79,13 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
           Enum.map_join(updates, "", fn update ->
             read = if update.read_at, do: copy(locale, :read), else: copy(locale, :unread)
 
-            ~s(<li data-update-id="#{update.id}" data-read="#{not is_nil(update.read_at)}"><a href="#{escape(update.public_url)}">#{escape(update.event_kind)}</a> <span>#{read}</span><form method="post" action="/citizen/feed/#{update.id}/read"><input type="hidden" name="_csrf_token" value="#{csrf}"><button>#{copy(locale, :mark_read)}</button></form></li>)
+            url = localized_update_url(update.public_url, locale)
+
+            label =
+              "#{copy(locale, {:event, update.event_kind})} — " <>
+                "#{copy(locale, {:type, update.target_type})}"
+
+            ~s(<li data-update-id="#{update.id}" data-read="#{not is_nil(update.read_at)}"><a href="#{escape(url)}">#{escape(label)}</a> <span>#{read}</span><form method="post" action="/citizen/feed/#{update.id}/read"><input type="hidden" name="_csrf_token" value="#{csrf}"><button>#{copy(locale, :mark_read)}</button></form></li>)
           end)
 
         html(
@@ -362,6 +368,56 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
         type
       ]
 
+  defp copy(locale, {:event, event}) do
+    labels = %{
+      "en" => %{
+        linked_agenda_item: "Agenda item linked",
+        decision: "Documented decision",
+        correction: "Factual correction",
+        merge: "Dossiers merged",
+        split: "Dossier split",
+        relevant_council_item: "Relevant council item",
+        published_meeting_page: "Meeting page published",
+        publication_revision_new_decisions: "New documented decisions",
+        verified_public_mandate: "Verified public mandate",
+        verified_management_role: "Verified management role",
+        contract_award: "Verified contract award"
+      },
+      "fr" => %{
+        linked_agenda_item: "Point lié au dossier",
+        decision: "Décision documentée",
+        correction: "Correction factuelle",
+        merge: "Dossiers fusionnés",
+        split: "Dossier scindé",
+        relevant_council_item: "Point pertinent du conseil",
+        published_meeting_page: "Page de séance publiée",
+        publication_revision_new_decisions: "Nouvelles décisions documentées",
+        verified_public_mandate: "Mandat public vérifié",
+        verified_management_role: "Fonction de gestion vérifiée",
+        contract_award: "Attribution de marché vérifiée"
+      },
+      "nl" => %{
+        linked_agenda_item: "Agendapunt aan dossier gekoppeld",
+        decision: "Gedocumenteerde beslissing",
+        correction: "Feitelijke correctie",
+        merge: "Dossiers samengevoegd",
+        split: "Dossier gesplitst",
+        relevant_council_item: "Relevant gemeenteraadspunt",
+        published_meeting_page: "Vergaderpagina gepubliceerd",
+        publication_revision_new_decisions: "Nieuwe gedocumenteerde beslissingen",
+        verified_public_mandate: "Geverifieerd openbaar mandaat",
+        verified_management_role: "Geverifieerde bestuursfunctie",
+        contract_award: "Geverifieerde overheidsopdracht"
+      }
+    }
+
+    labels |> Map.fetch!(locale) |> Map.get(event, copy(locale, :update))
+  end
+
+  defp copy("fr", :update), do: "Mise à jour publique"
+  defp copy("nl", :update), do: "Openbare update"
+  defp copy(_, :update), do: "Public update"
+
   defp copy("fr", :select), do: "Sélectionner"
   defp copy("nl", :select), do: "Selecteren"
   defp copy(_, :select), do: "Select"
@@ -380,6 +436,16 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
   defp copy(_, :snapshot),
     do:
       "Imported follows stay only in this browser. They do not sync and are lost when browser data is cleared. Import is a snapshot; later collection changes do not alter your follows."
+
+  defp localized_update_url(url, locale) do
+    uri = URI.parse(url)
+
+    query =
+      uri.query
+      |> Kernel.||("" |> URI.decode_query() |> Map.put("lang", locale) |> URI.encode_query())
+
+    URI.to_string(%{uri | query: query})
+  end
 
   defp private_headers(conn),
     do:
