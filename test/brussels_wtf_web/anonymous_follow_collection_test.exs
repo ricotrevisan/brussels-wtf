@@ -351,6 +351,69 @@ defmodule BrusselsWtfWeb.AnonymousFollowCollectionTest do
     end
   end
 
+  test "declared target and event cross-product accepts only authoritative current combinations",
+       %{conn: conn, person_fact: fact, targets: targets} do
+    old_provider = Application.get_env(:brussels_wtf, :public_follow_update_provider)
+    Application.put_env(:brussels_wtf, :public_follow_update_provider, FactMatrixProvider)
+
+    on_exit(fn ->
+      Application.delete_env(:brussels_wtf, :fact_matrix_update)
+      Application.put_env(:brussels_wtf, :public_follow_update_provider, old_provider)
+    end)
+
+    identifiers = Map.new(targets, fn {type, id} -> {String.to_atom(type), to_string(id)} end)
+
+    revision_events = [
+      :linked_agenda_item,
+      :decision,
+      :correction,
+      :merge,
+      :split,
+      :relevant_council_item,
+      :published_meeting_page,
+      :publication_revision_new_decisions
+    ]
+
+    fact_events = [:verified_public_mandate, :verified_management_role, :contract_award]
+
+    supported =
+      MapSet.new([
+        {:dossier, :linked_agenda_item},
+        {:dossier, :decision},
+        {:dossier, :correction},
+        {:dossier, :merge},
+        {:dossier, :split},
+        {:person, :verified_public_mandate},
+        {:commune, :published_meeting_page},
+        {:commune, :publication_revision_new_decisions}
+      ])
+
+    for type <- [:dossier, :person, :legal_entity, :commune],
+        event <- revision_events ++ fact_events do
+      identifier = identifiers[type]
+
+      update =
+        if event in fact_events do
+          fact_id = if type == :person, do: fact.id, else: "unsupported-fact"
+          fact_update(type, identifier, event, fact_id, "en")
+        else
+          revision_update(type, identifier, event, "en")
+        end
+
+      put_fact_update(update)
+      updates = request_updates(conn, type, identifier, "en")
+
+      assert updates != [] == MapSet.member?(supported, {type, event}),
+             "unexpected result for #{type}/#{event}: #{inspect(updates)}"
+    end
+
+    # In particular, a shaped meeting revision cannot establish an identity link.
+    for type <- [:person, :legal_entity] do
+      put_fact_update(revision_update(type, identifiers[type], :relevant_council_item, "en"))
+      assert request_updates(conn, type, identifiers[type], "en") == []
+    end
+  end
+
   test "fact events fail closed for factId/revisionId confusion, route mismatches, and extra identities",
        %{conn: conn, person: person, person_fact: person_fact, company: company} do
     old_provider = Application.get_env(:brussels_wtf, :public_follow_update_provider)
@@ -386,6 +449,19 @@ defmodule BrusselsWtfWeb.AnonymousFollowCollectionTest do
       put_fact_update(update)
       assert [] == request_updates(conn, :person, person.id, "fr")
     end
+  end
+
+  defp revision_update(type, identifier, event, locale) do
+    %{
+      id: "feed-revision",
+      target: %{type: type, id: identifier},
+      eventType: event,
+      publicEventId: "event-1",
+      revisionId: "revision-1",
+      url: "/meetings/ixelles/42?lang=#{locale}#revision-1",
+      title: "Published revision",
+      occurredAt: "2028-02-29T12:00:00Z"
+    }
   end
 
   defp fact_update(type, identifier, event, fact_id, locale) do

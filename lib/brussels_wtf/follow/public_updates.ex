@@ -53,8 +53,8 @@ defmodule BrusselsWtf.Follow.PublicUpdates do
 
   @matrix %{
     dossier: [:linked_agenda_item, :decision, :correction, :merge, :split],
-    person: [:verified_public_mandate, :verified_management_role, :relevant_council_item],
-    legal_entity: [:verified_management_role, :contract_award, :relevant_council_item],
+    person: [:verified_public_mandate, :verified_management_role],
+    legal_entity: [:verified_management_role, :contract_award],
     commune: [:published_meeting_page, :publication_revision_new_decisions]
   }
   @revision_events [
