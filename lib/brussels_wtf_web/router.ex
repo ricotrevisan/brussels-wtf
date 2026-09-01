@@ -78,6 +78,15 @@ defmodule BrusselsWtfWeb.Router do
     post "/citizen/collection-transfers/:id/accept", SharedCollectionController, :accept_transfer
     post "/citizen/collection-transfers/:id/reject", SharedCollectionController, :reject_transfer
     get "/citizen/account/deletion", SharedCollectionController, :deletion_resolution
+
+    post "/citizen/collections/:id/inactivity-resolution",
+         SharedCollectionController,
+         :select_inactivity_resolution
+
+    delete "/citizen/collections/:id/inactivity-resolution",
+           SharedCollectionController,
+           :revoke_inactivity_resolution
+
     patch "/collections/manage", FollowCollectionController, :update
     post "/collections/manage/members", FollowCollectionController, :add
     delete "/collections/manage/members", FollowCollectionController, :remove

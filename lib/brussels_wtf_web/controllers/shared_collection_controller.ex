@@ -16,7 +16,11 @@ defmodule BrusselsWtfWeb.SharedCollectionController do
       reject: "Reject transfer",
       cancel: "Cancel offer",
       delete: "Delete collection",
-      resolution: "Resolve collections before deleting your account",
+      resolution: "Resolve collections before inactivity deletion",
+      preselect_delete: "Delete automatically",
+      preselect_transfer: "Transfer (takes effect only after acceptance)",
+      revoke_choice: "Clear choice",
+      unresolved: "Action required",
       view_only: "This share is view-only. Only the owner can change this collection.",
       empty: "No view grants."
     },
@@ -33,7 +37,11 @@ defmodule BrusselsWtfWeb.SharedCollectionController do
       reject: "Refuser le transfert",
       cancel: "Annuler l’offre",
       delete: "Supprimer la collection",
-      resolution: "Résolvez les collections avant de supprimer votre compte",
+      resolution: "Résolvez les collections avant la suppression pour inactivité",
+      preselect_delete: "Supprimer automatiquement",
+      preselect_transfer: "Transférer (effectif seulement après acceptation)",
+      revoke_choice: "Effacer le choix",
+      unresolved: "Action requise",
       view_only:
         "Ce partage est en lecture seule. Seul le propriétaire peut modifier cette collection.",
       empty: "Aucun accès en lecture."
@@ -51,7 +59,11 @@ defmodule BrusselsWtfWeb.SharedCollectionController do
       reject: "Overdracht weigeren",
       cancel: "Aanbod annuleren",
       delete: "Collectie verwijderen",
-      resolution: "Los collecties op voordat u uw account verwijdert",
+      resolution: "Los collecties op vóór verwijdering wegens inactiviteit",
+      preselect_delete: "Automatisch verwijderen",
+      preselect_transfer: "Overdragen (pas geldig na aanvaarding)",
+      revoke_choice: "Keuze wissen",
+      unresolved: "Actie vereist",
       view_only: "Deze gedeelde collectie is alleen-lezen. Alleen de eigenaar kan ze wijzigen.",
       empty: "Geen leestoegang."
     }
@@ -120,9 +132,25 @@ defmodule BrusselsWtfWeb.SharedCollectionController do
   def reject_transfer(conn, %{"id" => id}),
     do: transfer_action(conn, id, &Follow.decline_collection_transfer/2)
 
+  def select_inactivity_resolution(conn, %{"id" => id, "choice" => choice})
+      when choice in ["delete", "transfer"] do
+    with {:ok, c} <- citizen(conn),
+         {:ok, _} <- Follow.select_inactivity_resolution(c, id, String.to_existing_atom(choice)),
+         do: redirect(conn, to: "/citizen/account/deletion"),
+         else: (_ -> private_not_found(conn))
+  end
+
+  def revoke_inactivity_resolution(conn, %{"id" => id}) do
+    with {:ok, c} <- citizen(conn),
+         {:ok, _} <- Follow.revoke_inactivity_resolution(c, id),
+         do: redirect(conn, to: "/citizen/account/deletion"),
+         else: (_ -> private_not_found(conn))
+  end
+
   def deletion_resolution(conn, _) do
     with {:ok, citizen} <- citizen(conn),
-         {:ok, collections} <- Follow.owner_collections(citizen) do
+         {:ok, collections} <- Follow.owner_collections(citizen),
+         {:ok, resolutions} <- Follow.inactivity_resolutions(citizen) do
       c = copy(conn)
       csrf = csrf()
 
@@ -130,10 +158,32 @@ defmodule BrusselsWtfWeb.SharedCollectionController do
         Enum.map_join(collections, "", fn item ->
           collection = Map.get(item, :collection, item)
 
-          "<li>#{escape(collection.title)} (#{escape(collection.visibility)})" <>
-            "<a href=\"/citizen/collections/#{escape(collection.id)}\">#{c.owner}</a>" <>
-            form("/citizen/collections/#{escape(collection.id)}", c.delete, csrf, "delete") <>
-            "</li>"
+          choice = Enum.find(resolutions, &(&1.collection_id == collection.id))
+
+          controls =
+            if collection.visibility == :private do
+              "<span>#{c.preselect_delete}</span>"
+            else
+              selected = if choice, do: escape(choice.choice), else: c.unresolved
+
+              "<strong data-resolution-status>#{selected}</strong>" <>
+                choice_form(collection.id, :delete, c.preselect_delete, csrf) <>
+                choice_form(collection.id, :transfer, c.preselect_transfer, csrf) <>
+                if(choice,
+                  do:
+                    form(
+                      "/citizen/collections/#{escape(collection.id)}/inactivity-resolution",
+                      c.revoke_choice,
+                      csrf,
+                      "delete"
+                    ),
+                  else: ""
+                )
+            end
+
+          "<li data-collection-blocker>#{escape(collection.title)} (#{escape(collection.visibility)})" <>
+            ~s(<a href="/citizen/collections/#{escape(collection.id)}">#{c.owner}</a>) <>
+            controls <> "</li>"
         end)
 
       html_private(conn, c.resolution, "<h1>#{c.resolution}</h1><ul>#{rows}</ul>")
@@ -224,6 +274,10 @@ defmodule BrusselsWtfWeb.SharedCollectionController do
   defp form(action, label, csrf, method \\ "post"),
     do:
       ~s(<form method="post" action="#{action}"><input type="hidden" name="_csrf_token" value="#{csrf}">#{if method != "post", do: ~s(<input type="hidden" name="_method" value="#{method}">), else: ""}<button>#{label}</button></form>)
+
+  defp choice_form(id, choice, label, csrf),
+    do:
+      ~s(<form method="post" action="/citizen/collections/#{escape(id)}/inactivity-resolution"><input type="hidden" name="_csrf_token" value="#{csrf}"><input type="hidden" name="choice" value="#{choice}"><button>#{label}</button></form>)
 
   defp input_form(action, label, name, button, csrf),
     do:

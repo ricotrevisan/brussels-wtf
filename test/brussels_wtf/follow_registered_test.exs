@@ -92,6 +92,27 @@ defmodule BrusselsWtf.FollowRegisteredTest do
     assert Enum.map(warnings, & &1.days_before_deletion) == [30]
   end
 
+  test "concurrent retention passes claim one warning delivery" do
+    {citizen, _} = citizen("concurrent-retention@example.test")
+    signed_in = citizen.last_sign_in_at || citizen.inserted_at
+    now = DateTime.add(signed_in, 153, :day)
+
+    tasks = for _ <- 1..8, do: Task.async(fn -> Accounts.run_inactivity_retention(now) end)
+    Enum.each(tasks, &Task.await(&1, 5_000))
+
+    assert_receive {:inactivity_warning, "concurrent-retention@example.test", _, _, _, _}
+    refute_receive {:inactivity_warning, "concurrent-retention@example.test", _, _, _, _}, 50
+
+    [warning] =
+      Follow.RetentionWarning
+      |> Ash.Query.filter(citizen_id == ^citizen.id)
+      |> Ash.read!(actor: %{principal: :system}, authorize?: true, domain: Follow)
+
+    assert warning.delivery_status == :delivered
+    assert is_nil(warning.claim_token)
+    assert is_nil(warning.lease_expires_at)
+  end
+
   test "private grants are view-only and direct Ash actions cannot cross citizen boundaries" do
     {owner, _} = citizen("owner-grants@example.test")
     {guest, _} = citizen("guest-grants@example.test")

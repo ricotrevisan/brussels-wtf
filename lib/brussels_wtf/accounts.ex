@@ -59,6 +59,7 @@ defmodule BrusselsWtf.Accounts do
              authorize?: true,
              domain: __MODULE__
            ),
+         :ok <- BrusselsWtf.Follow.clear_inactivity_resolutions(citizen.id),
          {:ok, session} <-
            Session
            |> Ash.Changeset.for_create(:open, %{
@@ -210,6 +211,12 @@ defmodule BrusselsWtf.Accounts do
           :ok = maybe_fail(:warnings)
 
           destroy_follow_rows(
+            BrusselsWtf.Follow.InactivityOwnershipResolution,
+            :delete_for_account,
+            citizen.id
+          )
+
+          destroy_follow_rows(
             BrusselsWtf.Follow.RetentionWarning,
             :delete_for_account,
             citizen.id
@@ -290,28 +297,46 @@ defmodule BrusselsWtf.Accounts do
   end
 
   @doc "Runs one traffic-independent inactivity lifecycle pass at an injected UTC instant."
-  def run_inactivity_retention(now \\ clock().utc_now(), resolutions \\ %{}) do
+  def run_inactivity_retention(now \\ clock().utc_now()) do
     actor = %{principal: :system}
 
     Citizen
     |> Ash.Query.for_read(:retention_candidates, %{}, actor: actor)
     |> Ash.read!(actor: actor, authorize?: true, domain: __MODULE__)
-    |> Enum.map(&process_inactive_citizen(&1, now, resolutions, actor))
+    |> Enum.map(&process_inactive_citizen(&1, now, actor))
   end
 
-  defp process_inactive_citizen(citizen, now, resolutions, actor) do
+  defp process_inactive_citizen(citizen, now, actor) do
     cycle_at = citizen.last_sign_in_at || citizen.inserted_at
     deletion_at = DateTime.shift(cycle_at, month: 6)
 
     cond do
       DateTime.compare(now, deletion_at) != :lt ->
-        case delete_citizen(
-               citizen,
-               Map.get(resolutions, citizen.id, %{}) |> Map.put_new(:reason, :inactivity)
-             ) do
-          {:ok, _} = ok -> ok
-          {:error, :owned_collection_requires_resolution} -> {:blocked, citizen.id}
-          {:error, reason} -> {:error, reason}
+        resolutions = BrusselsWtf.Follow.system_inactivity_resolutions(citizen)
+
+        case delete_citizen(citizen, Map.put(resolutions, :reason, :inactivity)) do
+          {:ok, _} = ok ->
+            ok
+
+          {:error, :owned_collection_requires_resolution} ->
+            blockers =
+              BrusselsWtf.Follow.owner_collections(citizen)
+              |> case do
+                {:ok, rows} -> rows
+                rows when is_list(rows) -> rows
+                _ -> []
+              end
+              |> Enum.reject(
+                &(&1.visibility == :private or Map.get(resolutions, &1.id) == :delete)
+              )
+              |> Enum.map(
+                &%{collection_id: &1.id, title: &1.title, choice: Map.get(resolutions, &1.id)}
+              )
+
+            {:blocked, citizen.id, blockers}
+
+          {:error, reason} ->
+            {:error, reason}
         end
 
       DateTime.compare(now, DateTime.add(deletion_at, -7, :day)) != :lt ->
@@ -325,20 +350,41 @@ defmodule BrusselsWtf.Accounts do
     end
   end
 
-  defp warn(citizen, cycle_at, deletion_at, days, now, actor) do
-    warning =
-      BrusselsWtf.Follow.RetentionWarning
-      |> Ash.Changeset.for_create(:record, %{
-        citizen_id: citizen.id,
-        inactivity_cycle_at: cycle_at,
-        days_before_deletion: days,
-        warned_at: now,
-        delivery_status: :failed,
-        delivery_attempted_at: now
-      })
-      |> Ash.create!(actor: actor, authorize?: true, domain: BrusselsWtf.Follow)
+  @warning_lease_seconds 300
 
-    if warning.delivery_status == :failed do
+  defp warn(citizen, cycle_at, deletion_at, days, now, _actor) do
+    claim_token = Ash.UUID.generate()
+    lease_expires_at = DateTime.add(now, @warning_lease_seconds, :second)
+
+    # The unique inactivity-cycle identity and this conditional upsert form one
+    # database claim. Only the claimant receives a row. A crashed claimant can
+    # be replaced after its bounded lease, while delivered rows are immutable.
+    claimed =
+      BrusselsWtf.Repo.query!(
+        """
+        INSERT INTO citizen_retention_warnings
+          (id, citizen_id, inactivity_cycle_at, days_before_deletion, warned_at,
+           delivery_status, delivery_attempted_at, claim_token, lease_expires_at)
+        VALUES (uuid_generate_v7(), $1, $2, $3, $4, 'claimed', $4, $5, $6)
+        ON CONFLICT (citizen_id, inactivity_cycle_at, days_before_deletion)
+        DO UPDATE SET delivery_status = 'claimed', delivery_attempted_at = EXCLUDED.delivery_attempted_at,
+                      claim_token = EXCLUDED.claim_token, lease_expires_at = EXCLUDED.lease_expires_at
+        WHERE citizen_retention_warnings.delivery_status = 'failed'
+           OR (citizen_retention_warnings.delivery_status = 'claimed'
+               AND citizen_retention_warnings.lease_expires_at <= EXCLUDED.delivery_attempted_at)
+        RETURNING id
+        """,
+        [
+          Ecto.UUID.dump!(citizen.id),
+          cycle_at,
+          days,
+          now,
+          Ecto.UUID.dump!(claim_token),
+          lease_expires_at
+        ]
+      ).num_rows == 1
+
+    if claimed do
       {subject, body} = inactivity_warning_copy(citizen.preferred_locale, days, deletion_at)
       mail = Application.fetch_env!(:brussels_wtf, :citizen_mailer)
 
@@ -354,14 +400,33 @@ defmodule BrusselsWtf.Accounts do
           {:error, _} -> :failed
         end
 
-      warning
-      |> Ash.Changeset.for_update(:record_delivery, %{
-        delivery_status: status,
-        delivery_attempted_at: now
-      })
-      |> Ash.update!(actor: actor, authorize?: true, domain: BrusselsWtf.Follow)
+      # Compare-and-set prevents a claimant whose lease was replaced from
+      # completing (or failing) the replacement claimant's delivery.
+      result =
+        BrusselsWtf.Repo.query!(
+          """
+          UPDATE citizen_retention_warnings
+          SET delivery_status = $1, delivery_attempted_at = $2,
+              claim_token = NULL, lease_expires_at = NULL
+          WHERE citizen_id = $3 AND inactivity_cycle_at = $4
+            AND days_before_deletion = $5 AND delivery_status = 'claimed'
+            AND claim_token = $6
+          """,
+          [
+            Atom.to_string(status),
+            now,
+            Ecto.UUID.dump!(citizen.id),
+            cycle_at,
+            days,
+            Ecto.UUID.dump!(claim_token)
+          ]
+        )
 
-      if status == :delivered, do: {:warned, days}, else: {:warning_delivery_failed, days}
+      case {status, result.num_rows} do
+        {:delivered, 1} -> {:warned, days}
+        {:failed, 1} -> {:warning_delivery_failed, days}
+        _ -> {:claim_lost, days}
+      end
     else
       {:already_warned, days}
     end

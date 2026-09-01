@@ -5,6 +5,7 @@ defmodule BrusselsWtf.Follow do
 
   require Ash.Query
   require Logger
+  import Ecto.Query, only: [from: 2]
 
   alias BrusselsWtf.Follow.{
     CitizenFollow,
@@ -16,7 +17,8 @@ defmodule BrusselsWtf.Follow do
     CollectionGrant,
     CollectionTransferOffer,
     DeletionAudit,
-    RetentionWarning
+    RetentionWarning,
+    InactivityOwnershipResolution
   }
 
   resources do
@@ -28,6 +30,7 @@ defmodule BrusselsWtf.Follow do
     resource CollectionTransferOffer
     resource DeletionAudit
     resource RetentionWarning
+    resource InactivityOwnershipResolution
   end
 
   def import_citizen_follows(citizen, targets) when is_list(targets) do
@@ -463,6 +466,7 @@ defmodule BrusselsWtf.Follow do
                expected_owner_citizen_id: offer.from_citizen_id
              })
              |> Ash.update(actor: %{principal: :system}, authorize?: true, domain: __MODULE__),
+           :ok <- clear_collection_inactivity_resolutions(collection.id),
            {:ok, _} <-
              offer
              |> Ash.Changeset.for_update(:accept, %{accepted_at: now})
@@ -739,4 +743,76 @@ defmodule BrusselsWtf.Follow do
   defp actor(id), do: %{collection_id: id}
   defp token, do: 32 |> :crypto.strong_rand_bytes() |> Base.url_encode64(padding: false)
   defp hash(secret), do: :crypto.hash(:sha256, secret)
+
+  def clear_inactivity_resolutions(citizen_id) do
+    {_, _} =
+      BrusselsWtf.Repo.delete_all(
+        from r in "citizen_inactivity_ownership_resolutions",
+          where: r.citizen_id == type(^citizen_id, Ecto.UUID)
+      )
+
+    :ok
+  end
+
+  defp clear_collection_inactivity_resolutions(collection_id) do
+    {_, _} =
+      BrusselsWtf.Repo.delete_all(
+        from r in "citizen_inactivity_ownership_resolutions",
+          where: r.collection_id == type(^collection_id, Ecto.UUID)
+      )
+
+    :ok
+  end
+
+  def inactivity_resolutions(citizen) do
+    cycle = citizen.last_sign_in_at || citizen.inserted_at
+    actor = citizen_actor(citizen)
+
+    InactivityOwnershipResolution
+    |> Ash.Query.filter(citizen_id == ^citizen.id and inactivity_cycle_at == ^cycle)
+    |> Ash.read(actor: actor, authorize?: true, domain: __MODULE__)
+  end
+
+  def select_inactivity_resolution(citizen, collection_id, choice)
+      when choice in [:delete, :transfer] do
+    with {:ok, collection} <- owner_collection(citizen, collection_id),
+         true <- collection.visibility != :private do
+      InactivityOwnershipResolution
+      |> Ash.Changeset.for_create(:select, %{
+        citizen_id: citizen.id,
+        collection_id: collection.id,
+        inactivity_cycle_at: citizen.last_sign_in_at || citizen.inserted_at,
+        choice: choice
+      })
+      |> Ash.create(actor: citizen_actor(citizen), authorize?: true, domain: __MODULE__)
+    else
+      _ -> {:error, :not_found}
+    end
+  end
+
+  def revoke_inactivity_resolution(citizen, collection_id) do
+    with {:ok, choices} <- inactivity_resolutions(citizen),
+         %{} = choice <- Enum.find(choices, &(&1.collection_id == collection_id)) do
+      Ash.destroy(choice,
+        action: :revoke,
+        actor: citizen_actor(citizen),
+        authorize?: true,
+        domain: __MODULE__
+      )
+    else
+      _ -> {:error, :not_found}
+    end
+  end
+
+  def system_inactivity_resolutions(citizen) do
+    cycle = citizen.last_sign_in_at || citizen.inserted_at
+    actor = %{principal: :system}
+
+    InactivityOwnershipResolution
+    |> Ash.Query.for_read(:for_cycle, %{citizen_id: citizen.id, inactivity_cycle_at: cycle},
+      actor: actor
+    )
+    |> Ash.read!(actor: actor, authorize?: true, domain: __MODULE__)
+    |> Map.new(&{&1.collection_id, &1.choice})
+  end
 end

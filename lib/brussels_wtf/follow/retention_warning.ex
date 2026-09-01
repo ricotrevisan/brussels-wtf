@@ -71,9 +71,11 @@ defmodule BrusselsWtf.Follow.RetentionWarning do
     attribute :delivery_status, :atom,
       allow_nil?: false,
       default: :delivered,
-      constraints: [one_of: [:delivered, :failed]]
+      constraints: [one_of: [:claimed, :delivered, :failed]]
 
     attribute :delivery_attempted_at, :utc_datetime_usec, allow_nil?: false
+    attribute :claim_token, :uuid
+    attribute :lease_expires_at, :utc_datetime_usec
   end
 
   identities do
