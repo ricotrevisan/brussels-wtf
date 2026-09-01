@@ -17,6 +17,21 @@ defmodule BrusselsWtfWeb.CitizenSessionController do
 
   def create(conn, _), do: create(conn, %{"email" => ""})
 
+  def confirm(conn, %{"token" => token}) do
+    csrf = Plug.CSRFProtection.get_csrf_token()
+
+    body =
+      ~s(<p>Confirm sign in</p><form method="post" action="/citizen/magic-link/consume"><input type="hidden" name="_csrf_token" value="#{csrf}"><input type="hidden" name="token" value="#{token |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string()}"><button>Sign in</button></form>)
+
+    html(conn, page(conn, title(locale(conn)), body))
+  end
+
+  def confirm(conn, _),
+    do:
+      conn
+      |> put_status(:unprocessable_entity)
+      |> html(page(conn, title(locale(conn)), invalid(locale(conn))))
+
   def consume(conn, %{"token" => token}) do
     case Accounts.consume(token) do
       {:ok, _citizen, session} ->
@@ -77,13 +92,23 @@ defmodule BrusselsWtfWeb.CitizenSessionController do
     end
   end
 
-  def import_follows(conn, %{"targets" => targets}) when is_list(targets),
-    do: choice(conn, "local follows imported", length(targets))
+  def import_follows(conn, %{"targets" => targets}) when is_list(targets) do
+    with {:ok, citizen} <- Accounts.authenticate_session(get_session(conn, :citizen_session_id)),
+         parsed <- Enum.flat_map(targets, &parse_target/1),
+         {:ok, imported} <- BrusselsWtf.Follow.import_citizen_follows(citizen, parsed) do
+      choice(conn, "local follows imported", length(imported))
+    else
+      _ -> send_resp(conn, 422, "")
+    end
+  end
 
   def import_follows(conn, _), do: choice(conn, "local follows imported", 0)
 
   def claim_collection(conn, %{"management_secret" => secret}) do
-    result = BrusselsWtf.Follow.exchange(secret)
+    result =
+      with {:ok, citizen} <-
+             Accounts.authenticate_session(get_session(conn, :citizen_session_id)),
+           do: BrusselsWtf.Follow.claim_collection(secret, citizen)
 
     choice(
       conn,
@@ -101,6 +126,18 @@ defmodule BrusselsWtfWeb.CitizenSessionController do
       _ -> send_resp(conn, 401, "")
     end
   end
+
+  defp parse_target(value) when is_binary(value) do
+    case String.split(value, ":", parts: 2) do
+      [type, id] when type in ["dossier", "person", "legal_entity", "commune"] ->
+        [{String.to_existing_atom(type), id}]
+
+      _ ->
+        []
+    end
+  end
+
+  defp parse_target(_), do: []
 
   defp locale(conn), do: conn.assigns[:locale] || "en"
   defp title("fr"), do: "Compte citoyen"

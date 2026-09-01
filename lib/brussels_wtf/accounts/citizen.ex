@@ -1,9 +1,10 @@
 defmodule BrusselsWtf.Accounts.Citizen do
-  @moduledoc "A citizen principal, never an editor principal."
+  @moduledoc "A citizen AshAuthentication principal, never an editor principal."
   use Ash.Resource,
     otp_app: :brussels_wtf,
     domain: BrusselsWtf.Accounts,
     data_layer: AshPostgres.DataLayer,
+    extensions: [AshAuthentication],
     authorizers: [Ash.Policy.Authorizer]
 
   postgres do
@@ -11,22 +12,40 @@ defmodule BrusselsWtf.Accounts.Citizen do
     repo BrusselsWtf.Repo
   end
 
+  authentication do
+    session_identifier(:jti)
+
+    tokens do
+      enabled?(true)
+      token_resource(BrusselsWtf.Accounts.Token)
+      store_all_tokens?(true)
+
+      signing_secret(fn _, _ ->
+        Application.fetch_env(:brussels_wtf, :citizen_token_signing_secret)
+      end)
+    end
+
+    strategies do
+      magic_link do
+        identity_field(:email)
+        registration_enabled?(true)
+        require_interaction?(true)
+        token_lifetime({15, :minutes})
+        sender(BrusselsWtf.Accounts.Citizen.Senders.SendMagicLink)
+      end
+    end
+  end
+
   actions do
-    create :register do
-      accept [:email, :last_sign_in_at]
-    end
+    defaults [:read]
 
-    read :read do
-      primary? true
-    end
-
-    read :by_email do
+    read :get_by_subject do
+      argument :subject, :string, allow_nil?: false
       get? true
-      argument :email, :string, allow_nil?: false, sensitive?: true
-      filter expr(email == ^arg(:email))
+      prepare AshAuthentication.Preparations.FilterBySubject
     end
 
-    update :sign_in do
+    update :record_sign_in do
       accept [:last_sign_in_at]
       require_atomic? false
     end
@@ -38,15 +57,19 @@ defmodule BrusselsWtf.Accounts.Citizen do
   end
 
   policies do
-    policy always() do
+    bypass AshAuthentication.Checks.AshAuthenticationInteraction do
       authorize_if always()
+    end
+
+    policy action([:read, :record_sign_in, :change_email]) do
+      authorize_if actor_attribute_equals(:principal, :citizen)
     end
   end
 
   attributes do
     uuid_v7_primary_key :id
-    attribute :email, :string, allow_nil?: false, sensitive?: true
-    attribute :last_sign_in_at, :utc_datetime_usec, allow_nil?: false
+    attribute :email, :string, allow_nil?: false, sensitive?: true, public?: true
+    attribute :last_sign_in_at, :utc_datetime_usec
     timestamps()
   end
 

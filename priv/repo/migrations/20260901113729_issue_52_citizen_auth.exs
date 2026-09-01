@@ -8,26 +8,6 @@ defmodule BrusselsWtf.Repo.Migrations.Issue52CitizenAuth do
   use Ecto.Migration
 
   def up do
-    create table(:citizen_magic_links, primary_key: false) do
-      add :id, :uuid, null: false, default: fragment("uuid_generate_v7()"), primary_key: true
-      add :email, :text, null: false
-      add :token_hash, :binary, null: false
-      add :expires_at, :utc_datetime_usec, null: false
-      add :consumed_at, :utc_datetime_usec
-
-      add :inserted_at, :utc_datetime_usec,
-        null: false,
-        default: fragment("(now() AT TIME ZONE 'utc')")
-
-      add :updated_at, :utc_datetime_usec,
-        null: false,
-        default: fragment("(now() AT TIME ZONE 'utc')")
-    end
-
-    create unique_index(:citizen_magic_links, [:token_hash],
-             name: "citizen_magic_links_unique_token_hash_index"
-           )
-
     create table(:citizens, primary_key: false) do
       add :id, :uuid, null: false, default: fragment("uuid_generate_v7()"), primary_key: true
       add :email, :text, null: false
@@ -66,11 +46,5 @@ defmodule BrusselsWtf.Repo.Migrations.Issue52CitizenAuth do
     drop_if_exists unique_index(:citizens, [:email], name: "citizens_unique_email_index")
 
     drop table(:citizens)
-
-    drop_if_exists unique_index(:citizen_magic_links, [:token_hash],
-                     name: "citizen_magic_links_unique_token_hash_index"
-                   )
-
-    drop table(:citizen_magic_links)
   end
 end

@@ -38,6 +38,11 @@ defmodule BrusselsWtf.Follow.Collection do
       prepare build(load: [:members])
     end
 
+    update :claim do
+      accept [:owner_citizen_id]
+      require_atomic? false
+    end
+
     update :touch do
       accept [:last_used_at]
       require_atomic? false
@@ -63,6 +68,10 @@ defmodule BrusselsWtf.Follow.Collection do
       authorize_if always()
     end
 
+    policy action(:claim) do
+      authorize_if actor_attribute_equals(:principal, :citizen)
+    end
+
     policy action(:expire) do
       authorize_if actor_attribute_equals(:role, :maintenance)
     end
@@ -84,6 +93,7 @@ defmodule BrusselsWtf.Follow.Collection do
       constraints one_of: [:public, :unlisted, :private]
     end
 
+    attribute :owner_citizen_id, :uuid
     attribute :title, :string, allow_nil?: false, public?: true
     attribute :last_used_at, :utc_datetime_usec, allow_nil?: false
     timestamps()

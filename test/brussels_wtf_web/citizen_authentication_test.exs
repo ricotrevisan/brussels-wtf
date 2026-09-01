@@ -24,7 +24,7 @@ defmodule BrusselsWtfWeb.CitizenAuthenticationTest do
     assert body =~ "If the address is valid"
     refute body =~ "new@example.test"
     assert_receive {:magic_link, "new@example.test", token, "en"}
-    first = get(recycle(conn), ~p"/citizen/magic-link?token=#{token}")
+    first = post(recycle(conn), ~p"/citizen/magic-link/consume", %{"token" => token})
     assert redirected_to(first) == ~p"/citizen/registration"
 
     [cookie | _] =
@@ -34,14 +34,14 @@ defmodule BrusselsWtfWeb.CitizenAuthenticationTest do
     assert cookie =~ "secure"
     assert cookie =~ "HttpOnly"
     assert cookie =~ "SameSite=Lax"
-    assert get(recycle(conn), ~p"/citizen/magic-link?token=#{token}").status == 422
+    assert post(recycle(conn), ~p"/citizen/magic-link/consume", %{"token" => token}).status == 422
   end
 
-  test "link expires at fifteen minutes", %{conn: conn, now: now} do
+  test "magic link carries a fifteen-minute expiry", %{conn: conn} do
     post(conn, ~p"/citizen/magic-link", %{"email" => "expiry@example.test"})
     assert_receive {:magic_link, _, token, _}
-    Controlled.set(DateTime.add(now, 15, :minute))
-    assert get(recycle(conn), ~p"/citizen/magic-link?token=#{token}").status == 422
+    assert {:ok, %{"exp" => expires, "iat" => issued}} = Joken.peek_claims(token)
+    assert expires - issued == 15 * 60
   end
 
   test "idle, absolute, and email change revoke sessions", %{now: now} do
@@ -56,5 +56,35 @@ defmodule BrusselsWtfWeb.CitizenAuthenticationTest do
     {:ok, citizen, session2} = Accounts.consume(token2)
     assert {:ok, _} = Accounts.change_email(citizen, "changed@example.test")
     assert {:error, :expired} = Accounts.authenticate_session(session2.id)
+  end
+
+  test "local-follow import and collection claim are durable independent opt-ins" do
+    configured = BrusselsWtf.Communes.configuration!("ixelles")
+
+    BrusselsWtf.Ingestion.create_commune!(%{
+      slug: "ixelles",
+      name: configured.name,
+      index_url: configured.index_url
+    })
+
+    Accounts.request_link("choices@example.test")
+    assert_receive {:magic_link, _, token, _}
+    {:ok, citizen, _session} = Accounts.consume(token)
+    {:ok, collection, secret} = BrusselsWtf.Follow.create_collection()
+
+    assert {:ok, [_]} =
+             BrusselsWtf.Follow.import_citizen_follows(citizen, [{:commune, "ixelles"}])
+
+    assert {:ok, untouched} = BrusselsWtf.Follow.view(collection.view_token)
+    assert is_nil(untouched.owner_citizen_id)
+
+    assert {:ok, claimed} = BrusselsWtf.Follow.claim_collection(secret, citizen)
+    assert claimed.owner_citizen_id == citizen.id
+
+    follows =
+      BrusselsWtf.Follow.CitizenFollow
+      |> Ash.read!(actor: %{id: citizen.id, principal: :citizen}, domain: BrusselsWtf.Follow)
+
+    assert Enum.map(follows, &{&1.target_type, &1.target_identifier}) == [{:commune, "ixelles"}]
   end
 end
