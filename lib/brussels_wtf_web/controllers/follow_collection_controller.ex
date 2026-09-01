@@ -73,6 +73,7 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
     case BrusselsWtf.Accounts.authenticate_session(get_session(conn, :citizen_session_id)) do
       {:ok, citizen} ->
         {:ok, updates} = Follow.registered_feed(citizen)
+        retention_notice = retention_notice(citizen, locale)
 
         items =
           Enum.map_join(updates, "", fn update ->
@@ -83,7 +84,7 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
 
         html(
           conn,
-          ~s(<!doctype html><html lang="#{locale}"><head><title>#{copy(locale, :feed)}</title></head><body><main><h1>#{copy(locale, :feed)}</h1><p>#{copy(locale, :synced)}</p><ul data-registered-feed>#{items}</ul></main></body></html>)
+          ~s(<!doctype html><html lang="#{locale}"><head><title>#{copy(locale, :feed)}</title></head><body><main><h1>#{copy(locale, :feed)}</h1><p>#{copy(locale, :synced)}</p>#{retention_notice}<ul data-registered-feed>#{items}</ul></main></body></html>)
         )
 
       _ ->
@@ -402,4 +403,32 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
   defp parse_type(_), do: :invalid
   defp parse_visibility(v) when v in ~w(public unlisted private), do: String.to_existing_atom(v)
   defp parse_visibility(_), do: :invalid
+
+  defp retention_notice(citizen, locale) do
+    case BrusselsWtf.Accounts.inactivity_notice(citizen) do
+      {:warning, days, deletion_at} ->
+        date = Calendar.strftime(deletion_at, "%Y-%m-%d")
+
+        text =
+          case locale do
+            "fr" ->
+              "Votre compte sera supprimé dans #{days} jours (#{date}). Connectez-vous pour le conserver."
+
+            "nl" ->
+              "Uw account wordt over #{days} dagen verwijderd (#{date}). Meld u aan om het te behouden."
+
+            _ ->
+              "Your account will be deleted in #{days} days (#{date}). Sign in to keep it."
+          end
+
+        ~s(<aside data-inactivity-warning>#{escape(text)}</aside>)
+
+      {:deadline, deletion_at} ->
+        date = Calendar.strftime(deletion_at, "%Y-%m-%d")
+        ~s(<aside data-inactivity-warning>#{escape(date)}</aside>)
+
+      nil ->
+        ""
+    end
+  end
 end

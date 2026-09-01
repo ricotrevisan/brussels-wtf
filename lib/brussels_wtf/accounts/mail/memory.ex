@@ -8,4 +8,12 @@ defmodule BrusselsWtf.Accounts.Mail.Memory do
 
     :ok
   end
+
+  @impl true
+  def deliver_inactivity_warning(email, locale, subject, body, deletion_at) do
+    if pid = Process.whereis(BrusselsWtf.Accounts.Mailbox),
+      do: send(pid, {:inactivity_warning, email, locale, subject, body, deletion_at})
+
+    :ok
+  end
 end

@@ -8,6 +8,10 @@ defmodule BrusselsWtf.Repo.Migrations.Issue53RegisteredFeed do
   use Ecto.Migration
 
   def up do
+    alter table(:citizens) do
+      add :preferred_locale, :text, null: false, default: "en"
+    end
+
     execute(
       """
       CREATE OR REPLACE FUNCTION prevent_follow_collection_reassignment() RETURNS trigger AS $$
@@ -41,12 +45,17 @@ defmodule BrusselsWtf.Repo.Migrations.Issue53RegisteredFeed do
 
     create table(:citizen_retention_warnings, primary_key: false) do
       add :id, :uuid, null: false, default: fragment("uuid_generate_v7()"), primary_key: true
-      add :citizen_id, :uuid, null: false
+      add :citizen_id, references(:citizens, type: :uuid, on_delete: :delete_all), null: false
+      add :inactivity_cycle_at, :utc_datetime_usec, null: false
       add :days_before_deletion, :bigint, null: false
       add :warned_at, :utc_datetime_usec, null: false
+      add :delivery_status, :text, null: false, default: "delivered"
+      add :delivery_attempted_at, :utc_datetime_usec, null: false
     end
 
-    create unique_index(:citizen_retention_warnings, [:citizen_id, :days_before_deletion],
+    create unique_index(
+             :citizen_retention_warnings,
+             [:citizen_id, :inactivity_cycle_at, :days_before_deletion],
              name: "citizen_retention_warnings_one_warning_index"
            )
 
@@ -96,6 +105,10 @@ defmodule BrusselsWtf.Repo.Migrations.Issue53RegisteredFeed do
   end
 
   def down do
+    alter table(:citizens) do
+      remove :preferred_locale
+    end
+
     drop_if_exists unique_index(
                      :citizen_feed_updates,
                      [:citizen_id, :event_identity],

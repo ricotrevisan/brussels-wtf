@@ -156,7 +156,9 @@ config :brussels_wtf, Oban,
           scope: "previous-year"
         }},
        {"30 2 * * *", BrusselsWtf.Workers.PurgeSuggestions, args: %{}},
-       {"*/15 * * * *", BrusselsWtf.Workers.PurgeExpiredMagicLinks, args: %{}}
+       {"*/15 * * * *", BrusselsWtf.Workers.PurgeExpiredMagicLinks, args: %{}},
+       {"10 3 * * *", BrusselsWtf.Workers.ProcessCitizenInactivity, args: %{}},
+       {"30 3 * * *", BrusselsWtf.Workers.PurgeCitizenFeedUpdates, args: %{}}
      ]}
   ],
   queues: [

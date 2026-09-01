@@ -178,22 +178,22 @@ defmodule BrusselsWtf.Follow do
     end
   end
 
+  @doc "Purges deliveries, including read state, at their exact 12-calendar-month boundary."
   def purge_notifications(now \\ Application.fetch_env!(:brussels_wtf, :clock).utc_now()) do
-    cutoff = DateTime.add(now, -365, :day)
+    cutoff = DateTime.shift(now, month: -12)
+    actor = %{principal: :system}
 
-    FeedUpdate
-    |> Ash.Query.filter(occurred_at <= ^cutoff)
-    |> Ash.read!(actor: %{principal: :system}, authorize?: true, domain: __MODULE__)
-    |> Enum.each(
-      &Ash.destroy!(&1,
-        action: :purge,
-        actor: %{principal: :system},
-        authorize?: true,
-        domain: __MODULE__
-      )
+    updates =
+      FeedUpdate
+      |> Ash.Query.filter(inserted_at <= ^cutoff)
+      |> Ash.read!(actor: actor, authorize?: true, domain: __MODULE__)
+
+    Enum.each(
+      updates,
+      &Ash.destroy!(&1, action: :purge, actor: actor, authorize?: true, domain: __MODULE__)
     )
 
-    :ok
+    {:ok, length(updates)}
   end
 
   def private_collection(collection_id, citizen) do

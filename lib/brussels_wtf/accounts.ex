@@ -239,38 +239,117 @@ defmodule BrusselsWtf.Accounts do
     end)
   end
 
-  def run_inactivity_retention(now \\ clock().utc_now(), resolutions \\ %{}) do
-    actor = %{principal: :system}
-    citizens = Citizen |> Ash.read!(actor: actor, authorize?: false, domain: __MODULE__)
+  @doc "Returns localized on-site warning data without recording account activity."
+  def inactivity_notice(%Citizen{} = citizen, now \\ clock().utc_now()) do
+    deletion_at = DateTime.shift(citizen.last_sign_in_at || citizen.inserted_at, month: 6)
 
-    Enum.map(citizens, fn citizen ->
-      deletion_at = DateTime.add(citizen.last_sign_in_at || citizen.inserted_at, 183, :day)
-      days = DateTime.diff(deletion_at, now, :day)
+    cond do
+      DateTime.compare(now, deletion_at) != :lt ->
+        {:deadline, deletion_at}
 
-      cond do
-        DateTime.compare(now, deletion_at) != :lt ->
-          delete_citizen(citizen, Map.get(resolutions, citizen.id, %{}))
+      DateTime.compare(now, DateTime.add(deletion_at, -7, :day)) != :lt ->
+        {:warning, 7, deletion_at}
 
-        days <= 7 ->
-          record_warning(citizen.id, 7, now)
+      DateTime.compare(now, DateTime.add(deletion_at, -30, :day)) != :lt ->
+        {:warning, 30, deletion_at}
 
-        days <= 30 ->
-          record_warning(citizen.id, 30, now)
-
-        true ->
-          :ok
-      end
-    end)
+      true ->
+        nil
+    end
   end
 
-  defp record_warning(citizen_id, days, now) do
-    BrusselsWtf.Follow.RetentionWarning
-    |> Ash.Changeset.for_create(:record, %{
-      citizen_id: citizen_id,
-      days_before_deletion: days,
-      warned_at: now
-    })
-    |> Ash.create(actor: %{principal: :system}, authorize?: true, domain: BrusselsWtf.Follow)
+  @doc "Runs one traffic-independent inactivity lifecycle pass at an injected UTC instant."
+  def run_inactivity_retention(now \\ clock().utc_now(), resolutions \\ %{}) do
+    actor = %{principal: :system}
+
+    Citizen
+    |> Ash.Query.for_read(:retention_candidates, %{}, actor: actor)
+    |> Ash.read!(actor: actor, authorize?: true, domain: __MODULE__)
+    |> Enum.map(&process_inactive_citizen(&1, now, resolutions, actor))
+  end
+
+  defp process_inactive_citizen(citizen, now, resolutions, actor) do
+    cycle_at = citizen.last_sign_in_at || citizen.inserted_at
+    deletion_at = DateTime.shift(cycle_at, month: 6)
+
+    cond do
+      DateTime.compare(now, deletion_at) != :lt ->
+        case delete_citizen(citizen, Map.get(resolutions, citizen.id, %{})) do
+          {:ok, _} = ok -> ok
+          {:error, :owned_collection_requires_resolution} -> {:blocked, citizen.id}
+          {:error, reason} -> {:error, reason}
+        end
+
+      DateTime.compare(now, DateTime.add(deletion_at, -7, :day)) != :lt ->
+        warn(citizen, cycle_at, deletion_at, 7, now, actor)
+
+      DateTime.compare(now, DateTime.add(deletion_at, -30, :day)) != :lt ->
+        warn(citizen, cycle_at, deletion_at, 30, now, actor)
+
+      true ->
+        :ok
+    end
+  end
+
+  defp warn(citizen, cycle_at, deletion_at, days, now, actor) do
+    warning =
+      BrusselsWtf.Follow.RetentionWarning
+      |> Ash.Changeset.for_create(:record, %{
+        citizen_id: citizen.id,
+        inactivity_cycle_at: cycle_at,
+        days_before_deletion: days,
+        warned_at: now,
+        delivery_status: :failed,
+        delivery_attempted_at: now
+      })
+      |> Ash.create!(actor: actor, authorize?: true, domain: BrusselsWtf.Follow)
+
+    if warning.delivery_status == :failed do
+      {subject, body} = inactivity_warning_copy(citizen.preferred_locale, days, deletion_at)
+      mail = Application.fetch_env!(:brussels_wtf, :citizen_mailer)
+
+      status =
+        case mail.deliver_inactivity_warning(
+               citizen.email,
+               citizen.preferred_locale,
+               subject,
+               body,
+               deletion_at
+             ) do
+          :ok -> :delivered
+          {:error, _} -> :failed
+        end
+
+      warning
+      |> Ash.Changeset.for_update(:record_delivery, %{
+        delivery_status: status,
+        delivery_attempted_at: now
+      })
+      |> Ash.update!(actor: actor, authorize?: true, domain: BrusselsWtf.Follow)
+
+      if status == :delivered, do: {:warned, days}, else: {:warning_delivery_failed, days}
+    else
+      {:already_warned, days}
+    end
+  end
+
+  defp inactivity_warning_copy(locale, days, deletion_at) do
+    date = Calendar.strftime(deletion_at, "%Y-%m-%d")
+    path = "/citizen/account/retention"
+
+    case locale do
+      "fr" ->
+        {"Votre compte sera supprimé dans #{days} jours",
+         "Connectez-vous avant le #{date} pour conserver votre compte. Gérez vos collections sur #{path}."}
+
+      "nl" ->
+        {"Uw account wordt over #{days} dagen verwijderd",
+         "Meld u aan vóór #{date} om uw account te behouden. Beheer uw collecties via #{path}."}
+
+      _ ->
+        {"Your account will be deleted in #{days} days",
+         "Sign in before #{date} to keep your account. Resolve your collections at #{path}."}
+    end
   end
 
   defp uuid_param(value), do: Ecto.UUID.dump!(value)
