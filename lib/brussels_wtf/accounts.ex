@@ -352,39 +352,32 @@ defmodule BrusselsWtf.Accounts do
 
   @warning_lease_seconds 300
 
-  defp warn(citizen, cycle_at, deletion_at, days, now, _actor) do
+  defp warn(citizen, cycle_at, deletion_at, days, now, actor) do
     claim_token = Ash.UUID.generate()
     lease_expires_at = DateTime.add(now, @warning_lease_seconds, :second)
 
-    # The unique inactivity-cycle identity and this conditional upsert form one
-    # database claim. Only the claimant receives a row. A crashed claimant can
-    # be replaced after its bounded lease, while delivered rows are immutable.
-    claimed =
-      BrusselsWtf.Repo.query!(
-        """
-        INSERT INTO citizen_retention_warnings
-          (id, citizen_id, inactivity_cycle_at, days_before_deletion, warned_at,
-           delivery_status, delivery_attempted_at, claim_token, lease_expires_at)
-        VALUES (uuid_generate_v7(), $1, $2, $3, $4, 'claimed', $4, $5, $6)
-        ON CONFLICT (citizen_id, inactivity_cycle_at, days_before_deletion)
-        DO UPDATE SET delivery_status = 'claimed', delivery_attempted_at = EXCLUDED.delivery_attempted_at,
-                      claim_token = EXCLUDED.claim_token, lease_expires_at = EXCLUDED.lease_expires_at
-        WHERE citizen_retention_warnings.delivery_status = 'failed'
-           OR (citizen_retention_warnings.delivery_status = 'claimed'
-               AND citizen_retention_warnings.lease_expires_at <= EXCLUDED.delivery_attempted_at)
-        RETURNING id
-        """,
-        [
-          Ecto.UUID.dump!(citizen.id),
-          cycle_at,
-          days,
-          now,
-          Ecto.UUID.dump!(claim_token),
-          lease_expires_at
-        ]
-      ).num_rows == 1
+    claim =
+      BrusselsWtf.Follow.RetentionWarning
+      |> Ash.Changeset.for_create(:claim_delivery, %{
+        citizen_id: citizen.id,
+        inactivity_cycle_at: cycle_at,
+        days_before_deletion: days,
+        warned_at: now,
+        delivery_status: :claimed,
+        delivery_attempted_at: now,
+        claim_token: claim_token,
+        lease_expires_at: lease_expires_at
+      })
+      |> Ash.create!(
+        actor: actor,
+        authorize?: true,
+        domain: BrusselsWtf.Follow,
+        return_skipped_upsert?: true
+      )
 
-    if claimed do
+    if Ash.Resource.get_metadata(claim, :upsert_skipped) do
+      {:already_warned, days}
+    else
       {subject, body} = inactivity_warning_copy(citizen.preferred_locale, days, deletion_at)
       mail = Application.fetch_env!(:brussels_wtf, :citizen_mailer)
 
@@ -410,35 +403,22 @@ defmodule BrusselsWtf.Accounts do
             :failed
         end
 
-      # Compare-and-set prevents a claimant whose lease was replaced from
-      # completing (or failing) the replacement claimant's delivery.
-      result =
-        BrusselsWtf.Repo.query!(
-          """
-          UPDATE citizen_retention_warnings
-          SET delivery_status = $1, delivery_attempted_at = $2,
-              claim_token = NULL, lease_expires_at = NULL
-          WHERE citizen_id = $3 AND inactivity_cycle_at = $4
-            AND days_before_deletion = $5 AND delivery_status = 'claimed'
-            AND claim_token = $6
-          """,
-          [
-            Atom.to_string(status),
-            now,
-            Ecto.UUID.dump!(citizen.id),
-            cycle_at,
-            days,
-            Ecto.UUID.dump!(claim_token)
-          ]
-        )
+      # The action filter is an atomic compare-and-set. A claimant whose lease
+      # was replaced cannot complete the replacement claimant's delivery.
+      completion =
+        claim
+        |> Ash.Changeset.for_update(:complete_delivery, %{
+          delivery_status: status,
+          delivery_attempted_at: now,
+          claim_token: claim_token
+        })
+        |> Ash.update(actor: actor, authorize?: true, domain: BrusselsWtf.Follow)
 
-      case {status, result.num_rows} do
-        {:delivered, 1} -> {:warned, days}
-        {:failed, 1} -> {:warning_delivery_failed, days}
+      case {status, completion} do
+        {:delivered, {:ok, _}} -> {:warned, days}
+        {:failed, {:ok, _}} -> {:warning_delivery_failed, days}
         _ -> {:claim_lost, days}
       end
-    else
-      {:already_warned, days}
     end
   end
 

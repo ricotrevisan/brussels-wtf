@@ -27,6 +27,43 @@ defmodule BrusselsWtf.Follow.RetentionWarning do
       upsert_fields []
     end
 
+    create :claim_delivery do
+      accept [
+        :citizen_id,
+        :inactivity_cycle_at,
+        :days_before_deletion,
+        :warned_at,
+        :delivery_status,
+        :delivery_attempted_at,
+        :claim_token,
+        :lease_expires_at
+      ]
+
+      upsert? true
+      upsert_identity :one_warning
+
+      upsert_fields [
+        :delivery_status,
+        :delivery_attempted_at,
+        :claim_token,
+        :lease_expires_at
+      ]
+
+      upsert_condition expr(
+                         delivery_status == :failed or
+                           (delivery_status == :claimed and
+                              lease_expires_at <= upsert_conflict(:delivery_attempted_at))
+                       )
+    end
+
+    update :complete_delivery do
+      accept [:delivery_status, :delivery_attempted_at]
+      argument :claim_token, :uuid, allow_nil?: false
+      filter expr(delivery_status == :claimed and claim_token == ^arg(:claim_token))
+      change set_attribute(:claim_token, nil)
+      change set_attribute(:lease_expires_at, nil)
+    end
+
     update :record_delivery do
       accept [:delivery_status, :delivery_attempted_at]
       require_atomic? false
