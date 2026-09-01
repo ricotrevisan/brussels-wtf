@@ -20,7 +20,11 @@ defmodule BrusselsWtf.Follow.CollectionTransferOffer do
     read :by_recipient_token do
       get? true
       argument :token_hash, :binary, allow_nil?: false, sensitive?: true
-      filter expr(token_hash == ^arg(:token_hash) and to_citizen_id == ^actor(:id))
+
+      filter expr(
+               token_hash == ^arg(:token_hash) and to_citizen_id == ^actor(:id) and
+                 is_nil(accepted_at) and is_nil(cancelled_at)
+             )
     end
 
     read :for_owner do

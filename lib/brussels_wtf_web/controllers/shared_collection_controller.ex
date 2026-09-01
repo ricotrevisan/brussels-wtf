@@ -81,8 +81,9 @@ defmodule BrusselsWtfWeb.SharedCollectionController do
   def owner_show(conn, %{"id" => id}) do
     with {:ok, citizen} <- citizen(conn),
          {:ok, collection} <- Follow.owner_collection(citizen, id),
-         {:ok, grants} <- Follow.list_private_grants(citizen, id) do
-      render_owner(conn, collection, grants)
+         {:ok, grants} <- Follow.list_private_grants(citizen, id),
+         {:ok, offers} <- Follow.list_collection_transfer_offers(citizen, id) do
+      render_owner(conn, collection, grants, offers)
     else
       _ -> private_not_found(conn)
     end
@@ -96,8 +97,8 @@ defmodule BrusselsWtfWeb.SharedCollectionController do
 
   def offer_transfer(conn, %{"id" => id, "recipient_id" => recipient}) do
     with {:ok, c} <- citizen(conn),
-         {:ok, _offer, _token} <- Follow.offer_collection_transfer(c, id, recipient),
-         do: redirect(conn, to: "/citizen/collections/#{id}"),
+         {:ok, _offer, token} <- Follow.offer_collection_transfer(c, id, recipient),
+         do: redirect(conn, to: "/citizen/collection-transfers/#{token}"),
          else: (_ -> private_not_found(conn))
   end
 
@@ -126,8 +127,14 @@ defmodule BrusselsWtfWeb.SharedCollectionController do
     end
   end
 
-  def accept_transfer(conn, %{"id" => id}),
-    do: transfer_action(conn, id, &Follow.accept_collection_transfer/2)
+  def accept_transfer(conn, %{"id" => id}) do
+    with {:ok, citizen} <- citizen(conn),
+         {:ok, collection} <- Follow.accept_collection_transfer(citizen, id) do
+      redirect(conn, to: "/citizen/collections/#{collection.id}")
+    else
+      _ -> private_not_found(conn)
+    end
+  end
 
   def reject_transfer(conn, %{"id" => id}),
     do: transfer_action(conn, id, &Follow.decline_collection_transfer/2)
@@ -203,7 +210,7 @@ defmodule BrusselsWtfWeb.SharedCollectionController do
     )
   end
 
-  defp render_owner(conn, collection, grants) do
+  defp render_owner(conn, collection, grants, offers) do
     c = copy(conn)
     csrf = csrf()
 
@@ -224,6 +231,18 @@ defmodule BrusselsWtfWeb.SharedCollectionController do
               ) <> "</li>"
           end)
 
+    offer_rows =
+      offers
+      |> Enum.filter(&(is_nil(&1.accepted_at) and is_nil(&1.cancelled_at)))
+      |> Enum.map_join("", fn offer ->
+        form(
+          "/citizen/collections/#{escape(collection.id)}/transfer-offers/#{escape(offer.id)}",
+          c.cancel,
+          csrf,
+          "delete"
+        )
+      end)
+
     body =
       "<h1>#{escape(collection.title)}</h1><h2>#{c.grants}</h2><ul>#{grant_rows}</ul>" <>
         input_form(
@@ -240,6 +259,7 @@ defmodule BrusselsWtfWeb.SharedCollectionController do
           c.transfer,
           csrf
         ) <>
+        offer_rows <>
         form("/citizen/collections/#{escape(collection.id)}", c.delete, csrf, "delete")
 
     html_private(conn, c.owner, body)

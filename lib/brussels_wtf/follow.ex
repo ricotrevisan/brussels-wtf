@@ -441,6 +441,14 @@ defmodule BrusselsWtf.Follow do
     end
   end
 
+  def list_collection_transfer_offers(citizen, collection_id) do
+    actor = citizen_actor(citizen)
+
+    CollectionTransferOffer
+    |> Ash.Query.for_read(:for_owner, %{collection_id: collection_id}, actor: actor)
+    |> Ash.read(actor: actor, authorize?: true, domain: __MODULE__)
+  end
+
   def collection_transfer_offer(citizen, raw_token) do
     actor = citizen_actor(citizen)
 
