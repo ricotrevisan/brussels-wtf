@@ -3,7 +3,7 @@ defmodule BrusselsWtf.FollowRegisteredTest do
   import ExUnit.CaptureLog
   alias BrusselsWtf.{Accounts, Follow}
   require Ash.Query
-  alias BrusselsWtf.Follow.{CitizenFollow, FeedUpdate}
+  alias BrusselsWtf.Follow.{CitizenFollow, CollectionGrant, CollectionTransferOffer, FeedUpdate}
 
   setup do
     Process.register(self(), BrusselsWtf.Accounts.Mailbox)
@@ -216,12 +216,75 @@ defmodule BrusselsWtf.FollowRegisteredTest do
     assert {:error, :not_found} = Follow.private_collection(private.id, stranger)
     assert {:error, :not_found} = Follow.owner_set_visibility(guest, private.id, :public)
 
+    guest_actor = %{id: guest.id, principal: :citizen}
+    owner_actor = %{id: owner.id, principal: :citizen}
+
     assert {:error, _} =
-             Ash.destroy(grant,
-               actor: %{id: guest.id, principal: :citizen},
+             Ash.destroy(grant, actor: guest_actor, authorize?: true, domain: Follow)
+
+    assert {:error, _} =
+             CollectionGrant
+             |> Ash.Changeset.for_create(:grant_view, %{
+               collection_id: private.id,
+               citizen_id: stranger.id,
+               owner_citizen_id: owner.id
+             })
+             |> Ash.create(actor: guest_actor, authorize?: true, domain: Follow)
+
+    assert {:error, _} =
+             CitizenFollow
+             |> Ash.Changeset.for_create(:follow, %{
+               citizen_id: owner.id,
+               target_type: :commune,
+               target_identifier: "ixelles"
+             })
+             |> Ash.create(actor: guest_actor, authorize?: true, domain: Follow)
+
+    {:ok, personal_follow} =
+      CitizenFollow
+      |> Ash.Changeset.for_create(:follow, %{
+        citizen_id: owner.id,
+        target_type: :commune,
+        target_identifier: "ixelles"
+      })
+      |> Ash.create(actor: owner_actor, authorize?: true, domain: Follow)
+
+    assert {:error, _} =
+             Ash.destroy(personal_follow,
+               action: :remove,
+               actor: guest_actor,
                authorize?: true,
                domain: Follow
              )
+
+    {:ok, offer} =
+      CollectionTransferOffer
+      |> Ash.Changeset.for_create(:offer, %{
+        collection_id: private.id,
+        from_citizen_id: owner.id,
+        to_citizen_id: stranger.id,
+        token_hash: :crypto.hash(:sha256, "negative-offer"),
+        expires_at: DateTime.add(BrusselsWtf.Clock.Controlled.utc_now(), 7, :day)
+      })
+      |> Ash.create(actor: owner_actor, authorize?: true, domain: Follow)
+
+    assert {:error, _} =
+             CollectionTransferOffer
+             |> Ash.Changeset.for_create(:offer, %{
+               collection_id: private.id,
+               from_citizen_id: owner.id,
+               to_citizen_id: stranger.id,
+               token_hash: :crypto.hash(:sha256, "spoofed-offer"),
+               expires_at: DateTime.add(BrusselsWtf.Clock.Controlled.utc_now(), 7, :day)
+             })
+             |> Ash.create(actor: guest_actor, authorize?: true, domain: Follow)
+
+    assert {:error, _} =
+             offer
+             |> Ash.Changeset.for_update(:cancel, %{
+               cancelled_at: BrusselsWtf.Clock.Controlled.utc_now()
+             })
+             |> Ash.update(actor: guest_actor, authorize?: true, domain: Follow)
 
     assert :ok = Follow.revoke_private_view(owner, private.id, grant.id)
     assert {:error, :not_found} = Follow.private_collection(private.id, guest)
@@ -337,9 +400,16 @@ defmodule BrusselsWtf.FollowRegisteredTest do
     {:ok, c} = Follow.claim_collection(secret, owner)
     {:ok, c} = Follow.owner_set_visibility(owner, c.id, :public)
     assert {:error, :owned_collection_requires_resolution} = Accounts.delete_citizen(owner)
-    assert {:ok, _offer, token} = Follow.offer_collection_transfer(owner, c.id, recipient.id)
-    assert {:ok, _offer} = Follow.collection_transfer_offer(recipient, token)
-    assert {:ok, _} = Follow.accept_collection_transfer(recipient, token)
+
+    logs =
+      capture_log(fn ->
+        assert {:ok, _offer, token} = Follow.offer_collection_transfer(owner, c.id, recipient.id)
+        assert {:ok, _offer} = Follow.collection_transfer_offer(recipient, token)
+        assert {:ok, _} = Follow.accept_collection_transfer(recipient, token)
+      end)
+
+    refute logs =~ "Missed"
+    refute logs =~ "notifications"
     assert {:ok, _} = Accounts.delete_citizen(owner)
 
     assert {:ok, transferred} = Follow.owner_collection(recipient, c.id)
