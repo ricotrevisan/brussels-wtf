@@ -154,6 +154,109 @@ defmodule BrusselsWtf.Accounts do
     end
   end
 
+  @doc "Delete all citizen state atomically. Public/unlisted ownership must be explicitly resolved."
+  def delete_citizen(%Citizen{} = citizen, resolutions \\ %{}) do
+    operation_id = Ash.UUID.generate()
+
+    BrusselsWtf.Repo.transaction(fn ->
+      sql!("SELECT set_config('brussels_wtf.allow_collection_transfer', 'on', true)", [])
+
+      {:ok, %{rows: collections}} =
+        BrusselsWtf.Repo.query(
+          "SELECT id, visibility FROM follow_collections WHERE owner_citizen_id=$1 FOR UPDATE",
+          [citizen.id]
+        )
+
+      Enum.each(collections, fn [id, visibility] ->
+        choice = Map.get(resolutions, id) || Map.get(resolutions, to_string(id))
+
+        cond do
+          visibility == "private" ->
+            sql!("DELETE FROM follow_collections WHERE id=$1", [id])
+
+          choice == :delete ->
+            sql!("DELETE FROM follow_collections WHERE id=$1", [id])
+
+          match?({:transfer, _, true}, choice) ->
+            {:transfer, recipient_id, true} = choice
+            if recipient_id == citizen.id, do: BrusselsWtf.Repo.rollback(:invalid_transfer)
+
+            case BrusselsWtf.Repo.query(
+                   "UPDATE follow_collections SET owner_citizen_id=$1 WHERE id=$2 AND owner_citizen_id=$3",
+                   [recipient_id, id, citizen.id]
+                 ) do
+              {:ok, %{num_rows: 1}} -> :ok
+              _ -> BrusselsWtf.Repo.rollback(:unsafe_transfer)
+            end
+
+          true ->
+            BrusselsWtf.Repo.rollback(:owned_collection_requires_resolution)
+        end
+      end)
+
+      sql!("DELETE FROM follow_collection_grants WHERE citizen_id=$1", [citizen.id])
+      sql!("DELETE FROM citizen_feed_updates WHERE citizen_id=$1", [citizen.id])
+      sql!("DELETE FROM citizen_follows WHERE citizen_id=$1", [citizen.id])
+      sql!("DELETE FROM citizen_retention_warnings WHERE citizen_id=$1", [citizen.id])
+
+      case delete_account(citizen) do
+        {:ok, :ok} -> :ok
+        {:error, reason} -> BrusselsWtf.Repo.rollback(reason)
+      end
+
+      {:ok, _} =
+        BrusselsWtf.Follow.DeletionAudit
+        |> Ash.Changeset.for_create(:record, %{
+          operation_id: operation_id,
+          completed_at: clock().utc_now()
+        })
+        |> Ash.create(actor: %{principal: :system}, authorize?: true, domain: BrusselsWtf.Follow)
+
+      operation_id
+    end)
+  end
+
+  def run_inactivity_retention(now \\ clock().utc_now(), resolutions \\ %{}) do
+    actor = %{principal: :system}
+    citizens = Citizen |> Ash.read!(actor: actor, authorize?: false, domain: __MODULE__)
+
+    Enum.map(citizens, fn citizen ->
+      deletion_at = DateTime.add(citizen.last_sign_in_at || citizen.inserted_at, 183, :day)
+      days = DateTime.diff(deletion_at, now, :day)
+
+      cond do
+        DateTime.compare(now, deletion_at) != :lt ->
+          delete_citizen(citizen, Map.get(resolutions, citizen.id, %{}))
+
+        days <= 7 ->
+          record_warning(citizen.id, 7, now)
+
+        days <= 30 ->
+          record_warning(citizen.id, 30, now)
+
+        true ->
+          :ok
+      end
+    end)
+  end
+
+  defp record_warning(citizen_id, days, now) do
+    BrusselsWtf.Follow.RetentionWarning
+    |> Ash.Changeset.for_create(:record, %{
+      citizen_id: citizen_id,
+      days_before_deletion: days,
+      warned_at: now
+    })
+    |> Ash.create(actor: %{principal: :system}, authorize?: true, domain: BrusselsWtf.Follow)
+  end
+
+  defp sql!(statement, params) do
+    case BrusselsWtf.Repo.query(statement, params) do
+      {:ok, _} -> :ok
+      {:error, reason} -> BrusselsWtf.Repo.rollback(reason)
+    end
+  end
+
   @doc "Deletes an account and all authentication state in one transaction."
   def delete_account(%Citizen{} = citizen) do
     security_transaction(fn ->

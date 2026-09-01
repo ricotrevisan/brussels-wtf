@@ -5,12 +5,27 @@ defmodule BrusselsWtf.Follow do
 
   require Ash.Query
   require Logger
-  alias BrusselsWtf.Follow.{CitizenFollow, Collection, Member, Target, TargetEligibility}
+
+  alias BrusselsWtf.Follow.{
+    CitizenFollow,
+    Collection,
+    Member,
+    Target,
+    TargetEligibility,
+    FeedUpdate,
+    CollectionGrant,
+    DeletionAudit,
+    RetentionWarning
+  }
 
   resources do
     resource Collection
     resource Member
     resource CitizenFollow
+    resource FeedUpdate
+    resource CollectionGrant
+    resource DeletionAudit
+    resource RetentionWarning
   end
 
   def import_citizen_follows(citizen, targets) when is_list(targets) do
@@ -33,6 +48,125 @@ defmodule BrusselsWtf.Follow do
       end
     end)
   end
+
+  @qualifying %{
+    dossier: [:linked_agenda_item, :decision, :correction, :merge, :split],
+    person: [:verified_public_mandate, :verified_management_role, :relevant_council_item],
+    legal_entity: [:verified_management_role, :contract_award, :relevant_council_item],
+    commune: [:published_meeting_page, :revision_with_new_decisions]
+  }
+
+  @doc "Deliver one immutable update to every follower. Non-public and excluded events fail closed."
+  def publish_update(
+        %{
+          target_type: type,
+          target_identifier: identifier,
+          kind: kind,
+          identity: identity,
+          public_url: url,
+          occurred_at: at
+        } = event
+      ) do
+    if event[:public?] == true and kind in Map.get(@qualifying, type, []) and
+         is_binary(identity) and is_binary(url) and String.starts_with?(url, "/") do
+      actor = %{principal: :system}
+
+      CitizenFollow
+      |> Ash.Query.filter(target_type == ^type and target_identifier == ^identifier)
+      |> Ash.read!(actor: actor, authorize?: false, domain: __MODULE__)
+      |> Enum.reduce_while({:ok, []}, fn follow, {:ok, delivered} ->
+        result =
+          FeedUpdate
+          |> Ash.Changeset.for_create(:deliver, %{
+            citizen_id: follow.citizen_id,
+            target_type: type,
+            target_identifier: identifier,
+            event_identity: identity,
+            event_kind: kind,
+            public_url: url,
+            occurred_at: at
+          })
+          |> Ash.create(actor: actor, authorize?: true, domain: __MODULE__)
+
+        case result do
+          {:ok, update} -> {:cont, {:ok, [update | delivered]}}
+          error -> {:halt, error}
+        end
+      end)
+    else
+      {:ok, []}
+    end
+  end
+
+  def publish_update(_), do: {:ok, []}
+
+  def registered_feed(citizen) do
+    actor = citizen_actor(citizen)
+
+    FeedUpdate
+    |> Ash.Query.for_read(:mine, %{}, actor: actor)
+    |> Ash.Query.sort(occurred_at: :desc)
+    |> Ash.read(actor: actor, authorize?: true, domain: __MODULE__)
+  end
+
+  def mark_read(citizen, id) do
+    with {:ok, update} <-
+           Ash.get(FeedUpdate, id,
+             actor: citizen_actor(citizen),
+             authorize?: false,
+             domain: __MODULE__
+           ) do
+      update
+      |> Ash.Changeset.for_update(:mark_read)
+      |> Ash.update(actor: citizen_actor(citizen), authorize?: true, domain: __MODULE__)
+    end
+  end
+
+  def purge_notifications(now \\ Application.fetch_env!(:brussels_wtf, :clock).utc_now()) do
+    cutoff = DateTime.add(now, -365, :day)
+
+    FeedUpdate
+    |> Ash.Query.filter(occurred_at <= ^cutoff)
+    |> Ash.read!(actor: %{principal: :system}, authorize?: true, domain: __MODULE__)
+    |> Enum.each(
+      &Ash.destroy!(&1,
+        action: :purge,
+        actor: %{principal: :system},
+        authorize?: true,
+        domain: __MODULE__
+      )
+    )
+
+    :ok
+  end
+
+  def private_collection(collection_id, citizen) do
+    actor = citizen_actor(citizen)
+
+    with {:ok, collection} <-
+           Ash.get(Collection, collection_id, actor: actor, authorize?: false, domain: __MODULE__),
+         true <- collection.visibility == :private,
+         true <- collection.owner_citizen_id == citizen.id or granted?(collection.id, citizen.id) do
+      Ash.load(collection, :members,
+        actor: %{collection_id: collection.id},
+        authorize?: true,
+        domain: __MODULE__
+      )
+    else
+      _ -> {:error, :not_found}
+    end
+  end
+
+  defp granted?(collection_id, citizen_id) do
+    result =
+      CollectionGrant
+      |> Ash.Query.filter(collection_id == ^collection_id and citizen_id == ^citizen_id)
+      |> Ash.read_one!(actor: %{principal: :system}, authorize?: true, domain: __MODULE__)
+
+    not is_nil(result)
+  end
+
+  defp citizen_actor(c), do: %{id: c.id, principal: :citizen}
 
   def claim_collection(secret, citizen) do
     with {:ok, collection} <- capability_collection(secret),

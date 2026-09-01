@@ -70,12 +70,49 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
     locale = conn.assigns.locale
     csrf = Plug.CSRFProtection.get_csrf_token()
 
-    html(conn, """
-    <!doctype html><html lang="#{locale}"><head><meta name="csrf-token" content="#{csrf}"><title>#{copy(locale, :feed)}</title><script defer src="/assets/js/personal_feed_entry.js"></script></head><body><main>
-    <h1>#{copy(locale, :feed)}</h1><p>#{copy(locale, :privacy)}</p>
-    <ul data-personal-feed></ul><noscript>#{copy(locale, :javascript)}</noscript>
-    </main></body></html>
-    """)
+    case BrusselsWtf.Accounts.authenticate_session(get_session(conn, :citizen_session_id)) do
+      {:ok, citizen} ->
+        {:ok, updates} = Follow.registered_feed(citizen)
+
+        items =
+          Enum.map_join(updates, "", fn update ->
+            read = if update.read_at, do: copy(locale, :read), else: copy(locale, :unread)
+
+            ~s(<li data-update-id="#{update.id}" data-read="#{not is_nil(update.read_at)}"><a href="#{escape(update.public_url)}">#{escape(update.event_kind)}</a> <span>#{read}</span><form method="post" action="/citizen/feed/#{update.id}/read"><input type="hidden" name="_csrf_token" value="#{csrf}"><button>#{copy(locale, :mark_read)}</button></form></li>)
+          end)
+
+        html(
+          conn,
+          ~s(<!doctype html><html lang="#{locale}"><head><title>#{copy(locale, :feed)}</title></head><body><main><h1>#{copy(locale, :feed)}</h1><p>#{copy(locale, :synced)}</p><ul data-registered-feed>#{items}</ul></main></body></html>)
+        )
+
+      _ ->
+        html(
+          conn,
+          ~s(<!doctype html><html lang="#{locale}"><head><meta name="csrf-token" content="#{csrf}"><title>#{copy(locale, :feed)}</title><script defer src="/assets/js/personal_feed_entry.js"></script></head><body><main><h1>#{copy(locale, :feed)}</h1><p>#{copy(locale, :privacy)}</p><ul data-personal-feed></ul><noscript>#{copy(locale, :javascript)}</noscript></main></body></html>)
+        )
+    end
+  end
+
+  def follow(conn, %{"target_type" => type, "target_identifier" => identifier}) do
+    with {:ok, citizen} <-
+           BrusselsWtf.Accounts.authenticate_session(get_session(conn, :citizen_session_id)),
+         type when type != :invalid <- parse_type(type),
+         {:ok, [_ | _]} <- Follow.import_citizen_follows(citizen, [{type, identifier}]) do
+      redirect(conn, to: "/feed?lang=#{conn.assigns.locale}")
+    else
+      _ -> send_resp(conn, 422, "")
+    end
+  end
+
+  def mark_read(conn, %{"id" => id}) do
+    with {:ok, citizen} <-
+           BrusselsWtf.Accounts.authenticate_session(get_session(conn, :citizen_session_id)),
+         {:ok, _} <- Follow.mark_read(citizen, id) do
+      redirect(conn, to: "/feed?lang=#{conn.assigns.locale}")
+    else
+      _ -> send_resp(conn, 404, "")
+    end
   end
 
   def show(conn, %{"token" => token}) do
@@ -193,6 +230,19 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
   defp copy("fr", :feed), do: "Fil personnel"
   defp copy("nl", :feed), do: "Persoonlijke feed"
   defp copy(_, :feed), do: "Personal feed"
+
+  defp copy("fr", :synced), do: "Votre fil privé est synchronisé entre vos sessions."
+  defp copy("nl", :synced), do: "Uw privéfeed wordt tussen sessies gesynchroniseerd."
+  defp copy(_, :synced), do: "Your private feed is synced across sessions."
+  defp copy("fr", :read), do: "Lu"
+  defp copy("nl", :read), do: "Gelezen"
+  defp copy(_, :read), do: "Read"
+  defp copy("fr", :unread), do: "Non lu"
+  defp copy("nl", :unread), do: "Ongelezen"
+  defp copy(_, :unread), do: "Unread"
+  defp copy("fr", :mark_read), do: "Marquer comme lu"
+  defp copy("nl", :mark_read), do: "Als gelezen markeren"
+  defp copy(_, :mark_read), do: "Mark read"
 
   defp copy("fr", :privacy),
     do:

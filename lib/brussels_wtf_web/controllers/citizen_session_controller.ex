@@ -121,6 +121,32 @@ defmodule BrusselsWtfWeb.CitizenSessionController do
     |> redirect(to: ~p"/citizen/sign-in")
   end
 
+  def delete_account(conn, params) do
+    resolutions = parse_resolutions(params["collections"] || %{})
+
+    with {:ok, citizen} <- Accounts.authenticate_session(get_session(conn, :citizen_session_id)),
+         {:ok, _operation_id} <- Accounts.delete_citizen(citizen, resolutions) do
+      conn |> configure_session(drop: true) |> redirect(to: "/")
+    else
+      {:error, :owned_collection_requires_resolution} ->
+        send_resp(
+          conn,
+          409,
+          "Owned public or unlisted collections must be transferred or deleted"
+        )
+
+      _ ->
+        send_resp(conn, 422, "Account deletion failed")
+    end
+  end
+
+  defp parse_resolutions(values) when is_map(values),
+    do:
+      Map.new(values, fn
+        {id, "delete"} -> {id, :delete}
+        {id, _} -> {id, :invalid}
+      end)
+
   def registration(conn, _) do
     with {:ok, _} <- Accounts.authenticate_session(get_session(conn, :citizen_session_id)) do
       html(conn, page(conn, title(locale(conn)), registration_body(locale(conn))))
