@@ -16,6 +16,10 @@ defmodule BrusselsWtfWeb.RegisteredFeedBrowserTest do
       Follow.PublicUpdates.Published
     )
 
+    BrusselsWtf.Test.Harness.load("ixelles/proposal")
+    assert :ok = BrusselsWtf.Ingestion.poll_now("ixelles")
+    assert :ok = BrusselsWtf.Test.Harness.drain_pipeline()
+
     fixture = PublicProfileFixture.load!(["Registered Browser Person"])
 
     %{person: person, fact: person_fact} =
@@ -29,10 +33,6 @@ defmodule BrusselsWtfWeb.RegisteredFeedBrowserTest do
         release_key: "registered-browser-cbe",
         sha256: String.duplicate("d", 64)
       })
-
-    BrusselsWtf.Test.Harness.load("ixelles/proposal")
-    assert :ok = BrusselsWtf.Ingestion.poll_now("ixelles")
-    assert :ok = BrusselsWtf.Test.Harness.drain_pipeline()
 
     meeting =
       Council.get_ingested_meeting!("ixelles", "268") |> Ash.load!([:agenda_items, :meeting_page])
@@ -147,16 +147,38 @@ defmodule BrusselsWtfWeb.RegisteredFeedBrowserTest do
     BrusselsWtf.Clock.Controlled.set(DateTime.add(baseline, 3, :second))
 
     person_follow = Enum.find(follows, &(&1.target_type == :person))
+    verified_at = DateTime.add(person_follow.inserted_at, 1, :second)
+    BrusselsWtf.Clock.Controlled.set(verified_at)
 
-    %{num_rows: 1} =
-      Ecto.Adapters.SQL.query!(
-        BrusselsWtf.Repo,
-        "UPDATE citizen_follows SET inserted_at = $1 WHERE id = $2::uuid",
-        [
-          DateTime.add(person_fact.verified_at, -1, :microsecond),
-          Ecto.UUID.dump!(person_follow.id)
-        ]
-      )
+    later_fact =
+      Identity.record_sourced_fact!(%{
+        subject_type: :person,
+        subject_id: person.id,
+        object_type: :commune,
+        object_id: fixture.commune.id,
+        object_label: "Second public mandate publication",
+        kind: :public_mandate,
+        effective_from: ~D[2025-01-01],
+        effective_to: ~D[2025-12-31],
+        source_version_id: fixture.source_version.id,
+        authoritative_url: "https://www.ixelles.be/uploads/conseil/pv/267.pdf",
+        source_authority: :municipal_decision,
+        evidence_kind: :official_decision,
+        evidence_excerpt:
+          "2025-01-01 Registered Browser Person [municipal-mandate-registered-browser-person] is appointed to the Ixelles municipal council.",
+        evidence_location: "decision 267",
+        supersedes_id: person_fact.id
+      })
+
+    assert :ok =
+             BrusselsWtf.Workers.VerifyIxellesPublicMandate.perform(%Oban.Job{
+               args: %{"fact_id" => later_fact.id}
+             })
+
+    later_fact = Identity.get_sourced_fact!(later_fact.id)
+
+    assert later_fact.verification_status == :verified
+    assert DateTime.after?(later_fact.verified_at, person_follow.inserted_at)
 
     # Persist an unverified candidate. It must never reach the public projection or feed.
     Identity.record_sourced_fact!(%{
@@ -188,7 +210,7 @@ defmodule BrusselsWtfWeb.RegisteredFeedBrowserTest do
 
     expected = %{
       dossier: "/meetings/ixelles/268?lang=fr##{item.stable_anchor}",
-      person: "/people/#{person.id}?lang=fr#fact-#{person_fact.id}",
+      person: "/people/#{person.id}?lang=fr#fact-#{later_fact.id}",
       commune: "/meetings/ixelles/268?lang=fr#revision-#{revision.id}"
     }
 
