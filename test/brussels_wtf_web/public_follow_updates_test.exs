@@ -72,9 +72,10 @@ defmodule BrusselsWtfWeb.PublicFollowUpdatesTest do
       BrusselsWtf.Council.MeetingPage
       |> Ash.Query.for_read(:published)
       |> Ash.read!(authorize?: false, domain: BrusselsWtf.Council)
-      |> hd()
+      |> Enum.find(&(&1.current_revision_id != nil))
 
     later = DateTime.add(imported, 1, :second)
+    BrusselsWtf.Clock.Controlled.set(later)
 
     event =
       BrusselsWtf.Council.PublicationEvent
