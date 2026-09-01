@@ -441,8 +441,10 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
     uri = URI.parse(url)
 
     query =
-      uri.query
-      |> Kernel.||("" |> URI.decode_query() |> Map.put("lang", locale) |> URI.encode_query())
+      (uri.query || "")
+      |> URI.decode_query()
+      |> Map.put("lang", locale)
+      |> URI.encode_query()
 
     URI.to_string(%{uri | query: query})
   end
