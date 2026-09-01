@@ -34,8 +34,15 @@ defmodule BrusselsWtf.Follow.FeedUpdate do
 
     read :for_delivery_identity do
       argument :citizen_id, :uuid, allow_nil?: false
+      argument :target_type, :atom, allow_nil?: false
+      argument :target_identifier, :string, allow_nil?: false
       argument :event_identity, :string, allow_nil?: false
-      filter expr(citizen_id == ^arg(:citizen_id) and event_identity == ^arg(:event_identity))
+
+      filter expr(
+               citizen_id == ^arg(:citizen_id) and target_type == ^arg(:target_type) and
+                 target_identifier == ^arg(:target_identifier) and
+                 event_identity == ^arg(:event_identity)
+             )
     end
 
     update :mark_read do
@@ -45,6 +52,20 @@ defmodule BrusselsWtf.Follow.FeedUpdate do
 
     destroy :purge do
       primary? true
+    end
+
+    read :for_follow do
+      argument :citizen_id, :uuid, allow_nil?: false
+      argument :target_type, :atom, allow_nil?: false
+      argument :target_identifier, :string, allow_nil?: false
+
+      filter expr(
+               citizen_id == ^arg(:citizen_id) and target_type == ^arg(:target_type) and
+                 target_identifier == ^arg(:target_identifier)
+             )
+    end
+
+    destroy :remove_stale do
     end
 
     read :for_account_deletion do
@@ -66,7 +87,9 @@ defmodule BrusselsWtf.Follow.FeedUpdate do
     policy action([
              :read,
              :for_delivery_identity,
+             :for_follow,
              :deliver_once,
+             :remove_stale,
              :purge,
              :for_account_deletion,
              :delete_for_account
@@ -93,6 +116,6 @@ defmodule BrusselsWtf.Follow.FeedUpdate do
   end
 
   identities do
-    identity :delivery_identity, [:citizen_id, :event_identity]
+    identity :delivery_identity, [:citizen_id, :target_type, :target_identifier, :event_identity]
   end
 end

@@ -100,7 +100,7 @@ defmodule BrusselsWtfWeb.SuggestionHTTPTest do
     put_config(enabled: false)
     profile = get(conn, "/companies/#{@number}")
     body = html_response(profile, 200)
-    refute body =~ "<form"
+    refute body =~ "/suggestions/"
 
     assert response(
              post(recycle(conn), "/companies/#{@number}/suggestions/ownership", %{

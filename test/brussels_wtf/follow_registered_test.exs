@@ -53,12 +53,12 @@ defmodule BrusselsWtf.FollowRegisteredTest do
              |> Ash.Changeset.for_create(:deliver_once, %{attrs | public_url: "/spoofed"})
              |> Ash.create(actor: %{principal: :system}, authorize?: true, domain: Follow)
 
-    assert {:ok, [visible]} = Follow.registered_feed(alice)
-    assert visible.id == original.id
+    # Reads revalidate stored rows against authoritative public state. A caller-shaped
+    # row has no persisted public event/revision evidence and is removed fail-closed.
+    assert {:ok, []} = Follow.registered_feed(alice)
     assert {:ok, []} = Follow.registered_feed(bob)
     assert {:error, _} = Follow.mark_read(bob, original.id)
-    assert {:ok, marked} = Follow.mark_read(alice, original.id)
-    assert marked.read_at
+    assert {:error, _} = Follow.mark_read(alice, original.id)
   end
 
   test "cleanup uses the twelve month maximum and warning does not change sign-in" do

@@ -84,34 +84,74 @@ defmodule BrusselsWtf.Follow do
 
   defp synchronize_follow(follow, actor) do
     target = %Target{type: follow.target_type, identifier: follow.target_identifier}
+    locale = citizen_locale(follow.citizen_id)
 
-    BrusselsWtf.Follow.PublicUpdates.list(
-      [
-        %{
-          "type" => Atom.to_string(target.type),
-          "id" => target.identifier,
-          "importedAt" => DateTime.to_iso8601(follow.inserted_at)
+    updates =
+      BrusselsWtf.Follow.PublicUpdates.list(
+        [
+          %{
+            "type" => Atom.to_string(target.type),
+            "id" => target.identifier,
+            "importedAt" => DateTime.to_iso8601(follow.inserted_at)
+          }
+        ],
+        locale
+      )
+
+    with :ok <- remove_stale_deliveries(follow, updates, actor) do
+      Enum.reduce_while(updates, {:ok, 0}, fn update, {:ok, count} ->
+        attrs = %{
+          citizen_id: follow.citizen_id,
+          target_type: follow.target_type,
+          target_identifier: follow.target_identifier,
+          event_identity: update.publicEventId,
+          event_kind: update.eventType,
+          public_url: update.url,
+          occurred_at: parse_occurred_at!(update.occurredAt)
         }
-      ],
-      "en"
-    )
-    |> Enum.reduce_while({:ok, 0}, fn update, {:ok, count} ->
-      attrs = %{
-        citizen_id: follow.citizen_id,
-        target_type: follow.target_type,
-        target_identifier: follow.target_identifier,
-        event_identity: update.publicEventId,
-        event_kind: update.eventType,
-        public_url: update.url,
-        occurred_at: parse_occurred_at!(update.occurredAt)
-      }
 
-      case deliver_exactly_once(attrs, actor) do
-        {:ok, :created} -> {:cont, {:ok, count + 1}}
-        {:ok, :existing} -> {:cont, {:ok, count}}
-        {:error, error} -> {:halt, {:error, error}}
-      end
+        case deliver_exactly_once(attrs, actor) do
+          {:ok, :created} -> {:cont, {:ok, count + 1}}
+          {:ok, :existing} -> {:cont, {:ok, count}}
+          {:error, error} -> {:halt, {:error, error}}
+        end
+      end)
+    end
+  end
+
+  defp citizen_locale(citizen_id) do
+    case Ash.get(BrusselsWtf.Accounts.Citizen, citizen_id,
+           authorize?: false,
+           domain: BrusselsWtf.Accounts
+         ) do
+      {:ok, citizen} -> citizen.preferred_locale
+      _ -> "en"
+    end
+  end
+
+  defp remove_stale_deliveries(follow, updates, actor) do
+    expected =
+      Map.new(updates, fn update ->
+        {update.publicEventId,
+         {update.eventType, update.url, parse_occurred_at!(update.occurredAt)}}
+      end)
+
+    FeedUpdate
+    |> Ash.Query.for_read(:for_follow, %{
+      citizen_id: follow.citizen_id,
+      target_type: follow.target_type,
+      target_identifier: follow.target_identifier
+    })
+    |> Ash.read!(actor: actor, authorize?: true, domain: __MODULE__)
+    |> Enum.filter(fn delivery ->
+      Map.get(expected, delivery.event_identity) !=
+        {delivery.event_kind, delivery.public_url, delivery.occurred_at}
     end)
+    |> Enum.each(
+      &Ash.destroy!(&1, action: :remove_stale, actor: actor, authorize?: true, domain: __MODULE__)
+    )
+
+    :ok
   end
 
   defp deliver_exactly_once(attrs, actor) do
@@ -119,6 +159,8 @@ defmodule BrusselsWtf.Follow do
       FeedUpdate
       |> Ash.Query.for_read(:for_delivery_identity, %{
         citizen_id: attrs.citizen_id,
+        target_type: attrs.target_type,
+        target_identifier: attrs.target_identifier,
         event_identity: attrs.event_identity
       })
       |> Ash.read_one!(actor: actor, authorize?: true, domain: __MODULE__)
@@ -160,6 +202,15 @@ defmodule BrusselsWtf.Follow do
 
   def registered_feed(citizen) do
     actor = citizen_actor(citizen)
+    system = %{principal: :system}
+
+    CitizenFollow
+    |> Ash.Query.for_read(:all_for_sync)
+    |> Ash.Query.filter(citizen_id == ^citizen.id)
+    |> Ash.read!(actor: system, authorize?: true, domain: __MODULE__)
+    |> Enum.each(fn follow ->
+      {:ok, _} = synchronize_follow(follow, system)
+    end)
 
     FeedUpdate
     |> Ash.Query.for_read(:mine, %{}, actor: actor)
