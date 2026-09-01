@@ -37,8 +37,13 @@ defmodule BrusselsWtf.Accounts.Session do
   end
 
   policies do
-    policy always() do
-      authorize_if always()
+    policy action(:open) do
+      authorize_if actor_attribute_equals(:principal, :system)
+    end
+
+    policy action([:read, :by_id, :touch, :revoke]) do
+      authorize_if actor_attribute_equals(:principal, :system)
+      authorize_if expr(citizen_id == ^actor(:id) and ^actor(:principal) == :citizen)
     end
   end
 

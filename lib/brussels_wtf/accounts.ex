@@ -8,6 +8,7 @@ defmodule BrusselsWtf.Accounts do
   resources do
     resource Citizen
     resource BrusselsWtf.Accounts.Token
+    resource BrusselsWtf.Accounts.OutstandingMagicLink
     resource Session
   end
 
@@ -33,7 +34,9 @@ defmodule BrusselsWtf.Accounts do
     strategy = AshAuthentication.Info.strategy!(Citizen, :magic_link)
     now = clock().utc_now()
 
-    with {:ok, citizen} <-
+    with {:ok, claims} <- Joken.peek_claims(token),
+         {:ok, outstanding} <- outstanding_magic_link(claims["jti"]),
+         {:ok, citizen} <-
            AshAuthentication.Strategy.action(strategy, :sign_in, %{"token" => token}),
          {:ok, citizen} <-
            citizen
@@ -44,11 +47,20 @@ defmodule BrusselsWtf.Accounts do
              domain: __MODULE__
            ),
          {:ok, session} <-
-           create(Session, :open, %{
+           Session
+           |> Ash.Changeset.for_create(:open, %{
              citizen_id: citizen.id,
              last_active_at: now,
              expires_at: DateTime.add(now, 90, :day)
-           }) do
+           })
+           |> Ash.create(actor: %{principal: :system}, authorize?: true, domain: __MODULE__) do
+      Ash.destroy!(outstanding,
+        action: :remove,
+        actor: %{principal: :system},
+        authorize?: true,
+        domain: __MODULE__
+      )
+
       Logger.warning("citizen_magic_link_consumed")
       {:ok, citizen, session}
     else
@@ -70,7 +82,7 @@ defmodule BrusselsWtf.Accounts do
     with {:ok, session} <-
            Session
            |> Ash.Query.for_read(:by_id, %{id: id})
-           |> Ash.read_one(authorize?: true, domain: __MODULE__),
+           |> Ash.read_one(actor: %{principal: :system}, authorize?: true, domain: __MODULE__),
          true <- not is_nil(session),
          :lt <- DateTime.compare(now, session.expires_at),
          true <- DateTime.compare(now, DateTime.add(session.last_active_at, 30, :day)) == :lt,
@@ -80,7 +92,14 @@ defmodule BrusselsWtf.Accounts do
              authorize?: true,
              domain: __MODULE__
            ),
-         {:ok, _} <- update(session, :touch, %{last_active_at: now}) do
+         {:ok, _} <-
+           session
+           |> Ash.Changeset.for_update(:touch, %{last_active_at: now})
+           |> Ash.update(
+             actor: %{id: session.citizen_id, principal: :citizen},
+             authorize?: true,
+             domain: __MODULE__
+           ) do
       {:ok, citizen}
     else
       _ -> {:error, :expired}
@@ -101,31 +120,87 @@ defmodule BrusselsWtf.Accounts do
              domain: __MODULE__
            ) do
       revoke_sessions(citizen.id)
+      revoke_outstanding_magic_links(citizen.email)
+      strategy = AshAuthentication.Info.strategy!(Citizen, :log_out_everywhere)
+
+      _ =
+        AshAuthentication.Strategy.action(strategy, :log_out_everywhere, %{
+          "user_id" => citizen.id
+        })
+
       Logger.warning("citizen_email_changed_sessions_revoked")
       {:ok, changed}
     end
   end
 
+  defp outstanding_magic_link(jti) when is_binary(jti) do
+    actor = %{principal: :system}
+
+    case BrusselsWtf.Accounts.OutstandingMagicLink
+         |> Ash.Query.filter(jti == ^jti)
+         |> Ash.read_one(actor: actor, authorize?: true, domain: __MODULE__) do
+      {:ok, nil} -> {:error, :not_found}
+      result -> result
+    end
+  end
+
+  defp outstanding_magic_link(_), do: {:error, :not_found}
+
+  def record_outstanding_magic_link(email, token) do
+    with {:ok, claims} <- Joken.peek_claims(token) do
+      BrusselsWtf.Accounts.OutstandingMagicLink
+      |> Ash.Changeset.for_create(:record, %{
+        email_hash: email_hash(email),
+        jti: claims["jti"],
+        subject: claims["sub"]
+      })
+      |> Ash.create(actor: %{principal: :system}, authorize?: true, domain: __MODULE__)
+      |> case do
+        {:ok, _} -> :ok
+        _ -> :ok
+      end
+    else
+      _ -> :ok
+    end
+  end
+
+  defp revoke_outstanding_magic_links(email) do
+    actor = %{principal: :system}
+
+    BrusselsWtf.Accounts.OutstandingMagicLink
+    |> Ash.Query.filter(email_hash == ^email_hash(email))
+    |> Ash.read!(actor: actor, authorize?: true, domain: __MODULE__)
+    |> Enum.each(fn link ->
+      case BrusselsWtf.Accounts.Token
+           |> Ash.Query.for_read(:get_token, %{jti: link.jti, purpose: "magic_link"})
+           |> Ash.read_one(authorize?: false, domain: __MODULE__) do
+        {:ok, token_record} when not is_nil(token_record) ->
+          Ash.destroy!(token_record,
+            action: :revoke_stored,
+            authorize?: false,
+            domain: __MODULE__
+          )
+
+        _ ->
+          :ok
+      end
+
+      Ash.destroy!(link, action: :remove, actor: actor, authorize?: true, domain: __MODULE__)
+    end)
+  end
+
+  defp email_hash(email), do: :crypto.hash(:sha256, String.downcase(to_string(email)))
+
   def revoke_sessions(citizen_id) do
     Session
     |> Ash.Query.filter(citizen_id == ^citizen_id)
-    |> Ash.read!(authorize?: false, domain: __MODULE__)
-    |> Enum.each(&Ash.destroy!(&1, authorize?: false, domain: __MODULE__))
+    |> Ash.read!(actor: %{principal: :system}, authorize?: true, domain: __MODULE__)
+    |> Enum.each(
+      &Ash.destroy!(&1, actor: %{principal: :system}, authorize?: true, domain: __MODULE__)
+    )
 
     :ok
   end
-
-  defp create(resource, action, attrs),
-    do:
-      resource
-      |> Ash.Changeset.for_create(action, attrs)
-      |> Ash.create(authorize?: true, domain: __MODULE__)
-
-  defp update(record, action, attrs),
-    do:
-      record
-      |> Ash.Changeset.for_update(action, attrs)
-      |> Ash.update(authorize?: true, domain: __MODULE__)
 
   defp clock, do: Application.fetch_env!(:brussels_wtf, :clock)
 end

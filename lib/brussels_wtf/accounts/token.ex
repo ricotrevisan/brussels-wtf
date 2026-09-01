@@ -12,6 +12,11 @@ defmodule BrusselsWtf.Accounts.Token do
     repo BrusselsWtf.Repo
   end
 
+  actions do
+    destroy :revoke_stored do
+    end
+  end
+
   policies do
     bypass AshAuthentication.Checks.AshAuthenticationInteraction do
       authorize_if always()

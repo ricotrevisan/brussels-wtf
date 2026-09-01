@@ -30,7 +30,7 @@ defmodule BrusselsWtfWeb.CitizenAuthenticationTest do
 
     [cookie | _] =
       get_resp_header(first, "set-cookie")
-      |> Enum.filter(&String.starts_with?(&1, "citizen_session="))
+      |> Enum.filter(&String.starts_with?(&1, "_brussels_wtf_key="))
 
     assert cookie =~ "secure"
     assert cookie =~ "HttpOnly"
@@ -135,5 +135,80 @@ defmodule BrusselsWtfWeb.CitizenAuthenticationTest do
     assert logs =~ "citizen_magic_link_rejected"
     assert logs =~ "citizen_email_changed_sessions_revoked"
     assert logs =~ "follow_collection_capability_checked"
+  end
+
+  test "absolute session boundary wins while idle activity is refreshed", %{now: now} do
+    Accounts.request_link("absolute@example.test")
+    assert_receive {:magic_link, _, token, _}
+    {:ok, _, session} = Accounts.consume(token)
+
+    for days <- [29, 58, 87] do
+      Controlled.set(DateTime.add(now, days, :day))
+      assert {:ok, _} = Accounts.authenticate_session(session.id)
+    end
+
+    Controlled.set(DateTime.add(now, 90, :day))
+    assert {:error, :expired} = Accounts.authenticate_session(session.id)
+  end
+
+  test "email change revokes every concurrent session and outstanding old link" do
+    Accounts.request_link("multi@example.test")
+    assert_receive {:magic_link, _, first, _}
+    {:ok, citizen, one} = Accounts.consume(first)
+    Accounts.request_link("multi@example.test")
+    assert_receive {:magic_link, _, second, _}
+    {:ok, _, two} = Accounts.consume(second)
+    Accounts.request_link("multi@example.test")
+    assert_receive {:magic_link, _, outstanding, _}
+    assert {:ok, _} = Accounts.change_email(citizen, "multi-changed@example.test")
+    assert {:error, :expired} = Accounts.authenticate_session(one.id)
+    assert {:error, :expired} = Accounts.authenticate_session(two.id)
+    assert {:error, :invalid_or_expired} = Accounts.consume(outstanding)
+  end
+
+  test "existing new and unrelated email requests have identical public shape", %{conn: conn} do
+    Accounts.request_link("existing@example.test")
+    assert_receive {:magic_link, _, token, _}
+    assert {:ok, _, _} = Accounts.consume(token)
+
+    results =
+      for email <- ["existing@example.test", "new-shape@example.test", "unrelated@example.test"] do
+        response = post(recycle(conn), ~p"/citizen/magic-link", %{"email" => email})
+        {response.status, response.resp_body}
+      end
+
+    assert Enum.uniq(results) |> length() == 1
+
+    for {_, body} <- results do
+      refute body =~ "existing@example.test"
+      refute body =~ "new-shape@example.test"
+      refute body =~ "unrelated@example.test"
+    end
+  end
+
+  test "valid citizen session is denied every editor route", %{conn: conn} do
+    Accounts.request_link("route-denial@example.test")
+    assert_receive {:magic_link, _, token, _}
+    {:ok, _, session} = Accounts.consume(token)
+
+    routes =
+      BrusselsWtfWeb.Router.__routes__()
+      |> Enum.filter(&String.starts_with?(&1.path, "/review"))
+      |> Enum.reject(&(&1.path in ["/review/login", "/review/session"]))
+
+    assert routes != []
+
+    for route <- routes do
+      path = Regex.replace(~r/:\w+/, route.path, "00000000-0000-0000-0000-000000000000")
+
+      request =
+        conn
+        |> recycle()
+        |> init_test_session(%{citizen_session_id: session.id})
+        |> dispatch(BrusselsWtfWeb.Endpoint, route.verb, path, %{})
+
+      refute request.status in 200..299
+      assert get_session(request, :citizen_session_id) == session.id
+    end
   end
 end

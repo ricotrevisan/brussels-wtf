@@ -170,9 +170,13 @@ defmodule BrusselsWtfWeb.CitizenSessionController do
   defp registration_body(_),
     do: body("Import selected local follows", "Separately claim an anonymous collection")
 
-  defp body(import, claim),
-    do:
-      ~s(<h2>#{import}</h2><form method="post" action="/citizen/registration/import-follows"><button>#{import}</button></form><h2>#{claim}</h2><form method="post" action="/citizen/registration/claim-collection"><input name="management_secret"><button>#{claim}</button></form>)
+  defp body(import, claim) do
+    csrf = Plug.CSRFProtection.get_csrf_token()
+
+    ~s"""
+    <h2>#{import}</h2><form id="local-follow-import" method="post" action="/citizen/registration/import-follows"><input type="hidden" name="_csrf_token" value="#{csrf}"><fieldset id="local-follow-targets"><legend>#{import}</legend></fieldset><button>#{import}</button></form><h2>#{claim}</h2><form method="post" action="/citizen/registration/claim-collection"><input type="hidden" name="_csrf_token" value="#{csrf}"><label>Management secret <input name="management_secret"></label><button>#{claim}</button></form><script>try { const state=JSON.parse(localStorage.getItem('brussels.wtf:personal-feed:v1')||'{"follows":[]}'); const box=document.getElementById('local-follow-targets'); for (const target of (state.follows||[])) { if (!['dossier','person','legal_entity','commune'].includes(target.type)||!target.id) continue; const label=document.createElement('label'); const input=document.createElement('input'); input.type='checkbox'; input.name='targets[]'; input.value=target.type+':'+target.id; label.append(input,document.createTextNode(target.label||target.id)); box.append(label); }} catch (_) {}</script>
+    """
+  end
 
   defp page(conn, title, content) do
     "<!doctype html><html lang=\"" <>

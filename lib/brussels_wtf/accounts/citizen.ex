@@ -19,10 +19,16 @@ defmodule BrusselsWtf.Accounts.Citizen do
       enabled?(true)
       token_resource(BrusselsWtf.Accounts.Token)
       store_all_tokens?(true)
+      require_token_presence_for_authentication?(true)
 
       signing_secret(fn _, _ ->
         Application.fetch_env(:brussels_wtf, :citizen_token_signing_secret)
       end)
+    end
+
+    add_ons do
+      log_out_everywhere do
+      end
     end
 
     strategies do
@@ -62,13 +68,13 @@ defmodule BrusselsWtf.Accounts.Citizen do
     end
 
     policy action([:read, :record_sign_in, :change_email]) do
-      authorize_if actor_attribute_equals(:principal, :citizen)
+      authorize_if expr(id == ^actor(:id) and ^actor(:principal) == :citizen)
     end
   end
 
   attributes do
     uuid_v7_primary_key :id
-    attribute :email, :string, allow_nil?: false, sensitive?: true, public?: true
+    attribute :email, :string, allow_nil?: false, sensitive?: true, public?: false
     attribute :last_sign_in_at, :utc_datetime_usec
     timestamps()
   end

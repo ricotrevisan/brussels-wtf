@@ -41,6 +41,7 @@ defmodule BrusselsWtf.Follow.Collection do
     update :claim do
       accept [:owner_citizen_id]
       require_atomic? false
+      change BrusselsWtf.Follow.Changes.ClaimCollection
     end
 
     update :touch do

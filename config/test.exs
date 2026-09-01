@@ -1,5 +1,6 @@
 import Config
 config :brussels_wtf, :allow_synthetic_seeds, true
+config :brussels_wtf, :session_cookie_secure, true
 
 config :brussels_wtf, :review_auth,
   actor_id: "rico",

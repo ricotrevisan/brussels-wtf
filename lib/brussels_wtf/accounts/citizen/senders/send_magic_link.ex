@@ -9,6 +9,7 @@ defmodule BrusselsWtf.Accounts.Citizen.Senders.SendMagicLink do
         email -> to_string(email)
       end
 
+    :ok = BrusselsWtf.Accounts.record_outstanding_magic_link(email, token)
     Application.fetch_env!(:brussels_wtf, :citizen_mailer).deliver_magic_link(email, token, "en")
   end
 end
