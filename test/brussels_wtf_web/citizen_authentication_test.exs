@@ -314,6 +314,40 @@ defmodule BrusselsWtfWeb.CitizenAuthenticationTest do
     assert persisted.owner_citizen_id == hd(owners)
   end
 
+  test "transaction notifications emit only after commit and never warn as missed" do
+    Accounts.request_link("notifications@example.test")
+    assert_receive {:magic_link, _, link, _}
+    {:ok, citizen, _} = Accounts.consume(token_from_link(link))
+    Accounts.request_link("notifications@example.test")
+    assert_receive {:magic_link, _, _, _}
+
+    success_logs =
+      capture_log(fn ->
+        assert {:ok, _} = Accounts.change_email(citizen, "notifications-new@example.test")
+      end)
+
+    assert success_logs =~ "citizen_email_changed_sessions_revoked"
+    refute success_logs =~ "Missed 1 notifications"
+
+    Accounts.request_link("rollback-notifications@example.test")
+    assert_receive {:magic_link, _, rollback_link, _}
+    {:ok, rollback_citizen, _} = Accounts.consume(token_from_link(rollback_link))
+    Accounts.request_link("rollback-notifications@example.test")
+    assert_receive {:magic_link, _, _, _}
+    Application.put_env(:brussels_wtf, :account_security_failure, :email)
+
+    rollback_logs =
+      capture_log(fn ->
+        assert {:error, _} =
+                 Accounts.change_email(rollback_citizen, "never-committed@example.test")
+      end)
+
+    refute rollback_logs =~ "citizen_email_changed_sessions_revoked"
+    refute rollback_logs =~ "Missed 1 notifications"
+  after
+    Application.delete_env(:brussels_wtf, :account_security_failure)
+  end
+
   test "email security transaction rolls back every revocation stage and blocks direct mutation" do
     for stage <- [:sessions, :outstanding_links, :authentication_tokens, :email] do
       email = "rollback-#{stage}@example.test"

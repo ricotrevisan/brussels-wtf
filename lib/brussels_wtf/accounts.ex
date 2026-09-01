@@ -136,7 +136,12 @@ defmodule BrusselsWtf.Accounts do
       |> Ash.Changeset.for_update(:apply_email_change, %{
         email: String.downcase(String.trim(email))
       })
-      |> Ash.update(actor: %{principal: :system}, authorize?: true, domain: __MODULE__)
+      |> Ash.update(
+        actor: %{principal: :system},
+        authorize?: true,
+        domain: __MODULE__,
+        return_notifications?: true
+      )
       |> checked_value()
     end)
     |> case do
@@ -162,7 +167,8 @@ defmodule BrusselsWtf.Accounts do
         action: :delete_account,
         actor: %{principal: :system},
         authorize?: true,
-        domain: __MODULE__
+        domain: __MODULE__,
+        return_notifications?: true
       )
       |> checked_ok()
 
@@ -171,16 +177,42 @@ defmodule BrusselsWtf.Accounts do
   end
 
   defp security_transaction(fun) do
-    case BrusselsWtf.Repo.transaction(fn ->
-           try do
-             fun.()
-           catch
-             {:security_failure, reason} -> BrusselsWtf.Repo.rollback(reason)
-           end
-         end) do
-      {:ok, value} -> {:ok, value}
-      {:error, reason} -> {:error, reason}
+    previous = Process.get(:account_security_notifications)
+    Process.put(:account_security_notifications, [])
+
+    {result, notifications} =
+      try do
+        result =
+          BrusselsWtf.Repo.transaction(fn ->
+            try do
+              fun.()
+            catch
+              {:security_failure, reason} -> BrusselsWtf.Repo.rollback(reason)
+            end
+          end)
+
+        {result, Process.get(:account_security_notifications, []) |> Enum.reverse()}
+      after
+        if previous,
+          do: Process.put(:account_security_notifications, previous),
+          else: Process.delete(:account_security_notifications)
+      end
+
+    case result do
+      {:ok, value} ->
+        Ash.Notifier.notify(notifications)
+        {:ok, value}
+
+      {:error, reason} ->
+        {:error, reason}
     end
+  end
+
+  defp collect_notifications(notifications) do
+    Process.put(
+      :account_security_notifications,
+      Enum.reverse(notifications) ++ Process.get(:account_security_notifications, [])
+    )
   end
 
   defp maybe_fail(stage) do
@@ -191,9 +223,25 @@ defmodule BrusselsWtf.Accounts do
     end
   end
 
+  defp checked_value({:ok, value, notifications}) do
+    collect_notifications(notifications)
+    value
+  end
+
   defp checked_value({:ok, value}), do: value
   defp checked_value({:error, reason}), do: throw({:security_failure, reason})
   defp checked_ok(:ok), do: :ok
+
+  defp checked_ok({:ok, _value, notifications}) do
+    collect_notifications(notifications)
+    :ok
+  end
+
+  defp checked_ok({:ok, notifications}) when is_list(notifications) do
+    collect_notifications(notifications)
+    :ok
+  end
+
   defp checked_ok({:ok, _}), do: :ok
   defp checked_ok({:error, reason}), do: throw({:security_failure, reason})
   defp checked_ok(other), do: throw({:security_failure, {:unexpected_result, other}})
@@ -243,7 +291,13 @@ defmodule BrusselsWtf.Accounts do
       OutstandingMagicLink
       |> Ash.get(link.id, actor: actor, authorize?: true, domain: __MODULE__)
       |> checked_value()
-      |> Ash.destroy(action: :remove, actor: actor, authorize?: true, domain: __MODULE__)
+      |> Ash.destroy(
+        action: :remove,
+        actor: actor,
+        authorize?: true,
+        domain: __MODULE__,
+        return_notifications?: true
+      )
       |> checked_ok()
     end)
 
@@ -311,7 +365,12 @@ defmodule BrusselsWtf.Accounts do
 
     Enum.each(sessions, fn session ->
       session
-      |> Ash.destroy(actor: %{principal: :system}, authorize?: true, domain: __MODULE__)
+      |> Ash.destroy(
+        actor: %{principal: :system},
+        authorize?: true,
+        domain: __MODULE__,
+        return_notifications?: true
+      )
       |> checked_ok()
     end)
 
