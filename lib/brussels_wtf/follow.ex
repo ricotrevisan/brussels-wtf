@@ -751,6 +751,12 @@ defmodule BrusselsWtf.Follow do
           where: r.citizen_id == type(^citizen_id, Ecto.UUID)
       )
 
+    {_, _} =
+      BrusselsWtf.Repo.delete_all(
+        from r in "citizen_retention_warnings",
+          where: r.citizen_id == type(^citizen_id, Ecto.UUID)
+      )
+
     :ok
   end
 

@@ -7,6 +7,7 @@ defmodule BrusselsWtf.FollowRegisteredTest do
 
   setup do
     Process.register(self(), BrusselsWtf.Accounts.Mailbox)
+    BrusselsWtf.Accounts.Mail.Memory.reset_inactivity_dedup()
     BrusselsWtf.Clock.Controlled.set(~U[2026-09-02 12:00:00.000000Z])
 
     on_exit(fn ->
@@ -22,7 +23,19 @@ defmodule BrusselsWtf.FollowRegisteredTest do
     {bob, _} = citizen("bob-feed@example.test")
 
     refute function_exported?(Follow, :publish_update, 1)
-    assert {:ok, _follow} = Follow.follow(alice, :commune, "ixelles")
+
+    assert {:ok, _follow} =
+             CitizenFollow
+             |> Ash.Changeset.for_create(:import, %{
+               citizen_id: alice.id,
+               target_type: :commune,
+               target_identifier: "ixelles"
+             })
+             |> Ash.create(
+               actor: %{id: alice.id, principal: :citizen},
+               authorize?: true,
+               domain: Follow
+             )
 
     attrs = %{
       citizen_id: alice.id,
@@ -111,6 +124,83 @@ defmodule BrusselsWtf.FollowRegisteredTest do
     assert warning.delivery_status == :delivered
     assert is_nil(warning.claim_token)
     assert is_nil(warning.lease_expires_at)
+  end
+
+  test "warning claims recover across crashes and adapter deduplicates ambiguous delivery" do
+    {citizen, _} = citizen("crash-retention@example.test")
+    signed_in = citizen.last_sign_in_at || citizen.inserted_at
+    due = DateTime.add(signed_in, 153, :day)
+
+    Application.put_env(:brussels_wtf, :inactivity_warning_crash, :before_send)
+    ref = Process.monitor(spawn(fn -> Accounts.run_inactivity_retention(due) end))
+    assert_receive {:DOWN, ^ref, :process, _, {:injected_warning_crash, :before_send}}
+    Application.delete_env(:brussels_wtf, :inactivity_warning_crash)
+    Accounts.run_inactivity_retention(DateTime.add(due, 301, :second))
+    assert_receive {:inactivity_warning, "crash-retention@example.test", _, _, _, _}
+
+    {ambiguous, _} = citizen("ambiguous-retention@example.test")
+    ambiguous_due = DateTime.add(ambiguous.last_sign_in_at || ambiguous.inserted_at, 153, :day)
+    Application.put_env(:brussels_wtf, :inactivity_warning_crash, :after_send)
+    ref = Process.monitor(spawn(fn -> Accounts.run_inactivity_retention(ambiguous_due) end))
+    assert_receive {:DOWN, ^ref, :process, _, {:injected_warning_crash, :after_send}}
+    assert_receive {:inactivity_warning, "ambiguous-retention@example.test", _, _, _, _}
+    Application.delete_env(:brussels_wtf, :inactivity_warning_crash)
+    Accounts.run_inactivity_retention(DateTime.add(ambiguous_due, 301, :second))
+    refute_receive {:inactivity_warning, "ambiguous-retention@example.test", _, _, _, _}, 50
+
+    {failed, _} = citizen("failed-retention@example.test")
+    failed_due = DateTime.add(failed.last_sign_in_at || failed.inserted_at, 153, :day)
+    Application.put_env(:brussels_wtf, :inactivity_mail_failure, :adapter_failure)
+    assert {:warning_delivery_failed, 30} in Accounts.run_inactivity_retention(failed_due)
+    Application.delete_env(:brussels_wtf, :inactivity_mail_failure)
+    Accounts.run_inactivity_retention(DateTime.add(failed_due, 1, :second))
+    assert_receive {:inactivity_warning, "failed-retention@example.test", _, _, _, _}
+
+    warnings =
+      Follow.RetentionWarning
+      |> Ash.read!(actor: %{principal: :system}, authorize?: true, domain: Follow)
+
+    assert Enum.count(warnings, &(&1.citizen_id in [citizen.id, ambiguous.id, failed.id])) == 3
+  after
+    Application.delete_env(:brussels_wtf, :inactivity_warning_crash)
+    Application.delete_env(:brussels_wtf, :inactivity_mail_failure)
+  end
+
+  test "later sign-in clears ownership choices, warnings, and any active lease" do
+    {citizen, _} = citizen("reset-retention@example.test")
+    {:ok, collection, secret} = Follow.create_collection()
+    {:ok, owned} = Follow.claim_collection(secret, citizen)
+    {:ok, _} = Follow.owner_set_visibility(citizen, owned.id, :public)
+    {:ok, _} = Follow.select_inactivity_resolution(citizen, collection.id, :delete)
+
+    due = DateTime.add(citizen.last_sign_in_at || citizen.inserted_at, 153, :day)
+    Application.put_env(:brussels_wtf, :inactivity_warning_crash, :before_send)
+    ref = Process.monitor(spawn(fn -> Accounts.run_inactivity_retention(due) end))
+    assert_receive {:DOWN, ^ref, :process, _, {:injected_warning_crash, :before_send}}
+    Application.delete_env(:brussels_wtf, :inactivity_warning_crash)
+
+    # Successful sign-in invokes this reset immediately after record_sign_in.
+    :ok = Follow.clear_inactivity_resolutions(citizen.id)
+
+    {:ok, signed_in} =
+      citizen
+      |> Ash.Changeset.for_update(:record_sign_in, %{
+        last_sign_in_at: ~U[2026-09-02 12:01:00.000000Z]
+      })
+      |> Ash.update(
+        actor: %{id: citizen.id, principal: :citizen},
+        authorize?: true,
+        domain: Accounts
+      )
+
+    assert {:ok, []} = Follow.inactivity_resolutions(signed_in)
+
+    assert [] ==
+             Follow.RetentionWarning
+             |> Ash.Query.filter(citizen_id == ^citizen.id)
+             |> Ash.read!(actor: %{principal: :system}, authorize?: true, domain: Follow)
+  after
+    Application.delete_env(:brussels_wtf, :inactivity_warning_crash)
   end
 
   test "private grants are view-only and direct Ash actions cannot cross citizen boundaries" do

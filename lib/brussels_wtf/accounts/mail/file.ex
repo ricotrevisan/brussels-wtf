@@ -9,7 +9,7 @@ defmodule BrusselsWtf.Accounts.Mail.File do
   end
 
   @impl true
-  def deliver_inactivity_warning(email, locale, subject, body, deletion_at) do
+  def deliver_inactivity_warning(email, locale, subject, body, deletion_at, idempotency_key) do
     path = Application.fetch_env!(:brussels_wtf, :citizen_mail_file)
 
     File.write!(
@@ -20,7 +20,8 @@ defmodule BrusselsWtf.Accounts.Mail.File do
         locale: locale,
         subject: subject,
         body: body,
-        deletion_at: deletion_at
+        deletion_at: deletion_at,
+        idempotency_key: idempotency_key
       })
     )
 

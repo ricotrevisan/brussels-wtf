@@ -388,16 +388,26 @@ defmodule BrusselsWtf.Accounts do
       {subject, body} = inactivity_warning_copy(citizen.preferred_locale, days, deletion_at)
       mail = Application.fetch_env!(:brussels_wtf, :citizen_mailer)
 
+      idempotency_key =
+        "inactivity-warning:#{citizen.id}:#{DateTime.to_iso8601(cycle_at)}:#{days}"
+
+      maybe_crash_warning(:before_send)
+
       status =
         case mail.deliver_inactivity_warning(
                citizen.email,
                citizen.preferred_locale,
                subject,
                body,
-               deletion_at
+               deletion_at,
+               idempotency_key
              ) do
-          :ok -> :delivered
-          {:error, _} -> :failed
+          :ok ->
+            maybe_crash_warning(:after_send)
+            :delivered
+
+          {:error, _} ->
+            :failed
         end
 
       # Compare-and-set prevents a claimant whose lease was replaced from
@@ -430,6 +440,13 @@ defmodule BrusselsWtf.Accounts do
     else
       {:already_warned, days}
     end
+  end
+
+  # Delivery is at-least-once to the adapter. The stable key lets a supporting
+  # operational adapter suppress a retry after an ambiguous send result.
+  defp maybe_crash_warning(stage) do
+    if Application.get_env(:brussels_wtf, :inactivity_warning_crash) == stage,
+      do: exit({:injected_warning_crash, stage})
   end
 
   defp inactivity_warning_copy(locale, days, deletion_at) do
