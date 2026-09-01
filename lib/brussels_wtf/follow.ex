@@ -168,6 +168,89 @@ defmodule BrusselsWtf.Follow do
 
   defp citizen_actor(c), do: %{id: c.id, principal: :citizen}
 
+  def owner_collection(citizen, collection_id) do
+    actor = citizen_actor(citizen)
+
+    with {:ok, collection} <-
+           Ash.get(Collection, collection_id, actor: actor, authorize?: false, domain: __MODULE__),
+         true <- collection.owner_citizen_id == citizen.id do
+      Ash.load(collection, :members,
+        actor: %{collection_id: collection.id},
+        authorize?: true,
+        domain: __MODULE__
+      )
+    else
+      _ -> {:error, :not_found}
+    end
+  end
+
+  def owner_set_visibility(citizen, collection_id, visibility)
+      when visibility in [:public, :unlisted, :private] do
+    with {:ok, collection} <- owner_collection(citizen, collection_id) do
+      update(
+        collection,
+        :set_visibility,
+        %{
+          visibility: visibility,
+          last_used_at: Application.fetch_env!(:brussels_wtf, :clock).utc_now()
+        },
+        %{collection_id: collection.id}
+      )
+    end
+  end
+
+  def owner_set_visibility(_, _, _), do: {:error, :invalid_visibility}
+
+  def owner_add_member(citizen, collection_id, type, identifier) do
+    with {:ok, target} <- Target.new(type, identifier),
+         true <- TargetEligibility.eligible?(target),
+         {:ok, collection} <- owner_collection(citizen, collection_id),
+         {:ok, _} <- add_member(collection.id, target, %{collection_id: collection.id}) do
+      regenerate(
+        collection,
+        %{collection_id: collection.id},
+        Application.fetch_env!(:brussels_wtf, :clock).utc_now()
+      )
+    else
+      _ -> {:error, :not_found}
+    end
+  end
+
+  def grant_private_view(citizen, collection_id, recipient_id) do
+    with {:ok, collection} <- owner_collection(citizen, collection_id),
+         true <- collection.visibility == :private,
+         false <- recipient_id == citizen.id do
+      CollectionGrant
+      |> Ash.Changeset.for_create(:grant, %{
+        collection_id: collection.id,
+        citizen_id: recipient_id
+      })
+      |> Ash.create(actor: %{principal: :system}, authorize?: true, domain: __MODULE__)
+    else
+      _ -> {:error, :not_found}
+    end
+  end
+
+  def revoke_private_view(citizen, collection_id, grant_id) do
+    with {:ok, collection} <- owner_collection(citizen, collection_id),
+         {:ok, grant} <-
+           Ash.get(CollectionGrant, grant_id,
+             actor: %{principal: :system},
+             authorize?: true,
+             domain: __MODULE__
+           ),
+         true <- grant.collection_id == collection.id do
+      Ash.destroy(grant,
+        action: :revoke,
+        actor: %{principal: :system},
+        authorize?: true,
+        domain: __MODULE__
+      )
+    else
+      _ -> {:error, :not_found}
+    end
+  end
+
   def claim_collection(secret, citizen) do
     with {:ok, collection} <- capability_collection(secret),
          true <- is_nil(collection.owner_citizen_id) do

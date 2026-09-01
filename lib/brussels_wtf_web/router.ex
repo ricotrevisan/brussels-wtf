@@ -36,9 +36,19 @@ defmodule BrusselsWtfWeb.Router do
     get "/citizen/magic-link", CitizenSessionController, :confirm
     post "/citizen/magic-link/consume", CitizenSessionController, :consume
     delete "/citizen/session", CitizenSessionController, :delete
+    get "/citizen/account", CitizenSessionController, :account
     delete "/citizen/account", CitizenSessionController, :delete_account
     post "/citizen/feed/follows", FollowCollectionController, :follow
     post "/citizen/feed/:id/read", FollowCollectionController, :mark_read
+    get "/citizen/collections/:id", FollowCollectionController, :registered_manage
+    post "/citizen/collections/:id/visibility", FollowCollectionController, :registered_visibility
+    post "/citizen/collections/:id/members", FollowCollectionController, :registered_add
+    post "/citizen/collections/:id/grants", FollowCollectionController, :registered_grant
+
+    delete "/citizen/collections/:id/grants/:grant_id",
+           FollowCollectionController,
+           :registered_revoke
+
     patch "/citizen/email", CitizenSessionController, :change_email
     get "/citizen/registration", CitizenSessionController, :registration
     post "/citizen/registration/import-follows", CitizenSessionController, :import_follows

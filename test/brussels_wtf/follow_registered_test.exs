@@ -1,5 +1,6 @@
 defmodule BrusselsWtf.FollowRegisteredTest do
   use BrusselsWtf.DataCase, async: false
+  import ExUnit.CaptureLog
   alias BrusselsWtf.{Accounts, Follow}
   require Ash.Query
   alias BrusselsWtf.Follow.{CitizenFollow, FeedUpdate}
@@ -111,6 +112,104 @@ defmodule BrusselsWtf.FollowRegisteredTest do
       |> Ash.read!(actor: %{principal: :system}, authorize?: true, domain: Follow)
 
     assert Enum.map(warnings, & &1.days_before_deletion) == [30]
+  end
+
+  test "private grants are view-only and direct Ash actions cannot cross citizen boundaries" do
+    {owner, _} = citizen("owner-grants@example.test")
+    {guest, _} = citizen("guest-grants@example.test")
+    {stranger, _} = citizen("stranger-grants@example.test")
+    {:ok, _collection, secret} = Follow.create_collection()
+    {:ok, claimed} = Follow.claim_collection(secret, owner)
+    assert {:ok, private} = Follow.owner_set_visibility(owner, claimed.id, :private)
+    assert {:ok, grant} = Follow.grant_private_view(owner, private.id, guest.id)
+    assert {:ok, viewed} = Follow.private_collection(private.id, guest)
+    assert viewed.id == private.id
+    assert {:error, :not_found} = Follow.private_collection(private.id, stranger)
+    assert {:error, :not_found} = Follow.owner_set_visibility(guest, private.id, :public)
+
+    assert {:error, _} =
+             Ash.destroy(grant,
+               actor: %{id: guest.id, principal: :citizen},
+               authorize?: true,
+               domain: Follow
+             )
+
+    assert :ok = Follow.revoke_private_view(owner, private.id, grant.id)
+    assert {:error, :not_found} = Follow.private_collection(private.id, guest)
+  end
+
+  test "deletion rolls back personal state and audit at every authentication failure stage" do
+    Enum.each([:sessions, :outstanding_links, :authentication_tokens], fn stage ->
+      {citizen, session} = citizen("rollback-#{stage}@example.test")
+      actor = %{id: citizen.id, principal: :citizen}
+
+      {:ok, _} =
+        CitizenFollow
+        |> Ash.Changeset.for_create(:import, %{
+          citizen_id: citizen.id,
+          target_type: :commune,
+          target_identifier: "ixelles"
+        })
+        |> Ash.create(actor: actor, authorize?: true, domain: Follow)
+
+      Application.put_env(:brussels_wtf, :account_security_failure, stage)
+      assert {:error, _} = Accounts.delete_citizen(citizen)
+      Application.delete_env(:brussels_wtf, :account_security_failure)
+      assert {:ok, _} = Accounts.authenticate_session(session.id)
+
+      assert {:ok, [_]} =
+               CitizenFollow
+               |> Ash.Query.for_read(:mine, %{}, actor: actor)
+               |> Ash.read(actor: actor, authorize?: true, domain: Follow)
+
+      assert [] ==
+               Follow.DeletionAudit
+               |> Ash.read!(actor: %{principal: :system}, authorize?: true, domain: Follow)
+    end)
+  after
+    Application.delete_env(:brussels_wtf, :account_security_failure)
+  end
+
+  test "security logs contain no citizen email, token, feed/grant identifiers or private notes" do
+    logs =
+      capture_log([level: :debug], fn ->
+        {owner, _} = citizen("private-log@example.test")
+        {guest, _} = citizen("guest-log@example.test")
+        {:ok, _c, secret} = Follow.create_collection()
+        {:ok, c} = Follow.claim_collection(secret, owner)
+        {:ok, c} = Follow.owner_set_visibility(owner, c.id, :private)
+        {:ok, g} = Follow.grant_private_view(owner, c.id, guest.id)
+
+        Process.put(:log_secrets, [
+          owner.id,
+          guest.id,
+          c.id,
+          g.id,
+          secret,
+          "private-note-never-log"
+        ])
+
+        assert {:ok, _} = Follow.private_collection(c.id, guest)
+      end)
+
+    Enum.each(Process.delete(:log_secrets), fn secret -> refute logs =~ secret end)
+    refute logs =~ "private-log@example.test"
+    refute logs =~ "guest-log@example.test"
+  end
+
+  test "public collection never becomes maintainerless during deletion transfer" do
+    {owner, _} = citizen("transfer-owner@example.test")
+    {recipient, _} = citizen("transfer-recipient@example.test")
+    {:ok, _c, secret} = Follow.create_collection()
+    {:ok, c} = Follow.claim_collection(secret, owner)
+    {:ok, c} = Follow.owner_set_visibility(owner, c.id, :public)
+    assert {:error, :owned_collection_requires_resolution} = Accounts.delete_citizen(owner)
+    assert {:ok, _} = Accounts.delete_citizen(owner, %{c.id => {:transfer, recipient.id, true}})
+
+    assert {:ok, transferred} =
+             Ash.get(Follow.Collection, c.id, authorize?: false, domain: Follow)
+
+    assert transferred.owner_citizen_id == recipient.id
   end
 
   defp citizen(email) do

@@ -154,6 +154,16 @@ defmodule BrusselsWtf.Accounts do
     end
   end
 
+  def owned_collections(citizen) do
+    BrusselsWtf.Follow.Collection
+    |> Ash.Query.filter(owner_citizen_id == ^citizen.id)
+    |> Ash.read(
+      actor: %{id: citizen.id, principal: :citizen},
+      authorize?: false,
+      domain: BrusselsWtf.Follow
+    )
+  end
+
   @doc "Delete all citizen state atomically. Public/unlisted ownership must be explicitly resolved."
   def delete_citizen(%Citizen{} = citizen, resolutions \\ %{}) do
     operation_id = Ash.UUID.generate()
@@ -164,17 +174,25 @@ defmodule BrusselsWtf.Accounts do
       {:ok, %{rows: collections}} =
         BrusselsWtf.Repo.query(
           "SELECT id, visibility FROM follow_collections WHERE owner_citizen_id=$1 FOR UPDATE",
-          [citizen.id]
+          [uuid_param(citizen.id)]
         )
 
       Enum.each(collections, fn [id, visibility] ->
-        choice = Map.get(resolutions, id) || Map.get(resolutions, to_string(id))
+        external_id =
+          case Ecto.UUID.load(id) do
+            {:ok, value} -> value
+            :error -> to_string(id)
+          end
+
+        choice = Map.get(resolutions, external_id) || Map.get(resolutions, id)
 
         cond do
           visibility == "private" ->
+            sql!("DELETE FROM follow_collection_grants WHERE collection_id=$1", [id])
             sql!("DELETE FROM follow_collections WHERE id=$1", [id])
 
           choice == :delete ->
+            sql!("DELETE FROM follow_collection_grants WHERE collection_id=$1", [id])
             sql!("DELETE FROM follow_collections WHERE id=$1", [id])
 
           match?({:transfer, _, true}, choice) ->
@@ -183,7 +201,7 @@ defmodule BrusselsWtf.Accounts do
 
             case BrusselsWtf.Repo.query(
                    "UPDATE follow_collections SET owner_citizen_id=$1 WHERE id=$2 AND owner_citizen_id=$3",
-                   [recipient_id, id, citizen.id]
+                   [uuid_param(recipient_id), id, uuid_param(citizen.id)]
                  ) do
               {:ok, %{num_rows: 1}} -> :ok
               _ -> BrusselsWtf.Repo.rollback(:unsafe_transfer)
@@ -194,23 +212,28 @@ defmodule BrusselsWtf.Accounts do
         end
       end)
 
-      sql!("DELETE FROM follow_collection_grants WHERE citizen_id=$1", [citizen.id])
-      sql!("DELETE FROM citizen_feed_updates WHERE citizen_id=$1", [citizen.id])
-      sql!("DELETE FROM citizen_follows WHERE citizen_id=$1", [citizen.id])
-      sql!("DELETE FROM citizen_retention_warnings WHERE citizen_id=$1", [citizen.id])
+      sql!("DELETE FROM follow_collection_grants WHERE citizen_id=$1", [uuid_param(citizen.id)])
+      sql!("DELETE FROM citizen_feed_updates WHERE citizen_id=$1", [uuid_param(citizen.id)])
+      sql!("DELETE FROM citizen_follows WHERE citizen_id=$1", [uuid_param(citizen.id)])
+      sql!("DELETE FROM citizen_retention_warnings WHERE citizen_id=$1", [uuid_param(citizen.id)])
 
       case delete_account(citizen) do
         {:ok, :ok} -> :ok
         {:error, reason} -> BrusselsWtf.Repo.rollback(reason)
       end
 
-      {:ok, _} =
+      {:ok, _, _notifications} =
         BrusselsWtf.Follow.DeletionAudit
         |> Ash.Changeset.for_create(:record, %{
           operation_id: operation_id,
           completed_at: clock().utc_now()
         })
-        |> Ash.create(actor: %{principal: :system}, authorize?: true, domain: BrusselsWtf.Follow)
+        |> Ash.create(
+          actor: %{principal: :system},
+          authorize?: true,
+          domain: BrusselsWtf.Follow,
+          return_notifications?: true
+        )
 
       operation_id
     end)
@@ -250,6 +273,8 @@ defmodule BrusselsWtf.Accounts do
     |> Ash.create(actor: %{principal: :system}, authorize?: true, domain: BrusselsWtf.Follow)
   end
 
+  defp uuid_param(value), do: Ecto.UUID.dump!(value)
+
   defp sql!(statement, params) do
     case BrusselsWtf.Repo.query(statement, params) do
       {:ok, _} -> :ok
@@ -261,8 +286,11 @@ defmodule BrusselsWtf.Accounts do
   def delete_account(%Citizen{} = citizen) do
     security_transaction(fn ->
       outstanding_jtis = outstanding_magic_link_jtis_checked(citizen.email)
+      :ok = maybe_fail(:sessions)
       :ok = revoke_sessions_checked(citizen.id)
+      :ok = maybe_fail(:outstanding_links)
       :ok = revoke_outstanding_magic_links_checked(citizen.email)
+      :ok = maybe_fail(:authentication_tokens)
       :ok = purge_authentication_tokens_checked(citizen, outstanding_jtis)
 
       citizen

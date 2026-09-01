@@ -115,6 +115,55 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
     end
   end
 
+  def registered_manage(conn, %{"id" => id}) do
+    with {:ok, citizen} <-
+           BrusselsWtf.Accounts.authenticate_session(get_session(conn, :citizen_session_id)),
+         {:ok, collection} <- Follow.owner_collection(citizen, id) do
+      csrf = Plug.CSRFProtection.get_csrf_token()
+      locale = conn.assigns.locale
+
+      members =
+        Enum.map_join(collection.members, "", fn m ->
+          "<li>#{escape(m.target_type)}: #{escape(m.target_identifier)}</li>"
+        end)
+
+      html(
+        conn,
+        ~s(<!doctype html><html lang="#{locale}"><body><main><h1>#{copy(locale, :manage_private)}</h1><p>#{copy(locale, :owner_only)}</p><ul>#{members}</ul><form method="post" action="/citizen/collections/#{id}/visibility"><input type="hidden" name="_csrf_token" value="#{csrf}"><select name="visibility">#{visibility_options(collection.visibility)}</select><button>#{copy(locale, :change)}</button></form><form method="post" action="/citizen/collections/#{id}/members"><input type="hidden" name="_csrf_token" value="#{csrf}"><select name="target_type"><option>dossier</option><option>person</option><option value="legal_entity">legal entity</option><option>commune</option></select><input name="target_identifier" required><button>#{copy(locale, :add)}</button></form><form method="post" action="/citizen/collections/#{id}/grants"><input type="hidden" name="_csrf_token" value="#{csrf}"><input name="citizen_id" required><button>#{copy(locale, :grant)}</button></form></main></body></html>)
+      )
+    else
+      _ -> send_resp(conn, 404, "Not found")
+    end
+  end
+
+  def registered_visibility(conn, %{"id" => id, "visibility" => visibility}) do
+    with {:ok, c} <-
+           BrusselsWtf.Accounts.authenticate_session(get_session(conn, :citizen_session_id)),
+         {:ok, _} <- Follow.owner_set_visibility(c, id, parse_visibility(visibility)),
+         do: redirect(conn, to: "/citizen/collections/#{id}")
+  end
+
+  def registered_add(conn, %{"id" => id, "target_type" => type, "target_identifier" => identifier}) do
+    with {:ok, c} <-
+           BrusselsWtf.Accounts.authenticate_session(get_session(conn, :citizen_session_id)),
+         {:ok, _} <- Follow.owner_add_member(c, id, parse_type(type), identifier),
+         do: redirect(conn, to: "/citizen/collections/#{id}")
+  end
+
+  def registered_grant(conn, %{"id" => id, "citizen_id" => recipient}) do
+    with {:ok, c} <-
+           BrusselsWtf.Accounts.authenticate_session(get_session(conn, :citizen_session_id)),
+         {:ok, _} <- Follow.grant_private_view(c, id, recipient),
+         do: redirect(conn, to: "/citizen/collections/#{id}")
+  end
+
+  def registered_revoke(conn, %{"id" => id, "grant_id" => grant}) do
+    with {:ok, c} <-
+           BrusselsWtf.Accounts.authenticate_session(get_session(conn, :citizen_session_id)),
+         :ok <- Follow.revoke_private_view(c, id, grant),
+         do: redirect(conn, to: "/citizen/collections/#{id}")
+  end
+
   def show(conn, %{"token" => token}) do
     case Follow.view(token) do
       {:ok, collection} -> render_collection(conn, collection, false)
@@ -243,6 +292,27 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
   defp copy("fr", :mark_read), do: "Marquer comme lu"
   defp copy("nl", :mark_read), do: "Als gelezen markeren"
   defp copy(_, :mark_read), do: "Mark read"
+
+  defp copy("fr", :manage_private), do: "Gérer la collection"
+  defp copy("nl", :manage_private), do: "Collectie beheren"
+  defp copy(_, :manage_private), do: "Manage collection"
+
+  defp copy("fr", :owner_only),
+    do: "Seul le propriétaire peut modifier. Les invités peuvent uniquement consulter."
+
+  defp copy("nl", :owner_only),
+    do: "Alleen de eigenaar kan wijzigen. Genodigden kunnen alleen bekijken."
+
+  defp copy(_, :owner_only), do: "Only the owner can edit. Invited citizens can only view."
+  defp copy("fr", :change), do: "Modifier"
+  defp copy("nl", :change), do: "Wijzigen"
+  defp copy(_, :change), do: "Change"
+  defp copy("fr", :add), do: "Ajouter"
+  defp copy("nl", :add), do: "Toevoegen"
+  defp copy(_, :add), do: "Add"
+  defp copy("fr", :grant), do: "Inviter en lecture seule"
+  defp copy("nl", :grant), do: "Uitnodigen als alleen-lezen"
+  defp copy(_, :grant), do: "Invite view-only"
 
   defp copy("fr", :privacy),
     do:

@@ -121,6 +121,40 @@ defmodule BrusselsWtfWeb.CitizenSessionController do
     |> redirect(to: ~p"/citizen/sign-in")
   end
 
+  def account(conn, _) do
+    with {:ok, citizen} <- Accounts.authenticate_session(get_session(conn, :citizen_session_id)),
+         {:ok, collections} <- Accounts.owned_collections(citizen) do
+      locale = locale(conn)
+      csrf = Plug.CSRFProtection.get_csrf_token()
+
+      labels = %{
+        "fr" =>
+          {"Supprimer le compte", "Supprimer la collection",
+           "Les collections publiques ou non répertoriées doivent être transférées ou supprimées."},
+        "nl" =>
+          {"Account verwijderen", "Collectie verwijderen",
+           "Openbare of niet-vermelde collecties moeten worden overgedragen of verwijderd."},
+        "en" =>
+          {"Delete account", "Delete collection",
+           "Public or unlisted collections must be transferred or deleted."}
+      }
+
+      {title, delete_collection, rule} = Map.fetch!(labels, locale)
+
+      choices =
+        Enum.map_join(collections, "", fn c ->
+          ~s|<label>#{c.title |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string()} (#{c.visibility}) <input type="checkbox" name="collections[#{c.id}]" value="delete"> #{delete_collection}</label>|
+        end)
+
+      html(
+        conn,
+        ~s(<!doctype html><html lang="#{locale}"><body><main><h1>#{title}</h1><p>#{rule}</p><form method="post" action="/citizen/account"><input type="hidden" name="_csrf_token" value="#{csrf}"><input type="hidden" name="_method" value="delete">#{choices}<button>#{title}</button></form></main></body></html>)
+      )
+    else
+      _ -> send_resp(conn, 401, "")
+    end
+  end
+
   def delete_account(conn, params) do
     resolutions = parse_resolutions(params["collections"] || %{})
 
