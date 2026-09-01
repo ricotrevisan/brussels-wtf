@@ -60,6 +60,24 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
     end
   end
 
+  def updates(conn, %{"targets" => targets}) do
+    json(conn, %{updates: BrusselsWtf.Follow.PublicUpdates.list(targets, conn.assigns.locale)})
+  end
+
+  def updates(conn, _), do: json(conn, %{updates: []})
+
+  def feed(conn, _params) do
+    locale = conn.assigns.locale
+    csrf = Plug.CSRFProtection.get_csrf_token()
+
+    html(conn, """
+    <!doctype html><html lang="#{locale}"><head><meta name="csrf-token" content="#{csrf}"><title>#{copy(locale, :feed)}</title><script defer src="/assets/js/personal_feed_entry.js"></script></head><body><main>
+    <h1>#{copy(locale, :feed)}</h1><p>#{copy(locale, :privacy)}</p>
+    <ul data-personal-feed></ul><noscript>#{copy(locale, :javascript)}</noscript>
+    </main></body></html>
+    """)
+  end
+
   def show(conn, %{"token" => token}) do
     case Follow.view(token) do
       {:ok, collection} -> render_collection(conn, collection, false)
@@ -136,7 +154,13 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
             """,
             else: ""
 
-        "<li>#{escape(member.target_type)}: #{escape(member.target_identifier)}#{remove}</li>"
+        select =
+          if management?,
+            do: "",
+            else:
+              ~s(<label><input type="checkbox" data-follow-target data-type="#{escape(member.target_type)}" data-identifier="#{escape(member.target_identifier)}" checked> #{copy(conn.assigns.locale, :select)}</label>)
+
+        "<li>#{copy(conn.assigns.locale, {:type, member.target_type})}: #{escape(member.target_identifier)}#{select}#{remove}</li>"
       end)
 
     management =
@@ -153,10 +177,88 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
         """,
         else: ""
 
+    import =
+      if management?,
+        do: "",
+        else:
+          ~s(<form data-follow-import><ul>#{members}</ul><button type="submit">#{copy(conn.assigns.locale, :import)}</button></form>)
+
+    member_list = if management?, do: "<ul>#{members}</ul>", else: import
+
     html(conn, """
-    <!doctype html><html lang="en"><head><meta name="robots" content="#{if collection.visibility == :public and not management?, do: "index, follow", else: "noindex, nofollow"}"><title>#{escape(collection.title)}</title></head><body><main><h1>#{escape(collection.title)}</h1>#{management}<ul>#{members}</ul><p>This collection contains public resources only. It has no read state or notifications.</p></main></body></html>
+    <!doctype html><html lang="#{conn.assigns.locale}"><head><meta name="robots" content="#{if collection.visibility == :public and not management?, do: "index, follow", else: "noindex, nofollow"}"><title>#{escape(collection.title)}</title><script defer src="/assets/js/personal_feed_entry.js"></script></head><body><main><h1>#{escape(collection.title)}</h1>#{management}#{member_list}<p>#{copy(conn.assigns.locale, :collection_scope)}</p><p>#{copy(conn.assigns.locale, :snapshot)}</p></main></body></html>
     """)
   end
+
+  defp copy("fr", :feed), do: "Fil personnel"
+  defp copy("nl", :feed), do: "Persoonlijke feed"
+  defp copy(_, :feed), do: "Personal feed"
+
+  defp copy("fr", :privacy),
+    do:
+      "Vos suivis, notifications et états de lecture restent uniquement dans ce navigateur. Ils ne sont pas synchronisés et sont perdus si ses données sont effacées."
+
+  defp copy("nl", :privacy),
+    do:
+      "Uw gevolgde items, meldingen en leesstatus blijven alleen in deze browser. Ze synchroniseren niet en gaan verloren wanneer browsergegevens worden gewist."
+
+  defp copy(_, :privacy),
+    do:
+      "Your follows, notifications, and read state stay only in this browser. They do not sync and are lost when browser data is cleared."
+
+  defp copy("fr", :javascript), do: "Ce fil local nécessite JavaScript."
+  defp copy("nl", :javascript), do: "Deze lokale feed vereist JavaScript."
+  defp copy(_, :javascript), do: "This browser-local feed requires JavaScript."
+
+  defp copy("fr", :collection_scope),
+    do:
+      "Cette collection contient uniquement des ressources publiques. Elle ne contient aucun état de lecture ni notification."
+
+  defp copy("nl", :collection_scope),
+    do: "Deze collectie bevat alleen openbare bronnen. Ze bevat geen leesstatus of meldingen."
+
+  defp copy(_, :collection_scope),
+    do: "This collection contains public resources only. It has no read state or notifications."
+
+  defp copy("fr", {:type, type}),
+    do:
+      %{
+        dossier: "Dossier",
+        person: "Personne",
+        legal_entity: "Entité juridique",
+        commune: "Commune"
+      }[type]
+
+  defp copy("nl", {:type, type}),
+    do:
+      %{dossier: "Dossier", person: "Persoon", legal_entity: "Rechtspersoon", commune: "Gemeente"}[
+        type
+      ]
+
+  defp copy(_, {:type, type}),
+    do:
+      %{dossier: "Dossier", person: "Person", legal_entity: "Legal entity", commune: "Commune"}[
+        type
+      ]
+
+  defp copy("fr", :select), do: "Sélectionner"
+  defp copy("nl", :select), do: "Selecteren"
+  defp copy(_, :select), do: "Select"
+  defp copy("fr", :import), do: "Importer la sélection dans mon fil personnel"
+  defp copy("nl", :import), do: "Selectie in mijn persoonlijke feed importeren"
+  defp copy(_, :import), do: "Import selected into my personal feed"
+
+  defp copy("fr", :snapshot),
+    do:
+      "Les suivis importés restent uniquement dans ce navigateur. Ils ne sont pas synchronisés et sont perdus si ses données sont effacées. L’import est un instantané : les modifications ultérieures de la collection ne changent pas vos suivis."
+
+  defp copy("nl", :snapshot),
+    do:
+      "Geïmporteerde gevolgde items blijven alleen in deze browser. Ze synchroniseren niet en gaan verloren wanneer browsergegevens worden gewist. De import is een momentopname: latere collectiewijzigingen veranderen uw gevolgde items niet."
+
+  defp copy(_, :snapshot),
+    do:
+      "Imported follows stay only in this browser. They do not sync and are lost when browser data is cleared. Import is a snapshot; later collection changes do not alter your follows."
 
   defp private_headers(conn),
     do:

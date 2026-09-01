@@ -3,5 +3,5 @@
 {:ok, _} = BrusselsWtf.Processors.Stub.start_link()
 {:ok, _} = BrusselsWtf.CBE.Stub.start_link()
 
-ExUnit.start(exclude: [:external])
+ExUnit.start(exclude: [:external, :browser])
 Ecto.Adapters.SQL.Sandbox.mode(BrusselsWtf.Repo, :manual)
