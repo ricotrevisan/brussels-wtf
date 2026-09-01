@@ -18,7 +18,15 @@ defmodule BrusselsWtfWeb.CitizenAuthBrowserTest do
     Application.put_env(:brussels_wtf, :citizen_mailer, BrusselsWtf.Accounts.Mail.Memory)
     Process.register(self(), BrusselsWtf.Accounts.Mailbox)
     :ok = BrusselsWtf.Accounts.request_link("expired-browser@example.test")
-    assert_receive {:magic_link, _, issued, _}
+    assert_receive {:magic_link, _, issued_link, _}
+
+    issued =
+      issued_link
+      |> URI.parse()
+      |> Map.fetch!(:fragment)
+      |> URI.decode_query()
+      |> Map.fetch!("token")
+
     {:ok, claims} = Joken.peek_claims(issued)
 
     assert {:ok, %BrusselsWtf.Accounts.Token{jti: stored_jti, purpose: stored_purpose}} =
@@ -40,7 +48,7 @@ defmodule BrusselsWtfWeb.CitizenAuthBrowserTest do
 
     {:ok, expired, _} = Joken.encode_and_sign(expired_claims, signer)
     expired_file = mail <> ".expired"
-    File.write!(expired_file, expired)
+    File.write!(expired_file, "/citizen/magic-link?lang=en#token=#{URI.encode_www_form(expired)}")
     Process.unregister(BrusselsWtf.Accounts.Mailbox)
     Application.put_env(:brussels_wtf, :citizen_mailer, BrusselsWtf.Accounts.Mail.File)
     Application.put_env(:brussels_wtf, :citizen_mail_file, mail)

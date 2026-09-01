@@ -94,7 +94,7 @@ defmodule BrusselsWtf.Follow.Collection do
       constraints one_of: [:public, :unlisted, :private]
     end
 
-    attribute :owner_citizen_id, :uuid
+    attribute :owner_citizen_id, :uuid, public?: true
     attribute :title, :string, allow_nil?: false, public?: true
     attribute :last_used_at, :utc_datetime_usec, allow_nil?: false
     timestamps()

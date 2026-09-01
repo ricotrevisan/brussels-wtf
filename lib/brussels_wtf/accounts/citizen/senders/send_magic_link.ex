@@ -9,7 +9,9 @@ defmodule BrusselsWtf.Accounts.Citizen.Senders.SendMagicLink do
         email -> to_string(email)
       end
 
+    locale = Process.get(:citizen_magic_link_locale, "en")
     :ok = BrusselsWtf.Accounts.record_outstanding_magic_link(email, token)
-    Application.fetch_env!(:brussels_wtf, :citizen_mailer).deliver_magic_link(email, token, "en")
+    link = "/citizen/magic-link?lang=#{locale}#token=#{URI.encode_www_form(token)}"
+    Application.fetch_env!(:brussels_wtf, :citizen_mailer).deliver_magic_link(email, link, locale)
   end
 end

@@ -24,9 +24,15 @@ defmodule BrusselsWtfWeb.CitizenAuthenticationTest do
 
     assert body =~ "If the address is valid"
     refute body =~ "new@example.test"
-    assert_receive {:magic_link, "new@example.test", token, "en"}
-    first = post(recycle(conn), ~p"/citizen/magic-link/consume", %{"token" => token})
-    assert redirected_to(first) == ~p"/citizen/registration"
+    assert_receive {:magic_link, "new@example.test", token_link, "en"}
+    token = token_from_link(token_link)
+
+    first =
+      recycle(conn)
+      |> put_req_header("x-citizen-magic-link", token)
+      |> post(~p"/citizen/magic-link/consume", %{})
+
+    assert redirected_to(first) == "/citizen/registration?lang=en"
 
     [cookie | _] =
       get_resp_header(first, "set-cookie")
@@ -35,25 +41,35 @@ defmodule BrusselsWtfWeb.CitizenAuthenticationTest do
     assert cookie =~ "secure"
     assert cookie =~ "HttpOnly"
     assert cookie =~ "SameSite=Lax"
-    assert post(recycle(conn), ~p"/citizen/magic-link/consume", %{"token" => token}).status == 422
+
+    replay =
+      conn
+      |> recycle()
+      |> put_req_header("x-citizen-magic-link", token)
+      |> post(~p"/citizen/magic-link/consume", %{})
+
+    assert replay.status == 422
   end
 
   test "magic link carries a fifteen-minute expiry", %{conn: conn} do
     post(conn, ~p"/citizen/magic-link", %{"email" => "expiry@example.test"})
-    assert_receive {:magic_link, _, token, _}
+    assert_receive {:magic_link, _, token_link, _}
+    token = token_from_link(token_link)
     assert {:ok, %{"exp" => expires, "iat" => issued}} = Joken.peek_claims(token)
     assert expires - issued == 15 * 60
   end
 
   test "idle, absolute, and email change revoke sessions", %{now: now} do
     Accounts.request_link("citizen@example.test")
-    assert_receive {:magic_link, _, token, _}
+    assert_receive {:magic_link, _, token_link, _}
+    token = token_from_link(token_link)
     {:ok, _citizen, session} = Accounts.consume(token)
     Controlled.set(DateTime.add(now, 30, :day))
     assert {:error, :expired} = Accounts.authenticate_session(session.id)
     Controlled.set(now)
     Accounts.request_link("citizen@example.test")
-    assert_receive {:magic_link, _, token2, _}
+    assert_receive {:magic_link, _, token2_link, _}
+    token2 = token_from_link(token2_link)
     {:ok, citizen, session2} = Accounts.consume(token2)
     assert {:ok, _} = Accounts.change_email(citizen, "changed@example.test")
     assert {:error, :expired} = Accounts.authenticate_session(session2.id)
@@ -69,7 +85,8 @@ defmodule BrusselsWtfWeb.CitizenAuthenticationTest do
     })
 
     Accounts.request_link("choices@example.test")
-    assert_receive {:magic_link, _, token, _}
+    assert_receive {:magic_link, _, token_link, _}
+    token = token_from_link(token_link)
     {:ok, citizen, _session} = Accounts.consume(token)
     {:ok, collection, secret} = BrusselsWtf.Follow.create_collection()
 
@@ -102,17 +119,29 @@ defmodule BrusselsWtfWeb.CitizenAuthenticationTest do
           })
 
         assert request.status == 200
-        assert_receive {:magic_link, ^email, token, _}
+        assert_receive {:magic_link, ^email, token_link, _}
+        token = token_from_link(token_link)
         Process.put(:captured_raw_token, token)
 
-        assert post(recycle(conn), ~p"/citizen/magic-link/consume", %{"token" => token}).status ==
-                 302
+        first_consume =
+          conn
+          |> recycle()
+          |> put_req_header("x-citizen-magic-link", token)
+          |> post(~p"/citizen/magic-link/consume", %{})
 
-        assert post(recycle(conn), ~p"/citizen/magic-link/consume", %{"token" => token}).status ==
-                 422
+        assert first_consume.status == 302
+
+        replay =
+          conn
+          |> recycle()
+          |> put_req_header("x-citizen-magic-link", token)
+          |> post(~p"/citizen/magic-link/consume", %{})
+
+        assert replay.status == 422
 
         Accounts.request_link("change-log@example.test")
-        assert_receive {:magic_link, _, change_token, _}
+        assert_receive {:magic_link, _, change_token_link, _}
+        change_token = token_from_link(change_token_link)
         {:ok, citizen, _} = Accounts.consume(change_token)
         assert {:ok, _} = Accounts.change_email(citizen, "changed-log@example.test")
         assert {:error, :not_found} = BrusselsWtf.Follow.exchange(capability)
@@ -139,7 +168,8 @@ defmodule BrusselsWtfWeb.CitizenAuthenticationTest do
 
   test "absolute session boundary wins while idle activity is refreshed", %{now: now} do
     Accounts.request_link("absolute@example.test")
-    assert_receive {:magic_link, _, token, _}
+    assert_receive {:magic_link, _, token_link, _}
+    token = token_from_link(token_link)
     {:ok, _, session} = Accounts.consume(token)
 
     for days <- [29, 58, 87] do
@@ -153,13 +183,16 @@ defmodule BrusselsWtfWeb.CitizenAuthenticationTest do
 
   test "email change revokes every concurrent session and outstanding old link" do
     Accounts.request_link("multi@example.test")
-    assert_receive {:magic_link, _, first, _}
+    assert_receive {:magic_link, _, first_link, _}
+    first = token_from_link(first_link)
     {:ok, citizen, one} = Accounts.consume(first)
     Accounts.request_link("multi@example.test")
-    assert_receive {:magic_link, _, second, _}
+    assert_receive {:magic_link, _, second_link, _}
+    second = token_from_link(second_link)
     {:ok, _, two} = Accounts.consume(second)
     Accounts.request_link("multi@example.test")
-    assert_receive {:magic_link, _, outstanding, _}
+    assert_receive {:magic_link, _, outstanding_link, _}
+    outstanding = token_from_link(outstanding_link)
     assert {:ok, _} = Accounts.change_email(citizen, "multi-changed@example.test")
     assert {:error, :expired} = Accounts.authenticate_session(one.id)
     assert {:error, :expired} = Accounts.authenticate_session(two.id)
@@ -168,7 +201,8 @@ defmodule BrusselsWtfWeb.CitizenAuthenticationTest do
 
   test "existing new and unrelated email requests have identical public shape", %{conn: conn} do
     Accounts.request_link("existing@example.test")
-    assert_receive {:magic_link, _, token, _}
+    assert_receive {:magic_link, _, token_link, _}
+    token = token_from_link(token_link)
     assert {:ok, _, _} = Accounts.consume(token)
 
     results =
@@ -188,7 +222,8 @@ defmodule BrusselsWtfWeb.CitizenAuthenticationTest do
 
   test "valid citizen session is denied every editor route", %{conn: conn} do
     Accounts.request_link("route-denial@example.test")
-    assert_receive {:magic_link, _, token, _}
+    assert_receive {:magic_link, _, token_link, _}
+    token = token_from_link(token_link)
     {:ok, _, session} = Accounts.consume(token)
 
     routes =
@@ -210,5 +245,33 @@ defmodule BrusselsWtfWeb.CitizenAuthenticationTest do
       refute request.status in 200..299
       assert get_session(request, :citizen_session_id) == session.id
     end
+  end
+
+  test "claim action rejects another citizen id and reassignment at the Ash boundary" do
+    Accounts.request_link("boundary@example.test")
+    assert_receive {:magic_link, _, link, _}
+    {:ok, citizen, _} = Accounts.consume(token_from_link(link))
+    {:ok, collection, _} = BrusselsWtf.Follow.create_collection()
+    actor = %{id: citizen.id, principal: :citizen}
+    other = Ash.UUID.generate()
+
+    assert {:error, _} =
+             collection
+             |> Ash.Changeset.for_update(:claim, %{owner_citizen_id: other})
+             |> Ash.update(actor: actor, authorize?: true, domain: BrusselsWtf.Follow)
+
+    assert {:ok, claimed} =
+             collection
+             |> Ash.Changeset.for_update(:claim, %{owner_citizen_id: citizen.id})
+             |> Ash.update(actor: actor, authorize?: true, domain: BrusselsWtf.Follow)
+
+    assert {:error, _} =
+             claimed
+             |> Ash.Changeset.for_update(:claim, %{owner_citizen_id: citizen.id})
+             |> Ash.update(actor: actor, authorize?: true, domain: BrusselsWtf.Follow)
+  end
+
+  defp token_from_link(link) do
+    link |> URI.parse() |> Map.fetch!(:fragment) |> URI.decode_query() |> Map.fetch!("token")
   end
 end

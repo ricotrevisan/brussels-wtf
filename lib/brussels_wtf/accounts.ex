@@ -14,13 +14,22 @@ defmodule BrusselsWtf.Accounts do
 
   def request_link(email, locale \\ "en")
 
-  def request_link(email, _locale) when is_binary(email) do
+  def request_link(email, locale) when is_binary(email) do
     strategy = AshAuthentication.Info.strategy!(Citizen, :magic_link)
 
-    _ =
-      AshAuthentication.Strategy.action(strategy, :request, %{
-        "email" => String.downcase(String.trim(email))
-      })
+    previous_locale = Process.get(:citizen_magic_link_locale)
+    Process.put(:citizen_magic_link_locale, normalize_locale(locale))
+
+    try do
+      _ =
+        AshAuthentication.Strategy.action(strategy, :request, %{
+          "email" => String.downcase(String.trim(email))
+        })
+    after
+      if previous_locale,
+        do: Process.put(:citizen_magic_link_locale, previous_locale),
+        else: Process.delete(:citizen_magic_link_locale)
+    end
 
     Logger.warning("citizen_magic_link_requested")
     :ok
@@ -29,6 +38,9 @@ defmodule BrusselsWtf.Accounts do
   end
 
   def request_link(_, _), do: :ok
+
+  defp normalize_locale(locale) when locale in ["fr", "nl", "en"], do: locale
+  defp normalize_locale(_), do: "en"
 
   def consume(token) when is_binary(token) do
     strategy = AshAuthentication.Info.strategy!(Citizen, :magic_link)
