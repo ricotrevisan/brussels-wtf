@@ -15,11 +15,16 @@ defmodule BrusselsWtf.Accounts.OutstandingMagicLink do
     defaults [:read]
 
     create :record do
-      accept [:email_hash, :jti, :subject]
+      accept [:email_hash, :jti, :subject, :expires_at]
     end
 
     destroy :remove do
       primary? true
+    end
+
+    destroy :remove_expired do
+      argument :now, :utc_datetime_usec, allow_nil?: false
+      filter expr(expires_at <= ^arg(:now))
     end
   end
 
@@ -34,6 +39,7 @@ defmodule BrusselsWtf.Accounts.OutstandingMagicLink do
     attribute :email_hash, :binary, allow_nil?: false, sensitive?: true
     attribute :jti, :string, allow_nil?: false, sensitive?: true
     attribute :subject, :string, allow_nil?: false, sensitive?: true
+    attribute :expires_at, :utc_datetime_usec, allow_nil?: false
     timestamps()
   end
 

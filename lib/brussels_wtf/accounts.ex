@@ -3,7 +3,7 @@ defmodule BrusselsWtf.Accounts do
   use Ash.Domain, otp_app: :brussels_wtf
   require Ash.Query
   require Logger
-  alias BrusselsWtf.Accounts.{Citizen, Session}
+  alias BrusselsWtf.Accounts.{Citizen, OutstandingMagicLink, Session}
 
   resources do
     resource Citizen
@@ -16,6 +16,7 @@ defmodule BrusselsWtf.Accounts do
 
   def request_link(email, locale) when is_binary(email) do
     strategy = AshAuthentication.Info.strategy!(Citizen, :magic_link)
+    cleanup_expired_magic_links()
 
     previous_locale = Process.get(:citizen_magic_link_locale)
     Process.put(:citizen_magic_link_locale, normalize_locale(locale))
@@ -164,7 +165,8 @@ defmodule BrusselsWtf.Accounts do
       |> Ash.Changeset.for_create(:record, %{
         email_hash: email_hash(email),
         jti: claims["jti"],
-        subject: claims["sub"]
+        subject: claims["sub"],
+        expires_at: DateTime.from_unix!(claims["exp"])
       })
       |> Ash.create(actor: %{principal: :system}, authorize?: true, domain: __MODULE__)
       |> case do
@@ -201,7 +203,30 @@ defmodule BrusselsWtf.Accounts do
     end)
   end
 
-  defp email_hash(email), do: :crypto.hash(:sha256, String.downcase(to_string(email)))
+  defp email_hash(email) do
+    key = Application.fetch_env!(:brussels_wtf, :citizen_token_signing_secret)
+
+    :crypto.mac(
+      :hmac,
+      :sha256,
+      key,
+      "outstanding-magic-link:" <> String.downcase(to_string(email))
+    )
+  end
+
+  def cleanup_expired_magic_links do
+    now = clock().utc_now()
+    actor = %{principal: :system}
+
+    OutstandingMagicLink
+    |> Ash.Query.filter(expires_at <= ^now)
+    |> Ash.read!(actor: actor, authorize?: true, domain: __MODULE__)
+    |> Enum.each(
+      &Ash.destroy!(&1, action: :remove, actor: actor, authorize?: true, domain: __MODULE__)
+    )
+
+    :ok
+  end
 
   def revoke_sessions(citizen_id) do
     Session

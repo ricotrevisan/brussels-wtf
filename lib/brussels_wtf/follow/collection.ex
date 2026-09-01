@@ -39,9 +39,11 @@ defmodule BrusselsWtf.Follow.Collection do
     end
 
     update :claim do
-      accept [:owner_citizen_id]
-      require_atomic? false
-      change BrusselsWtf.Follow.Changes.ClaimCollection
+      accept []
+      argument :owner_citizen_id, :uuid, allow_nil?: false
+      filter expr(is_nil(owner_citizen_id))
+      validate attribute_equals(:owner_citizen_id, nil)
+      change set_attribute(:owner_citizen_id, arg(:owner_citizen_id))
     end
 
     update :touch do
@@ -70,7 +72,10 @@ defmodule BrusselsWtf.Follow.Collection do
     end
 
     policy action(:claim) do
-      authorize_if actor_attribute_equals(:principal, :citizen)
+      authorize_if expr(
+                     ^actor(:principal) == :citizen and
+                       ^arg(:owner_citizen_id) == ^actor(:id)
+                   )
     end
 
     policy action(:expire) do

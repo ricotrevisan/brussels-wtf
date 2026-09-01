@@ -83,12 +83,6 @@ defmodule BrusselsWtfWeb.CitizenSessionController do
         conn
         |> configure_session(renew: true)
         |> put_session(:citizen_session_id, session.id)
-        |> put_resp_cookie("citizen_session", session.id,
-          secure: true,
-          http_only: true,
-          same_site: "Lax",
-          max_age: 7_776_000
-        )
         |> redirect(to: "/citizen/registration?lang=#{locale(conn)}")
 
       _ ->
@@ -102,15 +96,26 @@ defmodule BrusselsWtfWeb.CitizenSessionController do
     if id = get_session(conn, :citizen_session_id),
       do:
         BrusselsWtf.Accounts.Session
-        |> Ash.get(id, authorize?: false, domain: Accounts)
+        |> Ash.get(
+          id,
+          actor: %{principal: :system},
+          authorize?: true,
+          domain: Accounts
+        )
         |> (case do
-              {:ok, s} -> Ash.destroy(s, authorize?: false, domain: Accounts)
-              _ -> :ok
+              {:ok, s} ->
+                Ash.destroy(s,
+                  actor: %{principal: :system},
+                  authorize?: true,
+                  domain: Accounts
+                )
+
+              _ ->
+                :ok
             end)
 
     conn
     |> delete_session(:citizen_session_id)
-    |> delete_resp_cookie("citizen_session", secure: true, http_only: true, same_site: "Lax")
     |> redirect(to: ~p"/citizen/sign-in")
   end
 
@@ -130,7 +135,6 @@ defmodule BrusselsWtfWeb.CitizenSessionController do
          {:ok, _} <- Accounts.change_email(citizen, email) do
       conn
       |> configure_session(drop: true)
-      |> delete_resp_cookie("citizen_session", secure: true, http_only: true, same_site: "Lax")
       |> redirect(to: ~p"/citizen/sign-in")
     else
       _ -> send_resp(conn, 401, "")
@@ -185,7 +189,15 @@ defmodule BrusselsWtfWeb.CitizenSessionController do
       }
 
       message = messages |> Map.fetch!(locale(conn)) |> Map.fetch!(key)
-      html(conn, page(conn, title(locale(conn)), "<p>#{message}: #{count}</p>"))
+
+      html(
+        conn,
+        page(
+          conn,
+          title(locale(conn)),
+          ~s(<p data-testid="citizen-choice-result" data-result="#{key}" data-count="#{count}">#{message}: #{count}</p>)
+        )
+      )
     else
       _ -> send_resp(conn, 401, "")
     end

@@ -17,10 +17,11 @@ with sync_playwright() as pw:
   assert all(token not in url for url in seen); assert token not in page.url
   cookies={c["name"]:c for c in page.context.cookies()}; c=cookies["_brussels_wtf_key"]
   assert c["secure"] and c["httpOnly"] and c["sameSite"]=="Lax"
+  assert "citizen_session" not in cookies
   assert cookies["_brussels_wtf_key"]["value"] != before
   text=page.locator("body").inner_text(); assert "Import selected local follows" in text and "Separately claim an anonymous collection" in text
-  boxes=page.locator('#local-follow-targets input[type=checkbox]'); assert boxes.count()==2; boxes.nth(0).check(); page.get_by_role("button",name="Import selected local follows").click(); assert "local follows imported: 1" in page.locator("body").inner_text()
-  page.goto(a.base+"/citizen/registration"); page.get_by_label("Management secret").fill(a.secret); page.get_by_role("button",name="Separately claim an anonymous collection").click(); assert "collection claimed" in page.locator("body").inner_text()
+  boxes=page.locator('#local-follow-targets input[type=checkbox]'); assert boxes.count()==2; boxes.nth(0).check(); page.get_by_role("button",name="Import selected local follows").click(); result=page.get_by_test_id("citizen-choice-result"); assert result.get_attribute("data-result")=="imported" and result.get_attribute("data-count")=="1"
+  page.goto(a.base+"/citizen/registration"); page.get_by_label("Management secret").fill(a.secret); page.get_by_role("button",name="Separately claim an anonymous collection").click(); result=page.get_by_test_id("citizen-choice-result"); assert result.get_attribute("data-result")=="claimed"
   page.goto(a.base+link); page.wait_for_timeout(500); assert page.locator("body").inner_text().find("invalid or expired") >= 0
   page.context.clear_cookies(); expired=Path(a.expired).read_text().strip(); page.goto(a.base+expired); page.wait_for_timeout(500); assert "invalid or expired" in page.locator("body").inner_text(); page.goto(a.base+"/citizen/registration"); assert "invalid or expired" in page.locator("body").inner_text()
   denied=page.goto(a.base+"/review"); assert "/review/login" in page.url

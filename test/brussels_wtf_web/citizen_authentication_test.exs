@@ -271,6 +271,49 @@ defmodule BrusselsWtfWeb.CitizenAuthenticationTest do
              |> Ash.update(actor: actor, authorize?: true, domain: BrusselsWtf.Follow)
   end
 
+  test "concurrent collection claims have exactly one winner" do
+    Ecto.Adapters.SQL.Sandbox.mode(BrusselsWtf.Repo, {:shared, self()})
+    {:ok, collection, _} = BrusselsWtf.Follow.create_collection()
+    parent = self()
+
+    tasks =
+      for _ <- 1..2 do
+        id = Ash.UUID.generate()
+
+        Task.async(fn ->
+          send(parent, {:ready, self()})
+          receive do: (:go -> :ok)
+
+          collection
+          |> Ash.Changeset.for_update(:claim, %{owner_citizen_id: id})
+          |> Ash.update(
+            actor: %{id: id, principal: :citizen},
+            authorize?: true,
+            domain: BrusselsWtf.Follow
+          )
+        end)
+      end
+
+    pids = for _ <- 1..2, do: receive(do: ({:ready, pid} -> pid))
+    Enum.each(pids, &send(&1, :go))
+    claims = Task.await_many(tasks)
+
+    owners =
+      for {:ok, result} <- claims,
+          not is_nil(result.owner_citizen_id),
+          do: result.owner_citizen_id
+
+    assert length(Enum.uniq(owners)) == 1
+
+    persisted =
+      Ash.get!(BrusselsWtf.Follow.Collection, collection.id,
+        authorize?: false,
+        domain: BrusselsWtf.Follow
+      )
+
+    assert persisted.owner_citizen_id == hd(owners)
+  end
+
   defp token_from_link(link) do
     link |> URI.parse() |> Map.fetch!(:fragment) |> URI.decode_query() |> Map.fetch!("token")
   end
