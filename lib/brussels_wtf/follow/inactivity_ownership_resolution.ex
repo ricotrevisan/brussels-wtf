@@ -44,6 +44,16 @@ defmodule BrusselsWtf.Follow.InactivityOwnershipResolution do
       argument :citizen_id, :uuid, allow_nil?: false
       filter expr(citizen_id == ^arg(:citizen_id))
     end
+
+    read :for_collection do
+      argument :collection_id, :uuid, allow_nil?: false
+      filter expr(collection_id == ^arg(:collection_id))
+    end
+
+    destroy :delete_for_collection do
+      argument :collection_id, :uuid, allow_nil?: false
+      filter expr(collection_id == ^arg(:collection_id))
+    end
   end
 
   policies do
@@ -51,7 +61,13 @@ defmodule BrusselsWtf.Follow.InactivityOwnershipResolution do
       authorize_if expr(citizen_id == ^actor(:id) and ^actor(:principal) == :citizen)
     end
 
-    policy action([:for_cycle, :for_account_deletion, :delete_for_account]) do
+    policy action([
+             :for_cycle,
+             :for_account_deletion,
+             :delete_for_account,
+             :for_collection,
+             :delete_for_collection
+           ]) do
       authorize_if actor_attribute_equals(:principal, :system)
     end
   end

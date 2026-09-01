@@ -5,7 +5,6 @@ defmodule BrusselsWtf.Follow do
 
   require Ash.Query
   require Logger
-  import Ecto.Query, only: [from: 2]
 
   alias BrusselsWtf.Follow.{
     CitizenFollow,
@@ -413,17 +412,26 @@ defmodule BrusselsWtf.Follow do
       actor = citizen_actor(citizen)
 
       BrusselsWtf.Repo.transaction(fn ->
-        CollectionTransferOffer
-        |> Ash.Query.for_read(:for_owner, %{collection_id: collection.id}, actor: actor)
-        |> Ash.read!(actor: actor, authorize?: true, domain: __MODULE__)
-        |> Enum.filter(&(is_nil(&1.accepted_at) and is_nil(&1.cancelled_at)))
-        |> Enum.each(fn offer ->
-          offer
-          |> Ash.Changeset.for_update(:cancel, %{cancelled_at: now})
-          |> Ash.update!(actor: actor, authorize?: true, domain: __MODULE__)
-        end)
+        notifications =
+          CollectionTransferOffer
+          |> Ash.Query.for_read(:for_owner, %{collection_id: collection.id}, actor: actor)
+          |> Ash.read!(actor: actor, authorize?: true, domain: __MODULE__)
+          |> Enum.filter(&(is_nil(&1.accepted_at) and is_nil(&1.cancelled_at)))
+          |> Enum.flat_map(fn offer ->
+            {:ok, _offer, notifications} =
+              offer
+              |> Ash.Changeset.for_update(:cancel, %{cancelled_at: now})
+              |> Ash.update(
+                actor: actor,
+                authorize?: true,
+                domain: __MODULE__,
+                return_notifications?: true
+              )
 
-        offer =
+            notifications
+          end)
+
+        {:ok, offer, created_notifications} =
           CollectionTransferOffer
           |> Ash.Changeset.for_create(:offer, %{
             collection_id: collection.id,
@@ -432,13 +440,22 @@ defmodule BrusselsWtf.Follow do
             token_hash: hash(raw_token),
             expires_at: DateTime.add(now, 7, :day)
           })
-          |> Ash.create!(actor: actor, authorize?: true, domain: __MODULE__)
+          |> Ash.create(
+            actor: actor,
+            authorize?: true,
+            domain: __MODULE__,
+            return_notifications?: true
+          )
 
-        {offer, raw_token}
+        {offer, raw_token, notifications ++ created_notifications}
       end)
       |> case do
-        {:ok, {offer, token}} -> {:ok, offer, token}
-        {:error, reason} -> {:error, reason}
+        {:ok, {offer, token, notifications}} ->
+          Ash.Notifier.notify(notifications)
+          {:ok, offer, token}
+
+        {:error, reason} ->
+          {:error, reason}
       end
     else
       false -> {:error, :invalid_recipient}
@@ -472,25 +489,44 @@ defmodule BrusselsWtf.Follow do
            :lt <- DateTime.compare(now, offer.expires_at),
            {:ok, collection} <- lock_transfer_collection(offer),
            true <- collection.owner_citizen_id == offer.from_citizen_id,
-           {:ok, transferred} <-
+           {:ok, transferred, transfer_notifications} <-
              collection
              |> Ash.Changeset.for_update(:transfer_owned, %{
                owner_citizen_id: citizen.id,
                expected_owner_citizen_id: offer.from_citizen_id
              })
-             |> Ash.update(actor: %{principal: :system}, authorize?: true, domain: __MODULE__),
-           :ok <- clear_collection_inactivity_resolutions(collection.id),
-           {:ok, _} <-
+             |> Ash.update(
+               actor: %{principal: :system},
+               authorize?: true,
+               domain: __MODULE__,
+               return_notifications?: true
+             ),
+           {:ok, resolution_notifications} <-
+             clear_collection_inactivity_resolutions(collection.id),
+           {:ok, _, accept_notifications} <-
              offer
              |> Ash.Changeset.for_update(:accept, %{accepted_at: now})
-             |> Ash.update(actor: actor, authorize?: true, domain: __MODULE__) do
-        transferred
+             |> Ash.update(
+               actor: actor,
+               authorize?: true,
+               domain: __MODULE__,
+               return_notifications?: true
+             ) do
+        {transferred, transfer_notifications ++ resolution_notifications ++ accept_notifications}
       else
         :eq -> BrusselsWtf.Repo.rollback(:expired)
         :gt -> BrusselsWtf.Repo.rollback(:expired)
         _ -> BrusselsWtf.Repo.rollback(:not_found)
       end
     end)
+    |> case do
+      {:ok, {transferred, notifications}} ->
+        Ash.Notifier.notify(notifications)
+        {:ok, transferred}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   def decline_collection_transfer(citizen, raw_token) do
@@ -758,29 +794,58 @@ defmodule BrusselsWtf.Follow do
   defp hash(secret), do: :crypto.hash(:sha256, secret)
 
   def clear_inactivity_resolutions(citizen_id) do
-    {_, _} =
-      BrusselsWtf.Repo.delete_all(
-        from r in "citizen_inactivity_ownership_resolutions",
-          where: r.citizen_id == type(^citizen_id, Ecto.UUID)
-      )
+    actor = %{principal: :system}
 
-    {_, _} =
-      BrusselsWtf.Repo.delete_all(
-        from r in "citizen_retention_warnings",
-          where: r.citizen_id == type(^citizen_id, Ecto.UUID)
-      )
+    notifications =
+      destroy_all(
+        InactivityOwnershipResolution,
+        :for_account_deletion,
+        :delete_for_account,
+        %{citizen_id: citizen_id},
+        actor
+      ) ++
+        destroy_all(
+          RetentionWarning,
+          :for_account_deletion,
+          :delete_for_account,
+          %{citizen_id: citizen_id},
+          actor
+        )
 
+    Ash.Notifier.notify(notifications)
     :ok
   end
 
   defp clear_collection_inactivity_resolutions(collection_id) do
-    {_, _} =
-      BrusselsWtf.Repo.delete_all(
-        from r in "citizen_inactivity_ownership_resolutions",
-          where: r.collection_id == type(^collection_id, Ecto.UUID)
-      )
+    actor = %{principal: :system}
 
-    :ok
+    {:ok,
+     destroy_all(
+       InactivityOwnershipResolution,
+       :for_collection,
+       :delete_for_collection,
+       %{collection_id: collection_id},
+       actor
+     )}
+  end
+
+  defp destroy_all(resource, read_action, destroy_action, args, actor) do
+    resource
+    |> Ash.Query.for_read(read_action, args)
+    |> Ash.read!(actor: actor, authorize?: true, domain: __MODULE__)
+    |> Enum.flat_map(fn record ->
+      {:ok, notifications} =
+        record
+        |> Ash.Changeset.for_destroy(destroy_action, args)
+        |> Ash.destroy(
+          actor: actor,
+          authorize?: true,
+          domain: __MODULE__,
+          return_notifications?: true
+        )
+
+      notifications
+    end)
   end
 
   def inactivity_resolutions(citizen) do
