@@ -54,6 +54,16 @@ defmodule BrusselsWtf.Follow.CollectionTransferOffer do
 
     destroy :delete_for_collection do
     end
+
+    read :for_account_deletion do
+      argument :citizen_id, :uuid, allow_nil?: false
+      filter expr(from_citizen_id == ^arg(:citizen_id) or to_citizen_id == ^arg(:citizen_id))
+    end
+
+    destroy :delete_for_account do
+      argument :citizen_id, :uuid, allow_nil?: false
+      filter expr(from_citizen_id == ^arg(:citizen_id) or to_citizen_id == ^arg(:citizen_id))
+    end
   end
 
   policies do
@@ -65,7 +75,7 @@ defmodule BrusselsWtf.Follow.CollectionTransferOffer do
       authorize_if expr(^actor(:principal) == :citizen and to_citizen_id == ^actor(:id))
     end
 
-    policy action(:delete_for_collection) do
+    policy action([:for_account_deletion, :delete_for_collection, :delete_for_account]) do
       authorize_if actor_attribute_equals(:principal, :system)
     end
   end

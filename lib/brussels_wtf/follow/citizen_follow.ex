@@ -39,6 +39,16 @@ defmodule BrusselsWtf.Follow.CitizenFollow do
     destroy :remove do
       primary? true
     end
+
+    read :for_account_deletion do
+      argument :citizen_id, :uuid, allow_nil?: false
+      filter expr(citizen_id == ^arg(:citizen_id))
+    end
+
+    destroy :delete_for_account do
+      argument :citizen_id, :uuid, allow_nil?: false
+      filter expr(citizen_id == ^arg(:citizen_id))
+    end
   end
 
   policies do
@@ -46,7 +56,7 @@ defmodule BrusselsWtf.Follow.CitizenFollow do
       authorize_if expr(citizen_id == ^actor(:id) and ^actor(:principal) == :citizen)
     end
 
-    policy action(:all_for_sync) do
+    policy action([:all_for_sync, :for_account_deletion, :delete_for_account]) do
       authorize_if actor_attribute_equals(:principal, :system)
     end
   end

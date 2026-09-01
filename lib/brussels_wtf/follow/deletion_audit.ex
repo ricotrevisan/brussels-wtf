@@ -13,7 +13,7 @@ defmodule BrusselsWtf.Follow.DeletionAudit do
 
   actions do
     create :record do
-      accept [:operation_id, :completed_at]
+      accept [:operation_id, :completed_at, :reason]
     end
 
     read :read do
@@ -31,6 +31,10 @@ defmodule BrusselsWtf.Follow.DeletionAudit do
     uuid_v7_primary_key :id
     attribute :operation_id, :uuid, allow_nil?: false
     attribute :completed_at, :utc_datetime_usec, allow_nil?: false
+
+    attribute :reason, :atom,
+      allow_nil?: false,
+      constraints: [one_of: [:citizen_request, :inactivity]]
   end
 
   identities do

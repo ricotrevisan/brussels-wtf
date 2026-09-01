@@ -50,6 +50,11 @@ defmodule BrusselsWtf.Follow.CollectionGrant do
              )
     end
 
+    read :for_account_deletion do
+      argument :citizen_id, :uuid, allow_nil?: false
+      filter expr(citizen_id == ^arg(:citizen_id))
+    end
+
     destroy :delete_for_account do
     end
   end
@@ -72,7 +77,7 @@ defmodule BrusselsWtf.Follow.CollectionGrant do
                    )
     end
 
-    policy action(:delete_for_account) do
+    policy action([:for_account_deletion, :delete_for_account]) do
       authorize_if actor_attribute_equals(:principal, :system)
     end
   end

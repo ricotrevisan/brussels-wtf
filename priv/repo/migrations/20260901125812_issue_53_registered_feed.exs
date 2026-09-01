@@ -61,8 +61,11 @@ defmodule BrusselsWtf.Repo.Migrations.Issue53RegisteredFeed do
 
     create table(:follow_collection_grants, primary_key: false) do
       add :id, :uuid, null: false, default: fragment("uuid_generate_v7()"), primary_key: true
-      add :collection_id, :uuid, null: false
-      add :citizen_id, :uuid, null: false
+
+      add :collection_id, references(:follow_collections, type: :uuid, on_delete: :delete_all),
+        null: false
+
+      add :citizen_id, references(:citizens, type: :uuid, on_delete: :delete_all), null: false
 
       add :inserted_at, :utc_datetime_usec,
         null: false,
@@ -79,7 +82,7 @@ defmodule BrusselsWtf.Repo.Migrations.Issue53RegisteredFeed do
 
     create table(:citizen_feed_updates, primary_key: false) do
       add :id, :uuid, null: false, default: fragment("uuid_generate_v7()"), primary_key: true
-      add :citizen_id, :uuid, null: false
+      add :citizen_id, references(:citizens, type: :uuid, on_delete: :delete_all), null: false
       add :target_type, :text, null: false
       add :target_identifier, :text, null: false
       add :event_identity, :text, null: false

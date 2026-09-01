@@ -39,6 +39,16 @@ defmodule BrusselsWtf.Follow.RetentionWarning do
     destroy :purge do
       primary? true
     end
+
+    read :for_account_deletion do
+      argument :citizen_id, :uuid, allow_nil?: false
+      filter expr(citizen_id == ^arg(:citizen_id))
+    end
+
+    destroy :delete_for_account do
+      argument :citizen_id, :uuid, allow_nil?: false
+      filter expr(citizen_id == ^arg(:citizen_id))
+    end
   end
 
   policies do

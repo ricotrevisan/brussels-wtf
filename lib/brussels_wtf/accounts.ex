@@ -158,68 +158,88 @@ defmodule BrusselsWtf.Accounts do
 
   @doc "Delete all citizen state atomically. Public/unlisted ownership must be explicitly resolved."
   def delete_citizen(%Citizen{} = citizen, resolutions \\ %{}) do
-    operation_id = Ash.UUID.generate()
+    operation_id = Map.get(resolutions, :operation_id, Ash.UUID.generate())
+    actor = %{principal: :system}
 
-    BrusselsWtf.Repo.transaction(fn ->
-      {:ok, %{rows: collections}} =
-        BrusselsWtf.Repo.query(
-          "SELECT id, visibility FROM follow_collections WHERE owner_citizen_id=$1 FOR UPDATE",
-          [uuid_param(citizen.id)]
-        )
+    security_transaction(fn ->
+      :ok = maybe_fail(:owned_collections)
 
-      Enum.each(collections, fn [id, visibility] ->
-        external_id =
-          case Ecto.UUID.load(id) do
-            {:ok, value} -> value
-            :error -> to_string(id)
-          end
+      collections = BrusselsWtf.Follow.owner_collections(citizen) |> checked_value()
 
-        choice = Map.get(resolutions, external_id) || Map.get(resolutions, id)
+      Enum.each(collections, fn collection ->
+        choice =
+          Map.get(resolutions, collection.id) || Map.get(resolutions, to_string(collection.id))
 
-        cond do
-          visibility == "private" ->
-            sql!("DELETE FROM follow_collection_grants WHERE collection_id=$1", [id])
-            sql!("DELETE FROM follow_collections WHERE id=$1", [id])
-
-          choice == :delete ->
-            sql!("DELETE FROM follow_collection_grants WHERE collection_id=$1", [id])
-            sql!("DELETE FROM follow_collections WHERE id=$1", [id])
-
-          true ->
-            BrusselsWtf.Repo.rollback(:owned_collection_requires_resolution)
+        if collection.visibility != :private and choice != :delete do
+          throw({:security_failure, :owned_collection_requires_resolution})
         end
+
+        :ok = maybe_fail(:owned_collection_cleanup)
+        destroy_record_checked(collection, :delete_for_account, actor, BrusselsWtf.Follow)
       end)
 
-      sql!("DELETE FROM follow_collection_grants WHERE citizen_id=$1", [uuid_param(citizen.id)])
-      sql!("DELETE FROM citizen_feed_updates WHERE citizen_id=$1", [uuid_param(citizen.id)])
-      sql!("DELETE FROM citizen_follows WHERE citizen_id=$1", [uuid_param(citizen.id)])
-      sql!("DELETE FROM citizen_retention_warnings WHERE citizen_id=$1", [uuid_param(citizen.id)])
+      :ok = maybe_fail(:transfer_offers)
 
-      sql!(
-        "DELETE FROM follow_collection_transfer_offers WHERE from_citizen_id=$1 OR to_citizen_id=$1",
-        [uuid_param(citizen.id)]
+      destroy_follow_rows(
+        BrusselsWtf.Follow.CollectionTransferOffer,
+        :delete_for_account,
+        citizen.id
       )
 
-      case delete_account(citizen) do
-        {:ok, :ok} -> :ok
-        {:error, reason} -> BrusselsWtf.Repo.rollback(reason)
-      end
+      :ok = maybe_fail(:grants)
+      destroy_follow_rows(BrusselsWtf.Follow.CollectionGrant, :delete_for_account, citizen.id)
+      :ok = maybe_fail(:feed_updates)
+      destroy_follow_rows(BrusselsWtf.Follow.FeedUpdate, :delete_for_account, citizen.id)
+      :ok = maybe_fail(:follows)
+      destroy_follow_rows(BrusselsWtf.Follow.CitizenFollow, :delete_for_account, citizen.id)
+      :ok = maybe_fail(:warnings)
+      destroy_follow_rows(BrusselsWtf.Follow.RetentionWarning, :delete_for_account, citizen.id)
 
-      {:ok, _, _notifications} =
-        BrusselsWtf.Follow.DeletionAudit
-        |> Ash.Changeset.for_create(:record, %{
-          operation_id: operation_id,
-          completed_at: clock().utc_now()
-        })
-        |> Ash.create(
-          actor: %{principal: :system},
-          authorize?: true,
-          domain: BrusselsWtf.Follow,
-          return_notifications?: true
-        )
+      delete_account_steps(citizen)
+      :ok = maybe_fail(:audit)
+
+      BrusselsWtf.Follow.DeletionAudit
+      |> Ash.Changeset.for_create(:record, %{
+        operation_id: operation_id,
+        completed_at: clock().utc_now(),
+        reason: Map.get(resolutions, :reason, :citizen_request)
+      })
+      |> Ash.create(
+        actor: actor,
+        authorize?: true,
+        domain: BrusselsWtf.Follow,
+        return_notifications?: true
+      )
+      |> checked_value()
 
       operation_id
     end)
+  end
+
+  defp destroy_follow_rows(resource, action, citizen_id) do
+    actor = %{principal: :system}
+
+    resource
+    |> Ash.Query.for_read(:for_account_deletion, %{citizen_id: citizen_id}, actor: actor)
+    |> Ash.read(actor: actor, authorize?: true, domain: BrusselsWtf.Follow)
+    |> checked_value()
+    |> Enum.each(
+      &destroy_record_checked(&1, action, actor, BrusselsWtf.Follow, %{citizen_id: citizen_id})
+    )
+
+    :ok
+  end
+
+  defp destroy_record_checked(record, action, actor, domain, arguments \\ %{}) do
+    record
+    |> Ash.Changeset.for_destroy(action, arguments, actor: actor)
+    |> Ash.destroy(
+      actor: actor,
+      authorize?: true,
+      domain: domain,
+      return_notifications?: true
+    )
+    |> checked_ok()
   end
 
   @doc "Returns localized on-site warning data without recording account activity."
@@ -257,7 +277,10 @@ defmodule BrusselsWtf.Accounts do
 
     cond do
       DateTime.compare(now, deletion_at) != :lt ->
-        case delete_citizen(citizen, Map.get(resolutions, citizen.id, %{})) do
+        case delete_citizen(
+               citizen,
+               Map.get(resolutions, citizen.id, %{}) |> Map.put_new(:reason, :inactivity)
+             ) do
           {:ok, _} = ok -> ok
           {:error, :owned_collection_requires_resolution} -> {:blocked, citizen.id}
           {:error, reason} -> {:error, reason}
@@ -335,38 +358,33 @@ defmodule BrusselsWtf.Accounts do
     end
   end
 
-  defp uuid_param(value), do: Ecto.UUID.dump!(value)
-
-  defp sql!(statement, params) do
-    case BrusselsWtf.Repo.query(statement, params) do
-      {:ok, _} -> :ok
-      {:error, reason} -> BrusselsWtf.Repo.rollback(reason)
-    end
-  end
-
   @doc "Deletes an account and all authentication state in one transaction."
   def delete_account(%Citizen{} = citizen) do
-    security_transaction(fn ->
-      outstanding_jtis = outstanding_magic_link_jtis_checked(citizen.email)
-      :ok = maybe_fail(:sessions)
-      :ok = revoke_sessions_checked(citizen.id)
-      :ok = maybe_fail(:outstanding_links)
-      :ok = revoke_outstanding_magic_links_checked(citizen.email)
-      :ok = maybe_fail(:authentication_tokens)
-      :ok = purge_authentication_tokens_checked(citizen, outstanding_jtis)
+    security_transaction(fn -> delete_account_steps(citizen) end)
+  end
 
-      citizen
-      |> Ash.destroy(
-        action: :delete_account,
-        actor: %{principal: :system},
-        authorize?: true,
-        domain: __MODULE__,
-        return_notifications?: true
-      )
-      |> checked_ok()
+  defp delete_account_steps(citizen) do
+    outstanding_jtis = outstanding_magic_link_jtis_checked(citizen.email)
+    :ok = maybe_fail(:sessions)
+    :ok = revoke_sessions_checked(citizen.id)
+    :ok = maybe_fail(:outstanding_links)
+    :ok = revoke_outstanding_magic_links_checked(citizen.email)
+    :ok = maybe_fail(:authentication_tokens)
+    :ok = revoke_authentication_tokens_checked(citizen)
+    :ok = purge_authentication_tokens_checked(citizen, outstanding_jtis)
+    :ok = maybe_fail(:citizen)
 
-      :ok
-    end)
+    citizen
+    |> Ash.destroy(
+      action: :delete_account,
+      actor: %{principal: :system},
+      authorize?: true,
+      domain: __MODULE__,
+      return_notifications?: true
+    )
+    |> checked_ok()
+
+    :ok
   end
 
   defp security_transaction(fun) do
@@ -513,13 +531,22 @@ defmodule BrusselsWtf.Accounts do
   end
 
   defp purge_authentication_tokens_checked(citizen, outstanding_jtis) do
-    case BrusselsWtf.Repo.query(
-           "DELETE FROM citizen_authentication_tokens WHERE subject LIKE $1 OR jti = ANY($2)",
-           ["%" <> citizen.id <> "%", outstanding_jtis]
-         ) do
-      {:ok, _} -> :ok
-      {:error, reason} -> throw({:security_failure, reason})
-    end
+    actor = %{principal: :system}
+
+    BrusselsWtf.Accounts.Token
+    |> Ash.Query.for_read(
+      :for_account_deletion,
+      %{
+        citizen_id: citizen.id,
+        outstanding_jtis: outstanding_jtis
+      },
+      actor: actor
+    )
+    |> Ash.read(actor: actor, authorize?: true, domain: __MODULE__)
+    |> checked_value()
+    |> Enum.each(&destroy_record_checked(&1, :revoke_stored, actor, __MODULE__))
+
+    :ok
   end
 
   defp email_hash(email) do

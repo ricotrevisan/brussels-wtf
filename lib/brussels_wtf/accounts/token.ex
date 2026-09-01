@@ -17,6 +17,12 @@ defmodule BrusselsWtf.Accounts.Token do
       primary? true
     end
 
+    read :for_account_deletion do
+      argument :citizen_id, :string, allow_nil?: false
+      argument :outstanding_jtis, {:array, :string}, allow_nil?: false
+      filter expr(contains(subject, ^arg(:citizen_id)) or jti in ^arg(:outstanding_jtis))
+    end
+
     destroy :revoke_stored do
     end
   end
@@ -24,6 +30,10 @@ defmodule BrusselsWtf.Accounts.Token do
   policies do
     bypass AshAuthentication.Checks.AshAuthenticationInteraction do
       authorize_if always()
+    end
+
+    policy action([:for_account_deletion, :revoke_stored]) do
+      authorize_if actor_attribute_equals(:principal, :system)
     end
   end
 end

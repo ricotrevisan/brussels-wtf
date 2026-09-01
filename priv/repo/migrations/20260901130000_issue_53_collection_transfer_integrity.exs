@@ -2,6 +2,20 @@ defmodule BrusselsWtf.Repo.Migrations.Issue53CollectionTransferIntegrity do
   use Ecto.Migration
 
   def up do
+    execute "ALTER TABLE citizen_follows ADD CONSTRAINT citizen_follows_citizen_fk FOREIGN KEY (citizen_id) REFERENCES citizens(id) ON DELETE CASCADE"
+
+    create constraint(:citizen_follows, :citizen_follows_target_type_check,
+             check: "target_type IN ('dossier', 'person', 'legal_entity', 'commune')"
+           )
+
+    create constraint(:citizen_feed_updates, :citizen_feed_updates_target_type_check,
+             check: "target_type IN ('dossier', 'person', 'legal_entity', 'commune')"
+           )
+
+    create constraint(:citizen_feed_updates, :citizen_feed_updates_read_after_insert_check,
+             check: "read_at IS NULL OR read_at >= inserted_at"
+           )
+
     execute "DROP TRIGGER IF EXISTS follow_collection_owner_once ON follow_collections"
     execute "DROP FUNCTION IF EXISTS prevent_follow_collection_reassignment()"
 
