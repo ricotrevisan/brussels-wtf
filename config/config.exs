@@ -61,7 +61,8 @@ config :brussels_wtf,
     BrusselsWtf.Council,
     BrusselsWtf.Review,
     BrusselsWtf.Identity,
-    BrusselsWtf.Follow
+    BrusselsWtf.Follow,
+    BrusselsWtf.Accounts
   ],
   clock: BrusselsWtf.Clock.System,
   http: BrusselsWtf.HTTP.Req,
@@ -98,6 +99,8 @@ config :brussels_wtf,
   },
   allow_synthetic_seeds: false,
   automatic_transcription: false,
+  citizen_mailer: BrusselsWtf.Accounts.Mail.Memory,
+  citizen_session: [idle_days: 30, absolute_days: 90],
   session_cookie_secure: false,
   review_auth: [
     actor_id: "rico",
@@ -225,6 +228,7 @@ config :logger, :default_formatter,
 
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
+config :phoenix, :filter_parameters, ["email", "token", "management_secret", "citizen_session"]
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.

@@ -43,6 +43,7 @@ defmodule BrusselsWtf.MixProject do
     [
       {:ash, "~> 3.0"},
       {:ash_phoenix, "~> 2.0"},
+      {:ash_authentication, "~> 4.0"},
       {:ash_postgres, "~> 2.0"},
       {:simple_sat, "~> 0.1.4"},
       {:oban, "~> 2.23"},
