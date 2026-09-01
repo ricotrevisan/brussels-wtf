@@ -154,7 +154,8 @@ config :brussels_wtf, Oban,
           kind: "scheduled",
           scope: "previous-year"
         }},
-       {"30 2 * * *", BrusselsWtf.Workers.PurgeSuggestions, args: %{}}
+       {"30 2 * * *", BrusselsWtf.Workers.PurgeSuggestions, args: %{}},
+       {"*/15 * * * *", BrusselsWtf.Workers.PurgeExpiredMagicLinks, args: %{}}
      ]}
   ],
   queues: [

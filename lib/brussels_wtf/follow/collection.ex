@@ -42,7 +42,6 @@ defmodule BrusselsWtf.Follow.Collection do
       accept []
       argument :owner_citizen_id, :uuid, allow_nil?: false
       filter expr(is_nil(owner_citizen_id))
-      validate attribute_equals(:owner_citizen_id, nil)
       change set_attribute(:owner_citizen_id, arg(:owner_citizen_id))
     end
 
