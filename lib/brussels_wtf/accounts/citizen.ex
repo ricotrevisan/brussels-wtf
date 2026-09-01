@@ -48,6 +48,12 @@ defmodule BrusselsWtf.Accounts.Citizen do
     read :retention_candidates do
     end
 
+    read :system_by_id do
+      get? true
+      argument :id, :uuid, allow_nil?: false
+      filter expr(id == ^arg(:id))
+    end
+
     read :get_by_subject do
       argument :subject, :string, allow_nil?: false
       get? true
@@ -77,7 +83,7 @@ defmodule BrusselsWtf.Accounts.Citizen do
       authorize_if expr(id == ^actor(:id) and ^actor(:principal) == :citizen)
     end
 
-    policy action(:retention_candidates) do
+    policy action([:retention_candidates, :system_by_id]) do
       authorize_if actor_attribute_equals(:principal, :system)
     end
 

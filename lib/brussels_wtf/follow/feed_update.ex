@@ -20,6 +20,12 @@ defmodule BrusselsWtf.Follow.FeedUpdate do
       filter expr(citizen_id == ^actor(:id))
     end
 
+    read :mine_by_id do
+      get? true
+      argument :id, :uuid, allow_nil?: false
+      filter expr(id == ^arg(:id) and citizen_id == ^actor(:id))
+    end
+
     create :deliver_once do
       accept [
         :citizen_id,
@@ -80,7 +86,7 @@ defmodule BrusselsWtf.Follow.FeedUpdate do
   end
 
   policies do
-    policy action([:mine, :mark_read]) do
+    policy action([:mine, :mine_by_id, :mark_read]) do
       authorize_if expr(citizen_id == ^actor(:id) and ^actor(:principal) == :citizen)
     end
 

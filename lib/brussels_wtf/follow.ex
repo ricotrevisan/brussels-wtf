@@ -124,7 +124,10 @@ defmodule BrusselsWtf.Follow do
 
   defp citizen_locale(citizen_id) do
     case Ash.get(BrusselsWtf.Accounts.Citizen, citizen_id,
-           authorize?: false,
+           action: :system_by_id,
+           args: %{id: citizen_id},
+           actor: %{principal: :system},
+           authorize?: true,
            domain: BrusselsWtf.Accounts
          ) do
       {:ok, citizen} -> citizen.preferred_locale
@@ -224,8 +227,10 @@ defmodule BrusselsWtf.Follow do
   def mark_read(citizen, id) do
     with {:ok, update} <-
            Ash.get(FeedUpdate, id,
+             action: :mine_by_id,
+             args: %{id: id},
              actor: citizen_actor(citizen),
-             authorize?: false,
+             authorize?: true,
              domain: __MODULE__
            ) do
       update
