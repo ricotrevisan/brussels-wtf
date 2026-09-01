@@ -161,59 +161,87 @@ defmodule BrusselsWtf.Accounts do
     operation_id = Map.get(resolutions, :operation_id, Ash.UUID.generate())
     actor = %{principal: :system}
 
-    security_transaction(fn ->
-      :ok = maybe_fail(:owned_collections)
+    case completed_deletion(operation_id, actor) do
+      true ->
+        {:ok, operation_id}
 
-      collections = BrusselsWtf.Follow.owner_collections(citizen) |> checked_value()
+      false ->
+        security_transaction(fn ->
+          :ok = maybe_fail(:owned_collections)
 
-      Enum.each(collections, fn collection ->
-        choice =
-          Map.get(resolutions, collection.id) || Map.get(resolutions, to_string(collection.id))
+          collections = BrusselsWtf.Follow.owner_collections(citizen) |> checked_value()
 
-        if collection.visibility != :private and choice != :delete do
-          throw({:security_failure, :owned_collection_requires_resolution})
-        end
+          Enum.each(collections, fn collection ->
+            choice =
+              Map.get(resolutions, collection.id) ||
+                Map.get(resolutions, to_string(collection.id))
 
-        :ok = maybe_fail(:owned_collection_cleanup)
-        destroy_record_checked(collection, :delete_for_account, actor, BrusselsWtf.Follow)
-      end)
+            if collection.visibility != :private and choice != :delete do
+              throw({:security_failure, :owned_collection_requires_resolution})
+            end
 
-      :ok = maybe_fail(:transfer_offers)
+            :ok =
+              maybe_fail(
+                if(collection.visibility == :private,
+                  do: :private_collections,
+                  else: :selected_collections
+                )
+              )
 
-      destroy_follow_rows(
-        BrusselsWtf.Follow.CollectionTransferOffer,
-        :delete_for_account,
-        citizen.id
-      )
+            destroy_record_checked(collection, :delete_for_account, actor, BrusselsWtf.Follow)
+          end)
 
-      :ok = maybe_fail(:grants)
-      destroy_follow_rows(BrusselsWtf.Follow.CollectionGrant, :delete_for_account, citizen.id)
-      :ok = maybe_fail(:feed_updates)
-      destroy_follow_rows(BrusselsWtf.Follow.FeedUpdate, :delete_for_account, citizen.id)
-      :ok = maybe_fail(:follows)
-      destroy_follow_rows(BrusselsWtf.Follow.CitizenFollow, :delete_for_account, citizen.id)
-      :ok = maybe_fail(:warnings)
-      destroy_follow_rows(BrusselsWtf.Follow.RetentionWarning, :delete_for_account, citizen.id)
+          :ok = maybe_fail(:transfer_offers)
 
-      delete_account_steps(citizen)
-      :ok = maybe_fail(:audit)
+          destroy_follow_rows(
+            BrusselsWtf.Follow.CollectionTransferOffer,
+            :delete_for_account,
+            citizen.id
+          )
 
-      BrusselsWtf.Follow.DeletionAudit
-      |> Ash.Changeset.for_create(:record, %{
-        operation_id: operation_id,
-        completed_at: clock().utc_now(),
-        reason: Map.get(resolutions, :reason, :citizen_request)
-      })
-      |> Ash.create(
-        actor: actor,
-        authorize?: true,
-        domain: BrusselsWtf.Follow,
-        return_notifications?: true
-      )
-      |> checked_value()
+          :ok = maybe_fail(:grants_created)
+          :ok = maybe_fail(:grants_received)
+          destroy_follow_rows(BrusselsWtf.Follow.CollectionGrant, :delete_for_account, citizen.id)
+          :ok = maybe_fail(:feed_updates)
+          :ok = maybe_fail(:feed_read_state)
+          destroy_follow_rows(BrusselsWtf.Follow.FeedUpdate, :delete_for_account, citizen.id)
+          :ok = maybe_fail(:follows)
+          destroy_follow_rows(BrusselsWtf.Follow.CitizenFollow, :delete_for_account, citizen.id)
+          :ok = maybe_fail(:warnings)
 
-      operation_id
-    end)
+          destroy_follow_rows(
+            BrusselsWtf.Follow.RetentionWarning,
+            :delete_for_account,
+            citizen.id
+          )
+
+          delete_account_steps(citizen)
+          :ok = maybe_fail(:audit)
+
+          BrusselsWtf.Follow.DeletionAudit
+          |> Ash.Changeset.for_create(:record, %{
+            operation_id: operation_id,
+            completed_at: clock().utc_now(),
+            reason: Map.get(resolutions, :reason, :citizen_request)
+          })
+          |> Ash.create(
+            actor: actor,
+            authorize?: true,
+            domain: BrusselsWtf.Follow,
+            return_notifications?: true
+          )
+          |> checked_value()
+
+          :ok = maybe_fail(:notification_collection)
+          operation_id
+        end)
+    end
+  end
+
+  defp completed_deletion(operation_id, actor) do
+    BrusselsWtf.Follow.DeletionAudit
+    |> Ash.Query.filter(operation_id == ^operation_id)
+    |> Ash.exists?(actor: actor, authorize?: true, domain: BrusselsWtf.Follow)
   end
 
   defp destroy_follow_rows(resource, action, citizen_id) do

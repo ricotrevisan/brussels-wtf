@@ -116,8 +116,27 @@ defmodule BrusselsWtf.FollowRegisteredTest do
     assert {:error, :not_found} = Follow.private_collection(private.id, guest)
   end
 
-  test "deletion rolls back personal state and audit at every authentication failure stage" do
-    Enum.each([:sessions, :outstanding_links, :authentication_tokens], fn stage ->
+  test "deletion rolls back all state at every lifecycle phase and retry is idempotent" do
+    stages = [
+      :owned_collections,
+      :private_collections,
+      :selected_collections,
+      :transfer_offers,
+      :grants_created,
+      :grants_received,
+      :feed_updates,
+      :feed_read_state,
+      :follows,
+      :warnings,
+      :sessions,
+      :outstanding_links,
+      :authentication_tokens,
+      :citizen,
+      :audit,
+      :notification_collection
+    ]
+
+    Enum.each(stages, fn stage ->
       {citizen, session} = citizen("rollback-#{stage}@example.test")
       actor = %{id: citizen.id, principal: :citizen}
 
@@ -130,8 +149,9 @@ defmodule BrusselsWtf.FollowRegisteredTest do
         })
         |> Ash.create(actor: actor, authorize?: true, domain: Follow)
 
+      resolutions = deletion_collection_fixture(stage, citizen)
       Application.put_env(:brussels_wtf, :account_security_failure, stage)
-      assert {:error, _} = Accounts.delete_citizen(citizen)
+      assert {:error, _} = Accounts.delete_citizen(citizen, resolutions)
       Application.delete_env(:brussels_wtf, :account_security_failure)
       assert {:ok, _} = Accounts.authenticate_session(session.id)
 
@@ -144,9 +164,33 @@ defmodule BrusselsWtf.FollowRegisteredTest do
                Follow.DeletionAudit
                |> Ash.read!(actor: %{principal: :system}, authorize?: true, domain: Follow)
     end)
+
+    {citizen, _session} = citizen("idempotent-delete@example.test")
+    operation_id = Ash.UUID.generate()
+    resolutions = %{operation_id: operation_id}
+    assert {:ok, ^operation_id} = Accounts.delete_citizen(citizen, resolutions)
+    assert {:ok, ^operation_id} = Accounts.delete_citizen(citizen, resolutions)
+
+    assert 1 ==
+             Follow.DeletionAudit
+             |> Ash.Query.filter(operation_id == ^operation_id)
+             |> Ash.read!(actor: %{principal: :system}, authorize?: true, domain: Follow)
+             |> length()
   after
     Application.delete_env(:brussels_wtf, :account_security_failure)
   end
+
+  defp deletion_collection_fixture(stage, citizen)
+       when stage in [:private_collections, :selected_collections] do
+    {:ok, _collection, secret} = Follow.create_collection()
+    {:ok, collection} = Follow.claim_collection(secret, citizen)
+
+    visibility = if stage == :private_collections, do: :private, else: :public
+    {:ok, collection} = Follow.owner_set_visibility(citizen, collection.id, visibility)
+    if visibility == :public, do: %{collection.id => :delete}, else: %{}
+  end
+
+  defp deletion_collection_fixture(_stage, _citizen), do: %{}
 
   test "security logs contain no citizen email, token, feed/grant identifiers or private notes" do
     logs =
