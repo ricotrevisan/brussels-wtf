@@ -276,10 +276,17 @@ defmodule BrusselsWtfWeb.CitizenAuthenticationTest do
     {:ok, collection, _} = BrusselsWtf.Follow.create_collection()
     parent = self()
 
-    tasks =
-      for _ <- 1..2 do
-        id = Ash.UUID.generate()
+    citizen_ids =
+      for n <- 1..2 do
+        email = "claim-#{n}@example.test"
+        Accounts.request_link(email)
+        assert_receive {:magic_link, ^email, link, _}
+        {:ok, citizen, _} = Accounts.consume(token_from_link(link))
+        citizen.id
+      end
 
+    tasks =
+      for id <- citizen_ids do
         Task.async(fn ->
           send(parent, {:ready, self()})
           receive do: (:go -> :ok)

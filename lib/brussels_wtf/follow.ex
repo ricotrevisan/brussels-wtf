@@ -14,6 +14,7 @@ defmodule BrusselsWtf.Follow do
     TargetEligibility,
     FeedUpdate,
     CollectionGrant,
+    CollectionTransferOffer,
     DeletionAudit,
     RetentionWarning
   }
@@ -24,6 +25,7 @@ defmodule BrusselsWtf.Follow do
     resource CitizenFollow
     resource FeedUpdate
     resource CollectionGrant
+    resource CollectionTransferOffer
     resource DeletionAudit
     resource RetentionWarning
   end
@@ -199,10 +201,22 @@ defmodule BrusselsWtf.Follow do
   def private_collection(collection_id, citizen) do
     actor = citizen_actor(citizen)
 
-    with {:ok, collection} <-
-           Ash.get(Collection, collection_id, actor: actor, authorize?: false, domain: __MODULE__),
-         true <- collection.visibility == :private,
-         true <- collection.owner_citizen_id == citizen.id or granted?(collection.id, citizen.id) do
+    owner_result = owner_collection(citizen, collection_id)
+
+    result =
+      case owner_result do
+        {:ok, collection} ->
+          {:ok, collection}
+
+        _ ->
+          Collection
+          |> Ash.Query.for_read(:view_granted, %{id: collection_id}, actor: actor)
+          |> Ash.read_one(actor: actor, authorize?: true, domain: __MODULE__)
+          |> not_found()
+      end
+
+    with {:ok, collection} <- result,
+         true <- collection.visibility == :private do
       Ash.load(collection, :members,
         actor: %{collection_id: collection.id},
         authorize?: true,
@@ -213,23 +227,16 @@ defmodule BrusselsWtf.Follow do
     end
   end
 
-  defp granted?(collection_id, citizen_id) do
-    result =
-      CollectionGrant
-      |> Ash.Query.filter(collection_id == ^collection_id and citizen_id == ^citizen_id)
-      |> Ash.read_one!(actor: %{principal: :system}, authorize?: true, domain: __MODULE__)
-
-    not is_nil(result)
-  end
-
   defp citizen_actor(c), do: %{id: c.id, principal: :citizen}
 
   def owner_collection(citizen, collection_id) do
     actor = citizen_actor(citizen)
 
     with {:ok, collection} <-
-           Ash.get(Collection, collection_id, actor: actor, authorize?: false, domain: __MODULE__),
-         true <- collection.owner_citizen_id == citizen.id do
+           Collection
+           |> Ash.Query.for_read(:manage_owned, %{id: collection_id}, actor: actor)
+           |> Ash.read_one(actor: actor, authorize?: true, domain: __MODULE__)
+           |> not_found() do
       Ash.load(collection, :members,
         actor: %{collection_id: collection.id},
         authorize?: true,
@@ -277,11 +284,12 @@ defmodule BrusselsWtf.Follow do
          true <- collection.visibility == :private,
          false <- recipient_id == citizen.id do
       CollectionGrant
-      |> Ash.Changeset.for_create(:grant, %{
+      |> Ash.Changeset.for_create(:grant_view, %{
         collection_id: collection.id,
-        citizen_id: recipient_id
+        citizen_id: recipient_id,
+        owner_citizen_id: citizen.id
       })
-      |> Ash.create(actor: %{principal: :system}, authorize?: true, domain: __MODULE__)
+      |> Ash.create(actor: citizen_actor(citizen), authorize?: true, domain: __MODULE__)
     else
       _ -> {:error, :not_found}
     end
@@ -290,20 +298,189 @@ defmodule BrusselsWtf.Follow do
   def revoke_private_view(citizen, collection_id, grant_id) do
     with {:ok, collection} <- owner_collection(citizen, collection_id),
          {:ok, grant} <-
-           Ash.get(CollectionGrant, grant_id,
-             actor: %{principal: :system},
+           CollectionGrant
+           |> Ash.Query.for_read(
+             :get_for_owner,
+             %{
+               id: grant_id,
+               collection_id: collection.id
+             },
+             actor: citizen_actor(citizen)
+           )
+           |> Ash.read_one(
+             actor: citizen_actor(citizen),
              authorize?: true,
              domain: __MODULE__
-           ),
+           )
+           |> not_found(),
          true <- grant.collection_id == collection.id do
-      Ash.destroy(grant,
-        action: :revoke,
-        actor: %{principal: :system},
+      grant
+      |> Ash.Changeset.for_destroy(:revoke_view, %{collection_id: collection.id})
+      |> Ash.destroy(
+        actor: citizen_actor(citizen),
         authorize?: true,
         domain: __MODULE__
       )
     else
       _ -> {:error, :not_found}
+    end
+  end
+
+  def owner_collections(citizen) do
+    actor = citizen_actor(citizen)
+
+    Collection
+    |> Ash.Query.for_read(:owned, %{}, actor: actor)
+    |> Ash.read(actor: actor, authorize?: true, domain: __MODULE__)
+  end
+
+  def list_private_grants(citizen, collection_id) do
+    actor = citizen_actor(citizen)
+
+    CollectionGrant
+    |> Ash.Query.for_read(:list_for_owned_collection, %{collection_id: collection_id},
+      actor: actor
+    )
+    |> Ash.read(actor: actor, authorize?: true, domain: __MODULE__)
+  end
+
+  @doc "Creates a recipient-bound transfer offer and returns its raw token exactly once."
+  def offer_collection_transfer(citizen, collection_id, recipient_id) do
+    with false <- recipient_id == citizen.id,
+         {:ok, collection} <- owner_collection(citizen, collection_id),
+         true <- collection.visibility in [:public, :unlisted] do
+      raw_token = token()
+      now = Application.fetch_env!(:brussels_wtf, :clock).utc_now()
+      actor = citizen_actor(citizen)
+
+      BrusselsWtf.Repo.transaction(fn ->
+        CollectionTransferOffer
+        |> Ash.Query.for_read(:for_owner, %{collection_id: collection.id}, actor: actor)
+        |> Ash.read!(actor: actor, authorize?: true, domain: __MODULE__)
+        |> Enum.filter(&(is_nil(&1.accepted_at) and is_nil(&1.cancelled_at)))
+        |> Enum.each(fn offer ->
+          offer
+          |> Ash.Changeset.for_update(:cancel, %{cancelled_at: now})
+          |> Ash.update!(actor: actor, authorize?: true, domain: __MODULE__)
+        end)
+
+        offer =
+          CollectionTransferOffer
+          |> Ash.Changeset.for_create(:offer, %{
+            collection_id: collection.id,
+            from_citizen_id: citizen.id,
+            to_citizen_id: recipient_id,
+            token_hash: hash(raw_token),
+            expires_at: DateTime.add(now, 7, :day)
+          })
+          |> Ash.create!(actor: actor, authorize?: true, domain: __MODULE__)
+
+        {offer, raw_token}
+      end)
+      |> case do
+        {:ok, {offer, token}} -> {:ok, offer, token}
+        {:error, reason} -> {:error, reason}
+      end
+    else
+      false -> {:error, :invalid_recipient}
+      _ -> {:error, :not_found}
+    end
+  end
+
+  def collection_transfer_offer(citizen, raw_token) do
+    actor = citizen_actor(citizen)
+
+    CollectionTransferOffer
+    |> Ash.Query.for_read(:by_recipient_token, %{token_hash: hash(raw_token)}, actor: actor)
+    |> Ash.read_one(actor: actor, authorize?: true, domain: __MODULE__)
+    |> not_found()
+  end
+
+  def accept_collection_transfer(citizen, raw_token) do
+    now = Application.fetch_env!(:brussels_wtf, :clock).utc_now()
+    actor = citizen_actor(citizen)
+
+    BrusselsWtf.Repo.transaction(fn ->
+      with {:ok, offer} <- collection_transfer_offer(citizen, raw_token),
+           :lt <- DateTime.compare(now, offer.expires_at),
+           {:ok, collection} <- lock_transfer_collection(offer),
+           true <- collection.owner_citizen_id == offer.from_citizen_id,
+           {:ok, transferred} <-
+             collection
+             |> Ash.Changeset.for_update(:transfer_owned, %{
+               owner_citizen_id: citizen.id,
+               expected_owner_citizen_id: offer.from_citizen_id
+             })
+             |> Ash.update(actor: %{principal: :system}, authorize?: true, domain: __MODULE__),
+           {:ok, _} <-
+             offer
+             |> Ash.Changeset.for_update(:accept, %{accepted_at: now})
+             |> Ash.update(actor: actor, authorize?: true, domain: __MODULE__) do
+        transferred
+      else
+        :eq -> BrusselsWtf.Repo.rollback(:expired)
+        :gt -> BrusselsWtf.Repo.rollback(:expired)
+        _ -> BrusselsWtf.Repo.rollback(:not_found)
+      end
+    end)
+  end
+
+  def decline_collection_transfer(citizen, raw_token) do
+    with {:ok, offer} <- collection_transfer_offer(citizen, raw_token) do
+      offer
+      |> Ash.Changeset.for_update(:decline, %{
+        cancelled_at: Application.fetch_env!(:brussels_wtf, :clock).utc_now()
+      })
+      |> Ash.update(actor: citizen_actor(citizen), authorize?: true, domain: __MODULE__)
+    end
+  end
+
+  def cancel_collection_transfer(citizen, offer_id) do
+    actor = citizen_actor(citizen)
+
+    with {:ok, offer} <-
+           Ash.get(CollectionTransferOffer, offer_id,
+             action: :get_for_owner,
+             args: %{id: offer_id},
+             actor: actor,
+             authorize?: true,
+             domain: __MODULE__
+           ) do
+      offer
+      |> Ash.Changeset.for_update(:cancel, %{
+        cancelled_at: Application.fetch_env!(:brussels_wtf, :clock).utc_now()
+      })
+      |> Ash.update(actor: actor, authorize?: true, domain: __MODULE__)
+    else
+      _ -> {:error, :not_found}
+    end
+  end
+
+  def delete_owned_collection(citizen, collection_id) do
+    with {:ok, collection} <- owner_collection(citizen, collection_id) do
+      Ash.destroy(collection,
+        action: :delete_owned,
+        actor: citizen_actor(citizen),
+        authorize?: true,
+        domain: __MODULE__
+      )
+    end
+  end
+
+  defp lock_transfer_collection(offer) do
+    case BrusselsWtf.Repo.query(
+           "SELECT id FROM follow_collections WHERE id=$1 FOR UPDATE",
+           [Ecto.UUID.dump!(offer.collection_id)]
+         ) do
+      {:ok, %{num_rows: 1}} ->
+        actor = %{principal: :system}
+
+        Collection
+        |> Ash.Query.for_read(:get_for_transfer, %{id: offer.collection_id}, actor: actor)
+        |> Ash.read_one(actor: actor, authorize?: true, domain: __MODULE__)
+
+      _ ->
+        {:error, :not_found}
     end
   end
 

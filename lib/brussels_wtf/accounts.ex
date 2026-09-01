@@ -154,23 +154,13 @@ defmodule BrusselsWtf.Accounts do
     end
   end
 
-  def owned_collections(citizen) do
-    BrusselsWtf.Follow.Collection
-    |> Ash.Query.filter(owner_citizen_id == ^citizen.id)
-    |> Ash.read(
-      actor: %{id: citizen.id, principal: :citizen},
-      authorize?: false,
-      domain: BrusselsWtf.Follow
-    )
-  end
+  def owned_collections(citizen), do: BrusselsWtf.Follow.owner_collections(citizen)
 
   @doc "Delete all citizen state atomically. Public/unlisted ownership must be explicitly resolved."
   def delete_citizen(%Citizen{} = citizen, resolutions \\ %{}) do
     operation_id = Ash.UUID.generate()
 
     BrusselsWtf.Repo.transaction(fn ->
-      sql!("SELECT set_config('brussels_wtf.allow_collection_transfer', 'on', true)", [])
-
       {:ok, %{rows: collections}} =
         BrusselsWtf.Repo.query(
           "SELECT id, visibility FROM follow_collections WHERE owner_citizen_id=$1 FOR UPDATE",
@@ -195,18 +185,6 @@ defmodule BrusselsWtf.Accounts do
             sql!("DELETE FROM follow_collection_grants WHERE collection_id=$1", [id])
             sql!("DELETE FROM follow_collections WHERE id=$1", [id])
 
-          match?({:transfer, _, true}, choice) ->
-            {:transfer, recipient_id, true} = choice
-            if recipient_id == citizen.id, do: BrusselsWtf.Repo.rollback(:invalid_transfer)
-
-            case BrusselsWtf.Repo.query(
-                   "UPDATE follow_collections SET owner_citizen_id=$1 WHERE id=$2 AND owner_citizen_id=$3",
-                   [uuid_param(recipient_id), id, uuid_param(citizen.id)]
-                 ) do
-              {:ok, %{num_rows: 1}} -> :ok
-              _ -> BrusselsWtf.Repo.rollback(:unsafe_transfer)
-            end
-
           true ->
             BrusselsWtf.Repo.rollback(:owned_collection_requires_resolution)
         end
@@ -216,6 +194,11 @@ defmodule BrusselsWtf.Accounts do
       sql!("DELETE FROM citizen_feed_updates WHERE citizen_id=$1", [uuid_param(citizen.id)])
       sql!("DELETE FROM citizen_follows WHERE citizen_id=$1", [uuid_param(citizen.id)])
       sql!("DELETE FROM citizen_retention_warnings WHERE citizen_id=$1", [uuid_param(citizen.id)])
+
+      sql!(
+        "DELETE FROM follow_collection_transfer_offers WHERE from_citizen_id=$1 OR to_citizen_id=$1",
+        [uuid_param(citizen.id)]
+      )
 
       case delete_account(citizen) do
         {:ok, :ok} -> :ok

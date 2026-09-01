@@ -182,11 +182,12 @@ defmodule BrusselsWtf.FollowRegisteredTest do
     {:ok, c} = Follow.claim_collection(secret, owner)
     {:ok, c} = Follow.owner_set_visibility(owner, c.id, :public)
     assert {:error, :owned_collection_requires_resolution} = Accounts.delete_citizen(owner)
-    assert {:ok, _} = Accounts.delete_citizen(owner, %{c.id => {:transfer, recipient.id, true}})
+    assert {:ok, _offer, token} = Follow.offer_collection_transfer(owner, c.id, recipient.id)
+    assert {:ok, _offer} = Follow.collection_transfer_offer(recipient, token)
+    assert {:ok, _} = Follow.accept_collection_transfer(recipient, token)
+    assert {:ok, _} = Accounts.delete_citizen(owner)
 
-    assert {:ok, transferred} =
-             Ash.get(Follow.Collection, c.id, authorize?: false, domain: Follow)
-
+    assert {:ok, transferred} = Follow.owner_collection(recipient, c.id)
     assert transferred.owner_citizen_id == recipient.id
   end
 

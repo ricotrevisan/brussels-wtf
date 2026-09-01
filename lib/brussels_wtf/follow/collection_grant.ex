@@ -12,20 +12,45 @@ defmodule BrusselsWtf.Follow.CollectionGrant do
   end
 
   actions do
-    read :read do
-      primary? true
+    read :list_for_owned_collection do
+      argument :collection_id, :uuid, allow_nil?: false
+
+      filter expr(
+               collection_id == ^arg(:collection_id) and
+                 collection.owner_citizen_id == ^actor(:id)
+             )
+    end
+
+    read :get_for_owner do
+      get? true
+      argument :id, :uuid, allow_nil?: false
+      argument :collection_id, :uuid, allow_nil?: false
+
+      filter expr(
+               id == ^arg(:id) and collection_id == ^arg(:collection_id) and
+                 collection.owner_citizen_id == ^actor(:id)
+             )
     end
 
     read :mine do
       filter expr(citizen_id == ^actor(:id))
     end
 
-    create :grant do
+    create :grant_view do
       accept [:collection_id, :citizen_id]
+      argument :owner_citizen_id, :uuid, allow_nil?: false
     end
 
-    destroy :revoke do
-      primary? true
+    destroy :revoke_view do
+      argument :collection_id, :uuid, allow_nil?: false
+
+      filter expr(
+               collection_id == ^arg(:collection_id) and
+                 collection.owner_citizen_id == ^actor(:id)
+             )
+    end
+
+    destroy :delete_for_account do
     end
   end
 
@@ -34,7 +59,20 @@ defmodule BrusselsWtf.Follow.CollectionGrant do
       authorize_if expr(citizen_id == ^actor(:id) and ^actor(:principal) == :citizen)
     end
 
-    policy action([:read, :grant, :revoke]) do
+    policy action(:grant_view) do
+      authorize_if expr(
+                     ^actor(:principal) == :citizen and ^actor(:id) == ^arg(:owner_citizen_id) and
+                       collection.owner_citizen_id == ^actor(:id)
+                   )
+    end
+
+    policy action([:list_for_owned_collection, :get_for_owner, :revoke_view]) do
+      authorize_if expr(
+                     ^actor(:principal) == :citizen and collection.owner_citizen_id == ^actor(:id)
+                   )
+    end
+
+    policy action(:delete_for_account) do
       authorize_if actor_attribute_equals(:principal, :system)
     end
   end
@@ -44,6 +82,15 @@ defmodule BrusselsWtf.Follow.CollectionGrant do
     attribute :collection_id, :uuid, allow_nil?: false
     attribute :citizen_id, :uuid, allow_nil?: false
     timestamps()
+  end
+
+  relationships do
+    belongs_to :collection, BrusselsWtf.Follow.Collection do
+      source_attribute :collection_id
+      destination_attribute :id
+      define_attribute? false
+      allow_nil? false
+    end
   end
 
   identities do
