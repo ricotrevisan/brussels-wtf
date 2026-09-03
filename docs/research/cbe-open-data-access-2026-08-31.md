@@ -1,6 +1,6 @@
 # CBE Open Data access and reuse validation
 
-_Status: decision spike for [Validate CBE Open Data access and reuse for the identity spine](https://github.com/RicoTrevisan/brussels-wtf/issues/41), not an ingestion decision. Checked 2026-08-31. Production access is **blocked** pending operator registration and licence acceptance._
+_Status: decision spike for [Validate CBE Open Data access and reuse for the identity spine](https://github.com/RicoTrevisan/brussels-wtf/issues/41), not an ingestion decision. Checked 2026-08-31; resolved 2026-09-02. Production access is no longer blocked: the operator registered and accepted the licence on 2026-09-02 via the portal order flow, and the authenticated download check passed on 2026-09-02 (Full `0470` and Update `0470`; SHA-256 hashes in the private compliance record `/home/rico/private/cbe-data/LICENCE-ACCEPTANCE.md`, outside the repository). Tracker evidence: the [issue #41 completion comment](https://github.com/RicoTrevisan/brussels-wtf/issues/41#issuecomment-5517419341)._
 
 ## Result
 
