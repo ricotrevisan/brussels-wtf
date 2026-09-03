@@ -70,6 +70,7 @@ Remuneration — exact or banded, public or private — is **excluded** unless a
 ## Fail-closed rules
 
 * **Blank template pages are not claims:** the first pages are the blank Annexe 2 model; only a filled declaration with a name and section content can carry a claim.[^retrieval]
+* **Unsigned drafts:** reject a declaration that is filled but unsigned; the Annexe 2 form ends with a signature and a dated attestation, so an unsigned copy is a draft, not an accepted declaration.[^annexe2][^retrieval]
 * **Press summaries and secondary write-ups are never the source:** only the official PDF under the authoritative domain counts.
 * **Missing headers:** reject when the `MANDATS` / `FONCTIONS` / `FONCTIONS DÉRIVÉES` section headers, a person name, or the reporting year cannot be tied to the row.
 * **OCR ambiguity:** the source is OCR-only and partly handwritten; any uncertain row creates a review case and publishes nothing.[^retrieval]
