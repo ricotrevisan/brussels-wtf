@@ -8,8 +8,9 @@ numbers, addresses, signatures, or remuneration amounts). All PDF bytes stay in
 memory and are discarded when the process exits. Standard library only.
 
 Usage:
-  python3 scripts/check_ixelles_mandate_access.py            # live check
-  python3 scripts/check_ixelles_mandate_access.py --self-test # offline helper tests
+  python3 scripts/check_ixelles_mandate_access.py              # index + HEAD version signals
+  python3 scripts/check_ixelles_mandate_access.py --fetch-document  # add gated in-memory body parse
+  python3 scripts/check_ixelles_mandate_access.py --self-test  # offline helper tests
 """
 from __future__ import annotations
 
@@ -252,7 +253,7 @@ def fetch(url: str, timeout: int = 60, method: str = "GET", headers=None):
     return urlopen(request, timeout=timeout)
 
 
-def live_check() -> int:
+def live_check(fetch_document: bool) -> int:
     failed = False
 
     def report(ok: bool, message: str) -> bool:
@@ -302,6 +303,14 @@ def live_check() -> int:
     report(bool(last_modified), f"Last-Modified present ({last_modified})")
     report(final_url.rstrip("/") == doc_url.rstrip("/"),
            f"document locator stable (final URL {final_url})")
+
+    if not fetch_document:
+        print("SKIP document body: the download path is robots-disallowed, so the default")
+        print("      check stops at the HEAD version signals above and does not fetch bytes.")
+        print("      Pass --fetch-document to fetch the body into memory (and discard it).")
+        print("BLOCKED: document confirmed and linkable, but no open-data licence or crawl permission was found;")
+        print("         automated retrieval/republication stays blocked pending written terms from the municipality.")
+        return 1 if failed else 0
 
     # 4. Full bytes in memory for the version hash and the parseable row.
     try:
@@ -394,8 +403,13 @@ def self_test() -> int:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--self-test", action="store_true", help="offline helper tests")
+    parser.add_argument(
+        "--fetch-document",
+        action="store_true",
+        help="fetch the PDF body into memory (discarded) for the digest and role-row parse",
+    )
     args = parser.parse_args()
-    return self_test() if args.self_test else live_check()
+    return self_test() if args.self_test else live_check(args.fetch_document)
 
 
 if __name__ == "__main__":
