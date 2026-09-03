@@ -114,14 +114,8 @@ def search(query, fields, limit=1, only_latest=True):
         return json.loads(response.read().decode("utf-8"))
 
 
-def head(url):
-    request = urllib.request.Request(url, method="HEAD", headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
-        return response.status, dict(response.headers), response.geturl()
-
-
 def signed_pdf_check(url):
-    """HEAD the signed PDF and, with a bounded read, confirm a signature dict."""
+    """Fetch the signed PDF with a bounded GET and confirm a signature dict."""
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
         status = response.status
