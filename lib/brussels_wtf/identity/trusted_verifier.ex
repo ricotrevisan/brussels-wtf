@@ -45,7 +45,10 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
     ]
   }
 
-  @declaration_config_hash "sha256:" <> BrusselsWtf.Digest.sha256(:erlang.term_to_binary(@declaration_config_inputs, [:deterministic]))
+  @declaration_config_hash "sha256:" <>
+                             BrusselsWtf.Digest.sha256(
+                               :erlang.term_to_binary(@declaration_config_inputs, [:deterministic])
+                             )
 
   @ixelles_declaration %{
     id: :ixelles_mandate_declaration_v1,
@@ -59,6 +62,7 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
     kind: :public_mandate,
     source: %{
       label: "mandate declaration",
+      evidence_location_regex: ~r/\Adeclaration [0-9]{4}\z/,
       record_role: :mandate_declaration,
       locator_role: :mandate_declaration,
       parent_index_url: @declaration_parent_index_url,
@@ -71,6 +75,7 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
 
   @ixelles_minutes_source %{
     label: "minutes",
+    evidence_location_regex: ~r/\Adecision [0-9]+(?:[.-][0-9A-Za-z]+)*\z/,
     record_role: :minutes,
     locator_role: :minutes,
     parent_index_url: nil,
@@ -136,6 +141,16 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
     semantic_payload(fact, person, commune, version, @ixelles_mandate)
   end
 
+  @doc false
+  def declaration_semantic_payload(fact, person, commune, version) do
+    semantic_payload(fact, person, commune, version, @ixelles_declaration)
+  end
+
+  @doc false
+  def declaration_name_match?(row, legal_name) do
+    contains_name?(row, legal_name)
+  end
+
   def verify!(fact_id, verifier_id, processing_run_id) do
     verifier = fetch!(verifier_id)
 
@@ -177,11 +192,12 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
 
     policy = Map.fetch!(verifier, :source)
 
-    validate_candidate!(fact, person, commune)
+    validate_candidate!(fact, person, commune, policy)
     validate_official_source!(fact, version, record, commune, policy)
     locator = validate_retrieval!(version, record, commune, policy)
     {text_run, text_artifact} = trusted_text_input!(run.inputs, version, policy)
     validate_processing!(run, artifact, text_run, text_artifact, version, verifier)
+
     validate_archives!(
       version,
       artifact,
@@ -195,8 +211,8 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
       policy
     )
 
-    lock_semantic_key!(fact)
-    current = lock_current_fact(fact)
+    lock_semantic_key!(fact, verifier)
+    current = lock_current_fact(fact, verifier)
     validate_supersession!(fact, current)
     set_transition_context!(run, artifact, verifier)
 
@@ -247,7 +263,7 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
     end
   end
 
-  defp validate_candidate!(fact, person, commune) do
+  defp validate_candidate!(fact, person, commune, policy) do
     unless fact.verification_status == :unreviewed do
       raise ArgumentError, "only an unreviewed sourced fact can be verified"
     end
@@ -263,7 +279,8 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
     unless fact.object_type == :commune and fact.object_id == commune.id and
              fact.kind == :public_mandate and fact.source_authority == :municipal_decision and
              fact.evidence_kind == :official_decision and
-             public_evidence_location?(fact.evidence_location) and
+             is_binary(fact.evidence_location) and
+             Regex.match?(policy.evidence_location_regex, fact.evidence_location) and
              match?(%Date{}, fact.effective_from) do
       raise ArgumentError, "unsupported Ixelles public-mandate semantics"
     end
@@ -283,13 +300,13 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
              record.role == policy.record_role and fact.source_version_id == version.id and
              fact.authoritative_url == record.origin_url and valid_path? do
       raise ArgumentError,
-              "verification requires an official discovered Ixelles #{policy.label} source"
+            "verification requires an official discovered Ixelles #{policy.label} source"
     end
 
     validate_public_url!(record.origin_url)
   end
 
-    defp validate_retrieval!(version, record, commune, policy) do
+  defp validate_retrieval!(version, record, commune, policy) do
     configured = BrusselsWtf.Communes.configuration!("ixelles")
 
     parent_index_url =
@@ -334,7 +351,7 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
     end
   end
 
-defp trusted_text_input!(inputs, version, policy) do
+  defp trusted_text_input!(inputs, version, policy) do
     with {:ok, run_id} <- Ecto.UUID.cast(inputs["extraction_run_id"]),
          {:ok, artifact_id} <- Ecto.UUID.cast(inputs["text_artifact_id"]) do
       run = Ingestion.get_processing_run!(run_id)
@@ -508,7 +525,7 @@ defp trusted_text_input!(inputs, version, policy) do
     end
   end
 
-    defp direct_evidence?(:minutes_decision, text, fact, person, commune, locator) do
+  defp direct_evidence?(:minutes_decision, text, fact, person, commune, locator) do
     direct_mandate_evidence?(text, fact, person, commune, locator)
   end
 
@@ -533,7 +550,8 @@ defp trusted_text_input!(inputs, version, policy) do
   end
 
   defp declaration_row_location?(fact) do
-    with [_, location_year] <- Regex.run(~r/\Adeclaration ([0-9]{4})\z/, fact.evidence_location || ""),
+    with [_, location_year] <-
+           Regex.run(~r/\Adeclaration ([0-9]{4})\z/, fact.evidence_location || ""),
          %URI{path: path} <- URI.parse(fact.authoritative_url),
          [_, url_year] <- Regex.run(~r/mandats-([0-9]{4})\.pdf/, path || "") do
       url_year == location_year
@@ -545,8 +563,7 @@ defp trusted_text_input!(inputs, version, policy) do
   defp contains_name?(excerpt, legal_name) do
     wanted = strip_non_letters(legal_name)
 
-    wanted != "" and
-      Regex.match?(Regex.compile!("(?i)(?<![a-z])" <> Regex.escape(wanted) <> "(?![a-z])"), strip_non_letters(excerpt))
+    wanted != "" and String.contains?(strip_non_letters(excerpt), wanted)
   end
 
   defp strip_non_letters(value) when is_binary(value) do
@@ -556,7 +573,14 @@ defp trusted_text_input!(inputs, version, policy) do
     |> String.replace(~r/[^a-z]/, "")
   end
 
-  @declaration_forbidden_markers ["num\u{e9}ro national", "numero national", "adresse", "signature", "281.10", "tranche"]
+  @declaration_forbidden_markers [
+    "num\u{e9}ro national",
+    "numero national",
+    "adresse",
+    "signature",
+    "281.10",
+    "tranche"
+  ]
 
   defp forbidden_declaration_content?(excerpt) do
     lowered = String.downcase(excerpt)
@@ -693,17 +717,27 @@ defp trusted_text_input!(inputs, version, policy) do
     end
   end
 
-  defp lock_semantic_key!(fact) do
+  # Each verifier lane owns one current fact per (subject, object, kind):
+  # the minutes lane and the declaration lane are complementary sourced
+  # roles, so a declaration fact never supersedes the council mandate.
+  defp lock_semantic_key!(fact, verifier) do
     key =
       Enum.join(
-        [fact.subject_type, fact.subject_id, fact.object_type, fact.object_id, fact.kind],
+        [
+          fact.subject_type,
+          fact.subject_id,
+          fact.object_type,
+          fact.object_id,
+          fact.kind,
+          verifier.verifier_id
+        ],
         ":"
       )
 
     Repo.query!("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [key])
   end
 
-  defp lock_current_fact(fact) do
+  defp lock_current_fact(fact, verifier) do
     result =
       Repo.query!(
         """
@@ -715,6 +749,7 @@ defp trusted_text_input!(inputs, version, policy) do
            AND object_type = $3
            AND object_id = $4::text::uuid
            AND kind = $5
+           AND verified_by = $6
            AND verification_status = 'verified'
          FOR UPDATE
         """,
@@ -723,7 +758,8 @@ defp trusted_text_input!(inputs, version, policy) do
           fact.subject_id,
           Atom.to_string(fact.object_type),
           fact.object_id,
-          Atom.to_string(fact.kind)
+          Atom.to_string(fact.kind),
+          verifier.verifier_id
         ]
       )
 
@@ -790,12 +826,6 @@ defp trusted_text_input!(inputs, version, policy) do
       Repo.query!("SELECT set_config($1, $2, true)", [key, value])
     end)
   end
-
-  defp public_evidence_location?(location) when is_binary(location) do
-    Regex.match?(~r/\Adecision [0-9]+(?:[.-][0-9A-Za-z]+)*\z/, location)
-  end
-
-  defp public_evidence_location?(_location), do: false
 
   defp date_string(nil), do: nil
   defp date_string(date), do: Date.to_iso8601(date)

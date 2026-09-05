@@ -214,6 +214,9 @@ defmodule BrusselsWtf.Identity do
     transaction!(fn ->
       {fact, notifications} = record_fact!(attrs, return_notifications?: true)
       BrusselsWtf.Identity.IxellesPublicMandateProcessor.enqueue_if_eligible!(fact)
+
+      BrusselsWtf.Identity.IxellesMandateDeclarationProcessor.enqueue_if_eligible!(fact)
+
       {fact, notifications}
     end)
   end

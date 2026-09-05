@@ -436,6 +436,10 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
           BrusselsWtf.Identity.IxellesPublicMandateProcessor.enqueue_waiting_for_source_version!(
             version.id
           )
+
+          BrusselsWtf.Identity.IxellesMandateDeclarationProcessor.enqueue_waiting_for_source_version!(
+            version.id
+          )
         end
 
         notifications =
@@ -481,6 +485,10 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
 
     if run.quality_measurements["accepted"] do
       BrusselsWtf.Identity.IxellesPublicMandateProcessor.enqueue_waiting_for_source_version!(
+        version.id
+      )
+
+      BrusselsWtf.Identity.IxellesMandateDeclarationProcessor.enqueue_waiting_for_source_version!(
         version.id
       )
 
@@ -723,6 +731,15 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
 
         artifact_notifications =
           persist_ocr_artifacts(completed, result, archived_pdf, archived_text)
+
+        :ok =
+          if result.quality_measurements["accepted"] do
+            BrusselsWtf.Identity.IxellesMandateDeclarationProcessor.enqueue_waiting_for_source_version!(
+              completed.source_version_id
+            )
+          else
+            :ok
+          end
 
         review_notifications =
           if review_case_id = completed.inputs["review_case_id"] do

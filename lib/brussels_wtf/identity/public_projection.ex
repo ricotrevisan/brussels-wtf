@@ -82,25 +82,47 @@ defmodule BrusselsWtf.Identity.PublicProjection do
   defp safe_verified_fact?(fact, record, commune) do
     configured = BrusselsWtf.Communes.configuration!("ixelles")
 
-    trusted_current_or_prior_fact?(fact) and fact.verified_by == @verifier and
-      fact.subject_type == :person and
+    trusted_current_or_prior_fact?(fact) and fact.subject_type == :person and
       fact.object_type == :commune and
       fact.object_id == commune.id and
       fact.kind == :public_mandate and
       fact.source_authority == :municipal_decision and
       fact.evidence_kind == :official_decision and
       is_binary(fact.evidence_location) and
-      Regex.match?(~r/\Adecision [0-9]+(?:[.-][0-9A-Za-z]+)*\z/, fact.evidence_location) and
+      safe_location?(fact) and
       match?(%Date{}, fact.effective_from) and
       match?(%DateTime{}, fact.verified_at) and
       not is_nil(fact.verification_processing_run_id) and
       not is_nil(fact.verification_artifact_id) and
-      record.role == :minutes and
       record.origin_url == fact.authoritative_url and
       commune.slug == "ixelles" and
       commune.name == configured.name and
-      commune.index_url == configured.index_url
+      commune.index_url == configured.index_url and
+      safe_source_record?(fact.verified_by, record)
   end
+
+  defp safe_location?(%{verified_by: @verifier} = fact) do
+    Regex.match?(~r/\Adecision [0-9]+(?:[.-][0-9A-Za-z]+)*\z/, fact.evidence_location)
+  end
+
+  defp safe_location?(%{verified_by: "ixelles_mandate_declaration_v1"} = fact) do
+    Regex.match?(~r/\Adeclaration [0-9]{4}\z/, fact.evidence_location)
+  end
+
+  defp safe_location?(_fact), do: false
+
+  defp safe_source_record?(@verifier, record), do: record.role == :minutes
+
+  defp safe_source_record?("ixelles_mandate_declaration_v1", record) do
+    record.role == :mandate_declaration and
+      record.origin_url != nil and
+      Regex.match?(
+        ~r<\Ahttps://www\.ixelles\.be/site/(?:fr|nl)/download/transparence/mandats-[0-9]{4}\.pdf\z>,
+        record.origin_url
+      )
+  end
+
+  defp safe_source_record?(_verifier, _record), do: false
 
   defp trusted_current_or_prior_fact?(%{verification_status: status} = fact)
        when status in [:verified, :superseded],
