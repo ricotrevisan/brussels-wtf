@@ -9,6 +9,8 @@ defmodule BrusselsWtfWeb.InactivityRetentionBrowserTest do
   @email "retention-browser@example.test"
 
   test "managed Chromium covers the localized inactivity lifecycle and exact retention boundary" do
+    previous_clock = BrusselsWtf.Clock.utc_now()
+    on_exit(fn -> BrusselsWtf.Clock.Controlled.set(previous_clock) end)
     baseline = ~U[2026-09-10 12:00:00.000000Z]
     BrusselsWtf.Clock.Controlled.set(baseline)
 

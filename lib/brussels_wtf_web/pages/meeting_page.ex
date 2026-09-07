@@ -162,15 +162,6 @@ defmodule BrusselsWtfWeb.MeetingPage do
           :back_to_results
         )}</a>
       </p>
-      <section
-        :if={not @withdrawn and @historical_items != []}
-        class="mt-6 border-l-4 border-warning pl-3"
-      >
-        <p>{text(@locale, :retired_item)}</p>
-        <p :for={item <- @historical_items} id={item.stable_anchor} class="scroll-mt-4" tabindex="-1">
-          {text(@locale, :item)} {item.published_item_number}: {text(@locale, :retired_item)}
-        </p>
-      </section>
       <details :if={not @withdrawn and @revision_history != []} class="mt-5 text-sm">
         <summary class="cursor-pointer underline">{text(@locale, :history)}</summary>
         <p class="mt-2">{text(@locale, :historical_warning)}</p>
@@ -187,6 +178,16 @@ defmodule BrusselsWtfWeb.MeetingPage do
       <div :if={not @withdrawn} class="mt-9 divide-y divide-base-300">
         <.coverage_item :for={item <- @items} item={item} page={@meeting_page} locale={@locale} />
       </div>
+
+      <section
+        :if={not @withdrawn and @historical_items != []}
+        class="mt-6 border-l-4 border-warning pl-3"
+      >
+        <p>{text(@locale, :retired_item)}</p>
+        <p :for={item <- @historical_items} id={item.stable_anchor} class="scroll-mt-4" tabindex="-1">
+          {text(@locale, :item)} {item.published_item_number}: {text(@locale, :retired_item)}
+        </p>
+      </section>
 
       <footer class="mt-12 border-t border-base-300 pt-5 text-sm text-base-content/70">
         {text(@locale, :byline)} Rico Trevisan
@@ -528,7 +529,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
       proposal_copy_unavailable: "Proposal copy is unavailable in English.",
       synthetic_reference: "Demonstration reference — not evidence of council activity",
       retired_item:
-        "This item was removed from the current selection after review. See the current items and dated history.",
+        "This earlier item reference was replaced or removed after source verification. Consult the current selection and dated history above.",
       history: "Dated publication history",
       historical_warning:
         "Earlier wording is retained for transparency and may contain errors corrected in the current version.",
@@ -573,7 +574,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
       synthetic_reference:
         "Référence de démonstration — ne constitue pas une preuve d’activité communale",
       retired_item:
-        "Ce point a été retiré de la sélection après vérification. Consultez les points actuels et l’historique daté.",
+        "Cette ancienne référence a été remplacée ou retirée après vérification des sources. Consultez la sélection actuelle et l’historique daté ci-dessus.",
       history: "Historique daté des publications",
       historical_warning:
         "Les anciens textes sont conservés par transparence et peuvent contenir des erreurs corrigées dans la version actuelle.",
@@ -618,7 +619,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
       proposal_copy_unavailable: "De voorsteltekst is niet beschikbaar in het Nederlands.",
       synthetic_reference: "Demonstratiereferentie — geen bewijs van gemeentelijke activiteit",
       retired_item:
-        "Dit punt is na controle uit de selectie verwijderd. Bekijk de huidige punten en de gedateerde geschiedenis.",
+        "Deze eerdere verwijzing is na broncontrole vervangen of verwijderd. Bekijk de huidige selectie en de gedateerde geschiedenis hierboven.",
       history: "Gedateerde publicatiegeschiedenis",
       historical_warning:
         "Eerdere teksten worden voor transparantie bewaard en kunnen fouten bevatten die in de huidige versie zijn gecorrigeerd.",

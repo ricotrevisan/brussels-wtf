@@ -196,6 +196,42 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
                })
     end
 
+    # Production already has failed and superseded generation attempts. They remain
+    # auditable, but cannot count as runs supporting the current eight revisions.
+    page_id =
+      hd(prepared.meeting_ids)
+      |> Council.get_meeting!()
+      |> Ash.load!(:meeting_page)
+      |> Map.fetch!(:meeting_page)
+      |> Map.fetch!(:id)
+
+    historical = Council.list_coverage_runs!(page_id) |> hd()
+
+    attrs =
+      Map.take(historical, [
+        :meeting_page_id,
+        :operation,
+        :locale,
+        :input_hash,
+        :output_hash,
+        :processor_name,
+        :processor_version,
+        :config_hash,
+        :provider_category,
+        :model,
+        :method,
+        :input,
+        :output
+      ])
+
+    old_failure =
+      Council.record_coverage_run!(
+        Map.merge(attrs, %{
+          status: :failed,
+          failure_details: %{"classification" => "previous_attempt"}
+        })
+      )
+
     completed = Import.refresh!(batch.id, actor)
     assert completed.status == :completed
     assert completed.metrics["pages_published"] == 8
@@ -204,6 +240,9 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
     assert completed.metrics["generation_usage"]["cost_cents"] == 0
     assert length(completed.meeting_page_ids) == 8
     assert length(completed.coverage_run_ids) == 24
+    refute old_failure.id in completed.coverage_run_ids
+    assert completed.metrics["generation_runs_all_revisions"] == 25
+    assert Ash.get!(BrusselsWtf.Council.CoverageRun, old_failure.id).status == :failed
     assert completed.review_case_ids == []
 
     pages =
@@ -342,6 +381,37 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
     assert_raise Ash.Error.Invalid, ~r/completed real-corpus batches are closed/, fn ->
       Ash.update!(completed, %{failure: "late_failure"}, action: :block, domain: Council)
     end
+
+    changed_en =
+      put_in(
+        bundles["en"],
+        ["page", "summary"],
+        "An earlier editorial summary requiring replacement."
+      )
+
+    Council.PublicationLifecycle.typography_correction!(ixelles_page.id, "en", changed_en, actor)
+
+    replay = Import.request!(keys, actor)
+
+    for meeting <- contract["meetings"], source <- meeting["sources"] do
+      assert :ok = Import.import_source(replay.id, meeting["key"], source["name"])
+    end
+
+    assert Import.refresh!(replay.id, actor).status == :ready_for_coverage
+    replay_prepared = Import.prepare_coverage!(replay.id, actor)
+    assert replay_prepared.coverage_batch_id
+    assert Import.refresh!(replay.id, actor).status == :ready_for_coverage
+
+    for meeting_id <- replay_prepared.meeting_ids do
+      assert :ok =
+               perform_job(BrusselsWtf.Workers.PublishMeeting, %{
+                 meeting_id: meeting_id,
+                 generation_kind: "backfill",
+                 coverage_batch_id: replay_prepared.coverage_batch_id
+               })
+    end
+
+    assert Import.refresh!(replay.id, actor).status == :completed
   end
 
   defp bundle_from_content(content, locale) do

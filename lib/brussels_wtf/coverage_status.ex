@@ -26,7 +26,7 @@ defmodule BrusselsWtf.CoverageStatus do
         """
         SELECT c.slug, l.meeting_identifier, l.scheduled_on,
           bool_or(l.role IN ('minutes','register')) AS final_source_seen,
-          bool_or(mp.publication_status='published') AS published,
+          COALESCE(bool_or(mp.publication_status='published'),false) AS published,
           max(mp.revision_published_at) AS published_at,
           max((SELECT count(*) FROM agenda_items i WHERE i.council_meeting_id=m.id AND i."published?" AND mp.publication_status='published')) AS selected_items,
           max((SELECT count(*) FROM agenda_items i WHERE i.council_meeting_id=m.id AND i.current_source_version_id IS NOT NULL AND NOT i."published?")) AS omitted_normalized_items,
