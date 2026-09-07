@@ -5,6 +5,16 @@ defmodule BrusselsWtfWeb.PrivateCollectionSharingBrowserTest do
   @port 4104
 
   test "sharing, transfer choices, and self-service account deletion are browser-complete" do
+    # Collection targets must pass the same configured public-commune gate as
+    # production. A fresh CI database has no seeded communes.
+    configured = BrusselsWtf.Communes.configuration!("ixelles")
+
+    BrusselsWtf.Ingestion.create_commune!(%{
+      slug: "ixelles",
+      name: configured.name,
+      index_url: configured.index_url
+    })
+
     Process.register(self(), BrusselsWtf.Accounts.Mailbox)
 
     on_exit(fn ->
