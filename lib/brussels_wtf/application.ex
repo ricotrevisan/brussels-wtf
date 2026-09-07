@@ -16,6 +16,7 @@ defmodule BrusselsWtf.Application do
       [
         BrusselsWtfWeb.Telemetry,
         BrusselsWtf.Repo,
+        {AshAuthentication.Supervisor, otp_app: :brussels_wtf},
         {DNSCluster, query: Application.get_env(:brussels_wtf, :dns_cluster_query) || :ignore},
         {Phoenix.PubSub, name: BrusselsWtf.PubSub}
       ] ++

@@ -28,7 +28,7 @@ defmodule BrusselsWtf.MixProject do
 
   def cli do
     [
-      preferred_envs: [precommit: :test]
+      preferred_envs: [precommit: :test, "test.browser": :test]
     ]
   end
 
@@ -43,6 +43,7 @@ defmodule BrusselsWtf.MixProject do
     [
       {:ash, "~> 3.0"},
       {:ash_phoenix, "~> 2.0"},
+      {:ash_authentication, "~> 4.0"},
       {:ash_postgres, "~> 2.0"},
       {:simple_sat, "~> 0.1.4"},
       {:oban, "~> 2.23"},
@@ -99,6 +100,11 @@ defmodule BrusselsWtf.MixProject do
       "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       test: ["ash.setup --quiet", "test"],
+      "test.browser": [
+        "assets.setup",
+        "assets.build",
+        "test --include browser test/brussels_wtf_web/personal_feed_browser_test.exs test/brussels_wtf_web/citizen_auth_browser_test.exs test/brussels_wtf_web/registered_feed_browser_test.exs test/brussels_wtf_web/inactivity_retention_browser_test.exs test/brussels_wtf_web/private_collection_sharing_browser_test.exs"
+      ],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
       "assets.build": ["compile", "tailwind brussels_wtf", "esbuild brussels_wtf"],
       "assets.deploy": [

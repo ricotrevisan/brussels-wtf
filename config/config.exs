@@ -60,7 +60,9 @@ config :brussels_wtf,
     BrusselsWtf.Ingestion,
     BrusselsWtf.Council,
     BrusselsWtf.Review,
-    BrusselsWtf.Identity
+    BrusselsWtf.Identity,
+    BrusselsWtf.Follow,
+    BrusselsWtf.Accounts
   ],
   clock: BrusselsWtf.Clock.System,
   http: BrusselsWtf.HTTP.Req,
@@ -97,6 +99,9 @@ config :brussels_wtf,
   },
   allow_synthetic_seeds: false,
   automatic_transcription: false,
+  citizen_mailer: BrusselsWtf.Accounts.Mail.Memory,
+  citizen_token_signing_secret: String.duplicate("dev-only-citizen-token-secret-", 3),
+  citizen_session: [idle_days: 30, absolute_days: 90],
   session_cookie_secure: false,
   review_auth: [
     actor_id: "rico",
@@ -129,6 +134,7 @@ config :brussels_wtf, Oban,
   plugins: [
     {Oban.Plugins.Cron,
      crontab: [
+       {"*/5 * * * *", BrusselsWtf.Workers.SynchronizeRegisteredFeeds, args: %{}},
        {"0 */6 * * *", BrusselsWtf.Workers.PollCommune,
         args: %{commune_slug: "ixelles", kind: "scheduled"}},
        {"15 */6 * * *", BrusselsWtf.Workers.PollCommune,
@@ -149,7 +155,10 @@ config :brussels_wtf, Oban,
           kind: "scheduled",
           scope: "previous-year"
         }},
-       {"30 2 * * *", BrusselsWtf.Workers.PurgeSuggestions, args: %{}}
+       {"30 2 * * *", BrusselsWtf.Workers.PurgeSuggestions, args: %{}},
+       {"*/15 * * * *", BrusselsWtf.Workers.PurgeExpiredMagicLinks, args: %{}},
+       {"10 3 * * *", BrusselsWtf.Workers.ProcessCitizenInactivity, args: %{}},
+       {"30 3 * * *", BrusselsWtf.Workers.PurgeCitizenFeedUpdates, args: %{}}
      ]}
   ],
   queues: [
@@ -185,7 +194,7 @@ config :esbuild,
   version: "0.25.4",
   brussels_wtf: [
     args:
-      ~w(js/app.js --bundle --target=es2022 --outdir=../priv/static/assets/js --external:/fonts/* --external:/images/* --alias:@=.),
+      ~w(js/app.js js/personal_feed_entry.js --bundle --target=es2022 --outdir=../priv/static/assets/js --external:/fonts/* --external:/images/* --alias:@=.),
     cd: Path.expand("../assets", __DIR__),
     env: %{"NODE_PATH" => [Path.expand("../deps", __DIR__), Mix.Project.build_path()]}
   ]
@@ -224,7 +233,10 @@ config :logger, :default_formatter,
 
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
+config :phoenix, :filter_parameters, ["email", "token", "management_secret", "citizen_session"]
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"
+
+config :ash_authentication, return_error_on_invalid_magic_link_token?: true

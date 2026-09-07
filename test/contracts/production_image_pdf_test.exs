@@ -51,7 +51,8 @@ defmodule BrusselsWtf.Contracts.ProductionImagePdfTest do
              "normalize" => 1,
              "enrich" => 1,
              "publish" => 1,
-             "corpus" => 1
+             "corpus" => 1,
+             "maintenance" => 1
            }
 
     assert ixelles["oban_plugins_enabled"]
@@ -127,11 +128,16 @@ defmodule BrusselsWtf.Contracts.ProductionImagePdfTest do
              "classification" => ["oversized_pdf", "page_limit"]
            }
 
-    assert contract("scanned-bilingual.pdf",
-             mode: "ocr",
-             pages: "1",
-             env: %{"PDF_OCR_CPU_SECONDS" => "1"}
-           ) == %{"status" => "error", "classification" => ["ocr_limit", "cpu_memory_or_kill"]}
+    # RLIMIT_CPU can kill OCRmyPDF itself or one of its children. Both must
+    # fail closed, but the OS signal/child wrapper determines the safe subtype.
+    assert %{"status" => "error", "classification" => ["ocr_limit", cpu_classification]} =
+             contract("scanned-bilingual.pdf",
+               mode: "ocr",
+               pages: "1",
+               env: %{"PDF_OCR_CPU_SECONDS" => "1"}
+             )
+
+    assert cpu_classification in ["cpu", "memory_or_kill", "cpu_memory_or_kill"]
 
     assert contract("scanned-bilingual.pdf",
              mode: "ocr",

@@ -214,6 +214,9 @@ defmodule BrusselsWtf.Identity do
     transaction!(fn ->
       {fact, notifications} = record_fact!(attrs, return_notifications?: true)
       BrusselsWtf.Identity.IxellesPublicMandateProcessor.enqueue_if_eligible!(fact)
+
+      BrusselsWtf.Identity.IxellesMandateDeclarationProcessor.enqueue_if_eligible!(fact)
+
       {fact, notifications}
     end)
   end
@@ -321,7 +324,10 @@ defmodule BrusselsWtf.Identity do
     subject = list_public_relationships!(%{subject_type: type, subject_id: id})
     object = list_public_relationships!(%{object_type: type, object_id: id})
 
-    (subject ++ object)
+    history =
+      BrusselsWtf.Identity.PublicProjection.history!(%{subject_type: type, subject_id: id})
+
+    (subject ++ object ++ history)
     |> Enum.uniq_by(& &1.fact_id)
     |> Enum.sort_by(&{&1.effective_from || ~D[0001-01-01], &1.fact_id}, :desc)
   end

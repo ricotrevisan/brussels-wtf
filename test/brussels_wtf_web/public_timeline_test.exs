@@ -517,4 +517,20 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
     |> Enum.map(&(&1 |> String.trim() |> String.downcase()))
     |> MapSet.new()
   end
+
+  test "commune follow controls use stable identifiers and complete locale copy", %{conn: conn} do
+    for {locale, label} <- [{"fr", "Suivre"}, {"nl", "Volgen"}, {"en", "Follow"}] do
+      html = conn |> recycle() |> get("/?lang=#{locale}") |> html_response(200)
+      document = LazyHTML.from_document(html)
+
+      assert Enum.count(document[~s(button[data-follow-control])]) == 4
+      assert Enum.count(document[~s(form[action="/citizen/feed/follows"])]) == 4
+      assert html =~ label
+
+      for slug <- ["ixelles", "uccle", "forest", "city-of-brussels"] do
+        assert html =~ ~s(id="follow-commune-#{slug}")
+        assert html =~ ~s(value="#{slug}")
+      end
+    end
+  end
 end

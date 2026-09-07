@@ -87,6 +87,16 @@ defmodule BrusselsWtfWeb.TimelinePage do
         <aside class="md:sticky md:top-4 md:self-start">
           <h1 class="text-xl font-semibold tracking-tight">{text(@locale, :title)}</h1>
           <p class="mt-2 text-sm text-base-content/70">{text(@locale, :intro)}</p>
+          <form
+            :for={{slug, _name} <- @communes}
+            id={"follow-commune-#{slug}"}
+            method="post"
+            action="/citizen/feed/follows"
+          >
+            <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+            <input type="hidden" name="target_type" value="commune" />
+            <input type="hidden" name="target_identifier" value={slug} />
+          </form>
           <form method="get" action="/" data-reader-communes class="mt-5 space-y-4">
             <input type="hidden" name="lang" value={@locale} />
             <input type="hidden" name="communes_submitted" value="1" />
@@ -119,16 +129,24 @@ defmodule BrusselsWtfWeb.TimelinePage do
             </fieldset>
             <fieldset class="space-y-2 text-sm">
               <legend class="font-medium">{text(@locale, :communes)}</legend>
-              <label :for={{slug, name} <- @communes} class="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  name="commune[]"
-                  value={slug}
-                  checked={slug in @selected_communes}
-                  class="checkbox checkbox-sm"
-                />
-                <span>{name}</span>
-              </label>
+              <div :for={{slug, name} <- @communes} class="flex items-center justify-between gap-2">
+                <label class="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    name="commune[]"
+                    value={slug}
+                    checked={slug in @selected_communes}
+                    class="checkbox checkbox-sm"
+                  />
+                  <span>{name}</span>
+                </label>
+                <button
+                  type="submit"
+                  form={"follow-commune-#{slug}"}
+                  class="btn btn-ghost btn-xs"
+                  data-follow-control
+                >{text(@locale, :follow)}</button>
+              </div>
             </fieldset>
             <button type="submit" class="btn btn-sm w-full">{text(@locale, :apply)}</button>
           </form>
@@ -328,6 +346,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       intro:
         "Upcoming proposals, unresolved outcomes, and documented decisions from four Brussels communes.",
       communes: "Communes",
+      follow: "Follow",
       apply: "Apply selection",
       search: "Search",
       sections: "Sections",
@@ -362,6 +381,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       intro:
         "Propositions à venir, résultats non documentés et décisions officielles de quatre communes bruxelloises.",
       communes: "Communes",
+      follow: "Suivre",
       apply: "Appliquer la sélection",
       search: "Rechercher",
       sections: "Sections",
@@ -395,6 +415,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       intro:
         "Komende voorstellen, niet-gedocumenteerde resultaten en officiële besluiten uit vier Brusselse gemeenten.",
       communes: "Gemeenten",
+      follow: "Volgen",
       apply: "Selectie toepassen",
       search: "Zoeken",
       sections: "Onderdelen",

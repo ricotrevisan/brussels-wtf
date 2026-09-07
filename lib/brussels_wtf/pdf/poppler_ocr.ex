@@ -52,7 +52,7 @@ defmodule BrusselsWtf.PDF.PopplerOcr do
     started = System.monotonic_time()
 
     with :ok <- validate_input(meta, bytes),
-         {:ok, result} <- workspace(fn dir -> ocr_in(dir, bytes, pages) end) do
+         {:ok, result} <- workspace(fn dir -> ocr_in(dir, bytes, pages, meta) end) do
       quality = Quality.assess(result.page_texts)
 
       {:ok,
@@ -130,16 +130,23 @@ defmodule BrusselsWtf.PDF.PopplerOcr do
     end
   end
 
-  defp ocr_in(dir, bytes, pages) do
+  defp ocr_in(dir, bytes, pages, meta) do
     input = Path.join(dir, "input.pdf")
     output = Path.join(dir, "ocr.pdf")
     File.write!(input, bytes, [:binary])
 
     page_arg = pages |> Enum.sort() |> Enum.join(",")
 
+    flags =
+      if meta[:ocr_profile] == :scanned_declaration do
+        List.delete(@ocr_flags, "--redo-ocr") ++ ["--force-ocr", "--tesseract-pagesegmode", "6"]
+      else
+        @ocr_flags
+      end
+
     args =
       ["--pages", page_arg, "--language", limits().ocr_languages] ++
-        @ocr_flags ++ [input, output]
+        flags ++ [input, output]
 
     with {:ok, _safe_output} <- ocr_command(args),
          {:ok, info} <- command("pdfinfo", [output], native_wall_ms()),

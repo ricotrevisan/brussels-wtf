@@ -9,6 +9,7 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
   """
 
   alias BrusselsWtf.Identity
+  alias BrusselsWtf.Identity.MandateDeclaration
   alias BrusselsWtf.Ingestion
   alias BrusselsWtf.Repo
 
@@ -24,10 +25,85 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
     kind: :public_mandate
   }
 
-  @registry %{@ixelles_mandate.id => @ixelles_mandate}
+  # The mandate-declaration source policy. The declaration publication is a
+  # transparency document, not meeting minutes: it is a scanned bundle, so its
+  # trusted text input is the bounded OCR chain, and its locator hangs off the
+  # transparency index instead of the meeting index.
+  @declaration_parent_index_url "https://www.ixelles.be/site/773-Rapports-annuels-Remunerations-et-avantages?langue=fr"
+
+  @declaration_config_inputs %{
+    "ruleset" => "ixelles-mandate-declaration-v2",
+    "sections" => ["mandats"],
+    "signature_policy" => "inspected-immutable-version",
+    "identity_policy" => "complete-name-and-independent-minutes",
+    "origin_path" => "/site/fr/download/transparence/mandats-YYYY.pdf",
+    "parent_index_url" => @declaration_parent_index_url,
+    "forbidden_excerpt_markers" => [
+      "numero national",
+      "numero-national",
+      "adresse",
+      "signature",
+      "tranche",
+      "281.10"
+    ]
+  }
+
+  @declaration_config_hash "sha256:" <>
+                             BrusselsWtf.Digest.sha256(
+                               :erlang.term_to_binary(@declaration_config_inputs, [:deterministic])
+                             )
+
+  @ixelles_declaration %{
+    id: :ixelles_mandate_declaration_v2,
+    verifier_id: "ixelles_mandate_declaration_v2",
+    commune_slug: "ixelles",
+    processor_name: "ixelles-mandate-declarations",
+    processor_version: "1.0.0",
+    config_hash: @declaration_config_hash,
+    ruleset_version: "ixelles-mandate-declaration-v2",
+    artifact_kind: "relationship-claim-json",
+    kind: :public_mandate,
+    source: %{
+      label: "mandate declaration",
+      source_authority: :municipal_declaration,
+      evidence_kind: :official_declaration,
+      evidence_location_regex: ~r/\Adeclaration [0-9]{4} page [1-9][0-9]*\z/,
+      record_role: :mandate_declaration,
+      locator_role: :mandate_declaration,
+      parent_index_url: @declaration_parent_index_url,
+      parent_index_source: :literal,
+      origin_path_regex: ~r|\A/site/fr/download/transparence/mandats-[0-9]{4}\.pdf\z|,
+      text_input: :ocr,
+      evidence: :declaration_row
+    }
+  }
+
+  @ixelles_minutes_source %{
+    label: "minutes",
+    source_authority: :municipal_decision,
+    evidence_kind: :official_decision,
+    evidence_location_regex: ~r/\Adecision [0-9]+(?:[.-][0-9A-Za-z]+)*\z/,
+    record_role: :minutes,
+    locator_role: :minutes,
+    parent_index_url: nil,
+    parent_index_source: :commune_index,
+    origin_path_regex: ~r|\A/uploads/conseil/pv/[0-9]+\.pdf\z|,
+    text_input: :native,
+    evidence: :minutes_decision
+  }
+
+  @ixelles_mandate Map.put(@ixelles_mandate, :source, @ixelles_minutes_source)
+
+  @registry %{
+    @ixelles_mandate.id => @ixelles_mandate,
+    @ixelles_declaration.id => @ixelles_declaration
+  }
 
   @doc false
   def ixelles_contract, do: @ixelles_mandate
+
+  @doc false
+  def declaration_contract, do: @ixelles_declaration
 
   def available?, do: map_size(@registry) > 0
 
@@ -46,7 +122,7 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
           JOIN sourced_fact_verification_events AS events
             ON events.fact_id = sourced_facts.id
            AND events.to_status = 'verified'
-           AND events.verifier_id = 'ixelles_municipal_minutes_public_mandate_v1'
+           AND events.verifier_id = sourced_facts.verified_by
            AND events.processing_run_id = sourced_facts.verification_processing_run_id
            AND events.artifact_id = sourced_facts.verification_artifact_id
            AND events.processor_version = sourced_facts.verification_processor_version
@@ -70,6 +146,11 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
   @doc false
   def ixelles_semantic_payload(fact, person, commune, version) do
     semantic_payload(fact, person, commune, version, @ixelles_mandate)
+  end
+
+  @doc false
+  def declaration_semantic_payload(fact, person, commune, version) do
+    semantic_payload(fact, person, commune, version, @ixelles_declaration)
   end
 
   def verify!(fact_id, verifier_id, processing_run_id) do
@@ -111,15 +192,29 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
     record = version.source_record
     commune = record.commune
 
-    validate_candidate!(fact, person, commune)
-    validate_official_source!(fact, version, record, commune)
-    locator = validate_retrieval!(version, record, commune)
-    {text_run, text_artifact} = trusted_text_input!(run.inputs, version)
-    validate_processing!(run, artifact, text_run, text_artifact, version, verifier)
-    validate_archives!(version, artifact, text_artifact, fact, person, commune, locator, verifier)
+    policy = Map.fetch!(verifier, :source)
 
-    lock_semantic_key!(fact)
-    current = lock_current_fact(fact)
+    validate_candidate!(fact, person, commune, policy)
+    validate_official_source!(fact, version, record, commune, policy)
+    locator = validate_retrieval!(version, record, commune, policy)
+    {text_run, text_artifact} = trusted_text_input!(run.inputs, version, policy)
+    validate_processing!(run, artifact, text_run, text_artifact, version, verifier)
+
+    validate_archives!(
+      version,
+      artifact,
+      text_run,
+      text_artifact,
+      fact,
+      person,
+      commune,
+      locator,
+      verifier,
+      policy
+    )
+
+    lock_semantic_key!(fact, verifier)
+    current = lock_current_fact(fact, verifier)
     validate_supersession!(fact, current)
     set_transition_context!(run, artifact, verifier)
 
@@ -170,7 +265,7 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
     end
   end
 
-  defp validate_candidate!(fact, person, commune) do
+  defp validate_candidate!(fact, person, commune, policy) do
     unless fact.verification_status == :unreviewed do
       raise ArgumentError, "only an unreviewed sourced fact can be verified"
     end
@@ -184,35 +279,43 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
     end
 
     unless fact.object_type == :commune and fact.object_id == commune.id and
-             fact.kind == :public_mandate and fact.source_authority == :municipal_decision and
-             fact.evidence_kind == :official_decision and
-             public_evidence_location?(fact.evidence_location) and
+             fact.kind == :public_mandate and fact.source_authority == policy.source_authority and
+             fact.evidence_kind == policy.evidence_kind and
+             is_binary(fact.evidence_location) and
+             Regex.match?(policy.evidence_location_regex, fact.evidence_location) and
              match?(%Date{}, fact.effective_from) do
       raise ArgumentError, "unsupported Ixelles public-mandate semantics"
     end
   end
 
-  defp validate_official_source!(fact, version, record, commune) do
+  defp validate_official_source!(fact, version, record, commune, policy) do
     configured = BrusselsWtf.Communes.configuration!("ixelles")
     uri = URI.parse(record.origin_url)
 
     valid_path? =
       uri.scheme == "https" and uri.port == 443 and uri.host == "www.ixelles.be" and
-        Regex.match?(~r{\A/uploads/conseil/pv/[0-9]+\.pdf\z}, uri.path || "") and
+        Regex.match?(policy.origin_path_regex, uri.path || "") and
         is_nil(uri.userinfo) and uri.query in [nil, ""] and uri.fragment in [nil, ""]
 
     unless commune.slug == "ixelles" and commune.name == configured.name and
              commune.index_url == configured.index_url and record.commune_id == commune.id and
-             record.role == :minutes and fact.source_version_id == version.id and
+             record.role == policy.record_role and fact.source_version_id == version.id and
              fact.authoritative_url == record.origin_url and valid_path? do
-      raise ArgumentError, "verification requires an official discovered Ixelles minutes source"
+      raise ArgumentError,
+            "verification requires an official discovered Ixelles #{policy.label} source"
     end
 
     validate_public_url!(record.origin_url)
   end
 
-  defp validate_retrieval!(version, record, commune) do
+  defp validate_retrieval!(version, record, commune, policy) do
     configured = BrusselsWtf.Communes.configuration!("ixelles")
+
+    parent_index_url =
+      case policy.parent_index_source do
+        :commune_index -> configured.index_url
+        :literal -> policy.parent_index_url
+      end
 
     result =
       Repo.query!(
@@ -224,14 +327,21 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
          WHERE locators.commune_id = $1::text::uuid
            AND locators.url = $2
            AND locators.parent_index_url = $3
-           AND locators.role = 'minutes'
-           AND observations.source_version_id = $4::text::uuid
+           AND locators.role = $4
+           AND observations.source_version_id = $5::text::uuid
            AND observations.status IN ('success', 'unchanged')
-           AND observations.sha256 = $5
+           AND observations.sha256 = $6
            AND observations.final_url = $2
          LIMIT 1
         """,
-        [commune.id, record.origin_url, configured.index_url, version.id, version.sha256]
+        [
+          commune.id,
+          record.origin_url,
+          parent_index_url,
+          Atom.to_string(policy.locator_role),
+          version.id,
+          version.sha256
+        ]
       )
 
     case result.rows do
@@ -243,20 +353,30 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
     end
   end
 
-  defp trusted_text_input!(inputs, version) do
+  defp trusted_text_input!(inputs, version, policy) do
     with {:ok, run_id} <- Ecto.UUID.cast(inputs["extraction_run_id"]),
          {:ok, artifact_id} <- Ecto.UUID.cast(inputs["text_artifact_id"]) do
       run = Ingestion.get_processing_run!(run_id)
       artifact = Ingestion.get_derived_artifact!(artifact_id)
 
-      metadata = BrusselsWtf.PDF.Processor.metadata()
+      metadata =
+        if policy.text_input == :ocr,
+          do: BrusselsWtf.PDF.Processor.metadata(%{ocr_profile: :scanned_declaration}),
+          else: BrusselsWtf.PDF.Processor.metadata()
+
+      if policy.text_input == :ocr and run.inputs["ocr_profile"] != "scanned_declaration",
+        do: raise(ArgumentError, "declaration requires the inspected OCR profile")
 
       {output_kind, link_role, expected_processor} =
-        case run.processor_role do
-          :native_extraction ->
+        case {policy.text_input, run.processor_role} do
+          {:native, :native_extraction} ->
             {"native-text", "native_output",
              {metadata.native_processor_name, metadata.native_processor_version,
               metadata.config_hash}}
+
+          {:ocr, :ocr} ->
+            {"ocr-text", "ocr_output",
+             {metadata.ocr_processor_name, metadata.ocr_processor_version, metadata.config_hash}}
 
           _ ->
             raise ArgumentError, "relationship verification requires an extraction text run"
@@ -313,6 +433,17 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
       "claim_sha256" => artifact.output_sha256
     }
 
+    {expected_inputs, expected_output} =
+      if verifier.id == :ixelles_mandate_declaration_v2 do
+        {:ok, document} = MandateDeclaration.contract(version.sha256)
+        declaration = MandateDeclaration.metadata(document)
+
+        {Map.put(expected_inputs, "mandate_declaration", declaration),
+         Map.put(expected_output, "mandate_declaration", declaration)}
+      else
+        {expected_inputs, expected_output}
+      end
+
     unless run.source_version_id == version.id and run.status == :succeeded and
              run.processor_role == :relationship_verification and
              run.processor_name == verifier.processor_name and
@@ -340,12 +471,14 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
   defp validate_archives!(
          version,
          artifact,
+         text_run,
          text_artifact,
          fact,
          person,
          commune,
          locator,
-         verifier
+         verifier,
+         policy
        ) do
     source_bytes = archive_bytes!(version.object_key, "archived source bytes")
 
@@ -355,12 +488,41 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
     end
 
     rerun =
-      case BrusselsWtf.PDF.Processor.native(
-             %{sha256: version.sha256, media_type: version.media_type},
-             source_bytes
-           ) do
-        {:ok, result} -> result
-        {:error, _reason} -> raise ArgumentError, "configured native extraction rerun failed"
+      case policy.text_input do
+        :native ->
+          case BrusselsWtf.PDF.Processor.native(
+                 %{sha256: version.sha256, media_type: version.media_type},
+                 source_bytes
+               ) do
+            {:ok, result} -> result
+            {:error, _reason} -> raise ArgumentError, "configured native extraction rerun failed"
+          end
+
+        :ocr ->
+          case BrusselsWtf.PDF.Processor.ocr(
+                 %{
+                   sha256: version.sha256,
+                   media_type: version.media_type,
+                   ocr_profile: :scanned_declaration
+                 },
+                 source_bytes,
+                 text_run.inputs["pages"]
+               ) do
+            {:ok, result} -> result
+            {:error, _reason} -> raise ArgumentError, "configured OCR rerun failed"
+          end
+      end
+
+    rerun =
+      if policy.evidence == :declaration_row do
+        rerun
+        |> Map.put(:text, MandateDeclaration.safe_text(version.sha256, rerun.text))
+        |> Map.update!(
+          :quality_measurements,
+          &MandateDeclaration.quality(version.sha256, &1, :ocr)
+        )
+      else
+        rerun
       end
 
     text_bytes = archive_bytes!(text_artifact.object_key, "archived extracted text")
@@ -370,12 +532,12 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
              BrusselsWtf.Digest.sha256(rerun.text) == text_artifact.output_sha256 and
              byte_size(rerun.text) == text_artifact.byte_size do
       raise ArgumentError,
-            "configured native extraction rerun does not match the archived artifact"
+            "configured extraction rerun does not match the archived artifact"
     end
 
-    unless direct_mandate_evidence?(text_bytes, fact, person, commune, locator) do
+    unless direct_evidence?(policy.evidence, text_bytes, fact, person, commune, locator) do
       raise ArgumentError,
-            "official text must directly and unambiguously bind identity, date, Ixelles mandate, and decision"
+            "official text must directly and unambiguously bind the verified public-mandate evidence"
     end
 
     artifact_bytes = archive_bytes!(artifact.object_key, "archived relationship artifact")
@@ -395,6 +557,28 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
 
     unless decoded == expected do
       raise ArgumentError, "semantic payload does not exactly match the sourced fact"
+    end
+  end
+
+  defp direct_evidence?(:minutes_decision, text, fact, person, commune, locator) do
+    direct_mandate_evidence?(text, fact, person, commune, locator)
+  end
+
+  defp direct_evidence?(:declaration_row, text, fact, person, _commune, _locator) do
+    direct_declaration_evidence?(text, fact, person)
+  end
+
+  @doc false
+  def direct_declaration_evidence?(text, fact, person) when is_binary(text) do
+    version = Ingestion.get_source_version!(fact.source_version_id)
+
+    with {:ok, document} <-
+           MandateDeclaration.parse(version.sha256, fact.authoritative_url, text),
+         true <- MandateDeclaration.matches?(fact, person, document),
+         true <- MandateDeclaration.unique_person?(person) do
+      true
+    else
+      _ -> false
     end
   end
 
@@ -472,7 +656,7 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
   end
 
   defp semantic_payload(fact, person, commune, version, verifier) do
-    %{
+    payload = %{
       "schema_version" => verifier.ruleset_version,
       "subject" => %{
         "type" => "person",
@@ -501,6 +685,10 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
         "location" => fact.evidence_location
       }
     }
+
+    if verifier.id == :ixelles_mandate_declaration_v2,
+      do: Map.put(payload, "mandate_declaration", fact.mandate_declaration),
+      else: payload
   end
 
   defp relationship_artifact!(run_id) do
@@ -525,17 +713,30 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
     end
   end
 
-  defp lock_semantic_key!(fact) do
+  # Each verifier lane owns one current fact per (subject, object, kind):
+  # the minutes lane and the declaration lane are complementary sourced
+  # roles, so a declaration fact never supersedes the council mandate.
+  defp lock_semantic_key!(fact, verifier) do
     key =
       Enum.join(
-        [fact.subject_type, fact.subject_id, fact.object_type, fact.object_id, fact.kind],
+        [
+          fact.subject_type,
+          fact.subject_id,
+          fact.object_type,
+          fact.object_id,
+          fact.kind,
+          verifier.verifier_id,
+          declaration_key(fact)
+        ],
         ":"
       )
 
     Repo.query!("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [key])
   end
 
-  defp lock_current_fact(fact) do
+  defp declaration_key(fact), do: (fact.mandate_declaration || %{})["key"] || ""
+
+  defp lock_current_fact(fact, verifier) do
     result =
       Repo.query!(
         """
@@ -547,6 +748,8 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
            AND object_type = $3
            AND object_id = $4::text::uuid
            AND kind = $5
+           AND verified_by = $6
+           AND COALESCE(mandate_declaration ->> 'key', '') = $7
            AND verification_status = 'verified'
          FOR UPDATE
         """,
@@ -555,7 +758,9 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
           fact.subject_id,
           Atom.to_string(fact.object_type),
           fact.object_id,
-          Atom.to_string(fact.kind)
+          Atom.to_string(fact.kind),
+          verifier.verifier_id,
+          declaration_key(fact)
         ]
       )
 
@@ -595,7 +800,21 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
         current.object_type == Atom.to_string(fact.object_type) and
         current.object_id == fact.object_id and current.kind == Atom.to_string(fact.kind)
 
-    ordered? = Date.compare(fact.effective_from, current.effective_from) in [:eq, :gt]
+    ordered? =
+      if fact.mandate_declaration do
+        previous = Identity.get_sourced_fact!(current.id) |> Ash.load!(:source_version)
+        incoming = Ingestion.get_source_version!(fact.source_version_id)
+
+        previous.mandate_declaration != nil and
+          previous.mandate_declaration["key"] == fact.mandate_declaration["key"] and
+          previous.mandate_declaration["revision"] < fact.mandate_declaration["revision"] and
+          DateTime.compare(
+            incoming.first_retrieved_at,
+            previous.source_version.first_retrieved_at
+          ) == :gt
+      else
+        Date.compare(fact.effective_from, current.effective_from) in [:eq, :gt]
+      end
 
     unless same_semantics? and ordered? do
       raise ArgumentError,
@@ -623,19 +842,23 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
     end)
   end
 
-  defp public_evidence_location?(location) when is_binary(location) do
-    Regex.match?(~r/\Adecision [0-9]+(?:[.-][0-9A-Za-z]+)*\z/, location)
-  end
-
-  defp public_evidence_location?(_location), do: false
-
   defp date_string(nil), do: nil
   defp date_string(date), do: Date.to_iso8601(date)
 
-  defp fetch!(id) do
+  defp fetch!(id) when is_atom(id) do
     case Map.fetch(@registry, id) do
       {:ok, verifier} -> verifier
       :error -> raise ArgumentError, "untrusted relationship verifier: #{inspect(id)}"
+    end
+  end
+
+  defp fetch!(verifier_id) when is_binary(verifier_id) do
+    Enum.find(@registry, {:error, :unknown}, fn {_id, verifier} ->
+      verifier.verifier_id == verifier_id
+    end)
+    |> case do
+      {_id, verifier} -> verifier
+      :error -> raise ArgumentError, "untrusted relationship verifier: #{verifier_id}"
     end
   end
 end

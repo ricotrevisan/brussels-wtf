@@ -67,6 +67,12 @@ defmodule BrusselsWtfWeb.DossierPage do
       <h1 class="mt-2 text-3xl font-semibold">
         {text(@locale, :title)}: {dossier_title(@dossier, @locale)}
       </h1>
+      <form method="post" action="/citizen/feed/follows" class="mt-4">
+        <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+        <input type="hidden" name="target_type" value="dossier" />
+        <input type="hidden" name="target_identifier" value={@dossier.slug} />
+        <button type="submit" class="btn btn-sm" data-follow-control>{text(@locale, :follow)}</button>
+      </form>
 
       <ol class="mt-8 border-l border-base-300 pl-6">
         <li :for={entry <- @entries} class="relative pb-8">
@@ -212,6 +218,7 @@ defmodule BrusselsWtfWeb.DossierPage do
   defp text("fr", :dossier), do: "Dossier en cours"
   defp text("fr", :title), do: "Chronologie du dossier"
   defp text("fr", :item), do: "Point"
+  defp text("fr", :follow), do: "Suivre ce dossier"
 
   defp text("fr", :decision_unavailable),
     do: "Le texte de la décision n’est pas disponible en français."
@@ -227,6 +234,7 @@ defmodule BrusselsWtfWeb.DossierPage do
   defp text("nl", :dossier), do: "Lopend dossier"
   defp text("nl", :title), do: "Dossiertijdlijn"
   defp text("nl", :item), do: "Agendapunt"
+  defp text("nl", :follow), do: "Dit dossier volgen"
 
   defp text("nl", :decision_unavailable),
     do: "De beslissingstekst is niet beschikbaar in het Nederlands."
@@ -242,6 +250,7 @@ defmodule BrusselsWtfWeb.DossierPage do
   defp text(_locale, :dossier), do: "Continuing dossier"
   defp text(_locale, :title), do: "Dossier timeline"
   defp text(_locale, :item), do: "Agenda item"
+  defp text(_locale, :follow), do: "Follow this dossier"
   defp text(_locale, :decision_unavailable), do: "Decision copy is unavailable in English."
 
   defp text(_locale, :synthetic_reference),

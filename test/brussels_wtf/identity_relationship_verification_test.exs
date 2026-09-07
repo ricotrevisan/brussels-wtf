@@ -232,7 +232,7 @@ defmodule BrusselsWtf.IdentityRelationshipVerificationTest do
     {wrong_location_run, _} =
       record_verifier_output!(wrong_location, person, commune, source_version)
 
-    assert_raise ArgumentError, ~r/identity, date, Ixelles mandate, and decision/, fn ->
+    assert_raise ArgumentError, ~r/official text must directly and unambiguously bind/, fn ->
       Identity.verify_sourced_fact!(wrong_location.id, @verifier, wrong_location_run.id)
     end
 
@@ -244,7 +244,7 @@ defmodule BrusselsWtf.IdentityRelationshipVerificationTest do
 
     {wrong_date_run, _} = record_verifier_output!(wrong_date, person, commune, source_version)
 
-    assert_raise ArgumentError, ~r/identity, date, Ixelles mandate, and decision/, fn ->
+    assert_raise ArgumentError, ~r/official text must directly and unambiguously bind/, fn ->
       Identity.verify_sourced_fact!(wrong_date.id, @verifier, wrong_date_run.id)
     end
 
@@ -257,7 +257,7 @@ defmodule BrusselsWtf.IdentityRelationshipVerificationTest do
     {detached_date_run, _} =
       record_verifier_output!(detached_date, person, commune, source_version)
 
-    assert_raise ArgumentError, ~r/identity, date, Ixelles mandate, and decision/, fn ->
+    assert_raise ArgumentError, ~r/official text must directly and unambiguously bind/, fn ->
       Identity.verify_sourced_fact!(detached_date.id, @verifier, detached_date_run.id)
     end
 
@@ -276,7 +276,7 @@ defmodule BrusselsWtf.IdentityRelationshipVerificationTest do
     {duplicate_run, _} =
       record_verifier_output!(duplicate_name_fact, person, commune, source_version)
 
-    assert_raise ArgumentError, ~r/unambiguously bind identity/, fn ->
+    assert_raise ArgumentError, ~r/unambiguously bind/, fn ->
       Identity.verify_sourced_fact!(duplicate_name_fact.id, @verifier, duplicate_run.id)
     end
 
@@ -717,7 +717,7 @@ defmodule BrusselsWtf.IdentityRelationshipVerificationTest do
       )
 
     assert_raise ArgumentError,
-                 ~r/directly and unambiguously bind identity, date, Ixelles mandate, and decision/,
+                 ~r/directly and unambiguously bind/,
                  fn ->
                    Identity.verify_sourced_fact!(absent.id, @verifier, absent_run.id)
                  end
@@ -733,7 +733,7 @@ defmodule BrusselsWtf.IdentityRelationshipVerificationTest do
       record_verifier_output!(mention_only, person, commune, source_version)
 
     assert_raise ArgumentError,
-                 ~r/directly and unambiguously bind identity, date, Ixelles mandate, and decision/,
+                 ~r/directly and unambiguously bind/,
                  fn ->
                    Identity.verify_sourced_fact!(mention_only.id, @verifier, mention_run.id)
                  end

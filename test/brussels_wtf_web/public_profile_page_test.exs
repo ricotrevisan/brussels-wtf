@@ -64,9 +64,18 @@ defmodule BrusselsWtfWeb.PublicProfilePageTest do
 
     assert html =~ ~s(action="/companies/0123456749/suggestions/ownership")
     assert html =~ ~s(action="/companies/0123456749/suggestions/correction")
-    assert length(LazyHTML.to_tree(document["form"])) == 2
-    assert length(LazyHTML.to_tree(document[~s(input[name="_csrf_token"])])) == 2
-    assert length(LazyHTML.to_tree(document[~s(input[name="website"])])) == 2
+    assert length(LazyHTML.to_tree(document[~s(form[action*="/suggestions/"])])) == 2
+
+    assert length(
+             LazyHTML.to_tree(
+               document[~s(form[action*="/suggestions/"] input[name="_csrf_token"])]
+             )
+           ) == 2
+
+    assert length(
+             LazyHTML.to_tree(document[~s(form[action*="/suggestions/"] input[name="website"])])
+           ) == 2
+
     assert html =~ "Private contact (optional)"
 
     refute html =~ company.id
@@ -104,7 +113,7 @@ defmodule BrusselsWtfWeb.PublicProfilePageTest do
     assert html =~ "decision 267"
     assert html =~ ~s(datetime="2025-01-01")
     assert html =~ ~s(action="/people/#{person.id}/suggestions/correction")
-    assert length(LazyHTML.to_tree(document["form"])) == 1
+    assert length(LazyHTML.to_tree(document[~s(form[action*="/suggestions/"])])) == 1
 
     assert LazyHTML.attribute(document[~s(link[rel="canonical"])], "href") == [
              "/people/#{person.id}"
@@ -165,8 +174,8 @@ defmodule BrusselsWtfWeb.PublicProfilePageTest do
 
     company_html = conn |> get("/companies/0123456749") |> html_response(200)
     person_html = conn |> recycle() |> get("/people/#{person.id}") |> html_response(200)
-    refute company_html =~ "<form"
-    refute person_html =~ "<form"
+    refute company_html =~ "/suggestions/"
+    refute person_html =~ "/suggestions/"
   end
 
   defp record_private_person!(legal_name) do

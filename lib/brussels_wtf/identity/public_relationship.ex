@@ -16,5 +16,6 @@ defmodule BrusselsWtf.Identity.PublicRelationship do
     :verified_at
   ]
 
-  defstruct @enforce_keys ++ [:effective_from, :effective_to, :authoritative_url]
+  defstruct @enforce_keys ++
+              [:effective_from, :effective_to, :authoritative_url, :mandate_declaration, :state]
 end
