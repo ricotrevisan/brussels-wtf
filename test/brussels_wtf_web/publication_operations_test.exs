@@ -167,6 +167,24 @@ defmodule BrusselsWtfWeb.PublicationOperationsTest do
     refute meeting["source_update_pending"]
   end
 
+  test "coverage renders discovered sources before a meeting is normalized", %{conn: conn} do
+    BrusselsWtf.Test.Harness.load("ixelles/proposal")
+    assert :ok = Ingestion.poll_now("ixelles")
+    assert :ok = BrusselsWtf.Test.Harness.drain_pipeline(until: :fetch)
+
+    meeting =
+      Enum.find(
+        BrusselsWtf.CoverageStatus.snapshot(BrusselsWtfWeb.MeetingTime.today()).meetings,
+        &(&1["slug"] == "ixelles")
+      )
+
+    assert meeting["published"] == false
+
+    for locale <- ~w(fr nl en) do
+      assert conn |> get("/coverage?lang=#{locale}") |> html_response(200) =~ "Ixelles"
+    end
+  end
+
   test "coverage distinguishes pending processing and archival replay from official checks" do
     scenario = BrusselsWtf.Test.Harness.load("ixelles/proposal")
     assert :ok = Ingestion.poll_now("ixelles")

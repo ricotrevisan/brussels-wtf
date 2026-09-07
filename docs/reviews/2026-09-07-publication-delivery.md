@@ -30,4 +30,12 @@ The interpretation migration preserves rows but changes claim uniqueness. After 
 
 ## Deployment acceptance
 
-Pending PR, CI, production-image contract, merge, Coolify rollout, corpus replay and live T3Code smoke test. Do not interpret local validation as deployed acceptance.
+PR [69](https://github.com/RicoTrevisan/brussels-wtf/pull/69) merged as `5f83ff5b583c1e1656d11ea1fa8c18eed2b1aa5c`. Both PR and main CI passed, along with 391 pre-commit tests, five browser tests, and four PDF/OCR contracts on the exact merged image. The one-CPU / 1-GiB OCR case passed an isolated reproduction and the full repeated contract after one earlier process kill.
+
+Coolify app deployment `e0wlhzuidoikb7a7atxlh6gd` passed readiness, migrations, archive and PDF-tool validation. OCR deployment `mzjizqakh8nzvziikyg8ykyn` reused the app image. Inspection of the running app and Compose worker proved the same image ID: `sha256:ef6404c291e43868f586abc4ff90005f12aa5c21e185b04cbdab0a45562a7893`. Earlier OCR verification commands failed because Coolify adds a timestamp to container names and detects Compose flags across the whole custom command; the successful command uses explicit Compose file flags and `docker compose images --format json`.
+
+All nine official source URLs returned PDFs. Audited retries resolved the Uccle marker failure and two historical Ixelles native-extraction failures. Five obsolete publication generations were diagnosed against their retained inputs: they included historical item keys outside the corrected sealed selection. Their audit corrections identify that obsolete scope and preserve the failed inputs; the separate scoped publication still had to pass its normal evidence and locale gates.
+
+Corpus batch `01a07de1-666f-79ab-9f79-5ee206235a70` restored eight meetings and 24 public anchored items. Live smoke testing then found two follow-up defects: the coverage view crashed on a discovered source without a normalized meeting, and corpus completion counted historical failed runs instead of the runs supporting current revisions. Regression coverage now includes both production states and an already-published corpus replay.
+
+The final deployed commit, follow-up deployment IDs and browser acceptance are maintained in the canonical [delivery issue](https://github.com/RicoTrevisan/brussels-wtf/issues/58). This document records the first rollout and the defects that its smoke test exposed; it does not substitute that first rollout for final acceptance. Sustained observation is tracked in [the two-cycle operating follow-up](https://github.com/RicoTrevisan/brussels-wtf/issues/70).

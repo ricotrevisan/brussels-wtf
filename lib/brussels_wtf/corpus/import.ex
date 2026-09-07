@@ -168,7 +168,8 @@ defmodule BrusselsWtf.Corpus.Import do
 
     processing_runs = processing_runs(source_version_ids)
     ocr_runs = Enum.filter(processing_runs, &(&1.processor_role == :ocr))
-    coverage_runs = Enum.flat_map(pages, &Council.list_coverage_runs!(&1.id))
+    historical_runs = Enum.flat_map(pages, &Council.list_coverage_runs!(&1.id))
+    coverage_runs = report_coverage_runs(batch, pages, historical_runs)
     review_cases = related_review_cases(meeting_ids, source_version_ids, processing_runs)
 
     metrics =
@@ -181,6 +182,8 @@ defmodule BrusselsWtf.Corpus.Import do
         "ocr_duration_ms" => Enum.sum(Enum.map(ocr_runs, & &1.duration_ms)),
         "normalized_items" => normalized_items,
         "generation_calls" => length(coverage_runs),
+        "generation_runs_all_revisions" => length(historical_runs),
+        "generation_usage_all_revisions" => merge_usage(historical_runs),
         "generation_usage" => merge_usage(coverage_runs),
         "review_cases" => length(review_cases),
         "pages_published" => published_pages
@@ -191,7 +194,11 @@ defmodule BrusselsWtf.Corpus.Import do
         review_cases != [] ->
           :blocked
 
-        batch.status == :ready_for_coverage and published_pages == 8 ->
+        batch.status == :ready_for_coverage and not is_nil(batch.coverage_batch_id) and
+          published_pages == 8 and
+            BrusselsWtf.Council.CorpusImportBatch.current_publications_match?(
+              Enum.map(pages, & &1.id)
+            ) ->
           :completed
 
         batch.status == :normalizing and length(batch.meeting_keys) == 8 and
@@ -506,6 +513,24 @@ defmodule BrusselsWtf.Corpus.Import do
       |> Ash.Query.filter(affected_record_id in ^ids and status == :open)
       |> Ash.read!(domain: BrusselsWtf.Review, authorize?: false)
     end
+  end
+
+  defp report_coverage_runs(%{coverage_batch_id: nil}, _pages, historical_runs),
+    do: historical_runs
+
+  defp report_coverage_runs(_batch, pages, historical_runs) do
+    current_run_ids =
+      pages
+      |> Ash.load!(:current_revision)
+      |> Enum.flat_map(fn page ->
+        case page.current_revision do
+          nil -> []
+          revision -> [revision.canonical_run_id, revision.nl_run_id, revision.en_run_id]
+        end
+      end)
+      |> MapSet.new()
+
+    Enum.filter(historical_runs, &MapSet.member?(current_run_ids, &1.id))
   end
 
   defp merge_usage(runs) do

@@ -207,9 +207,35 @@ defmodule BrusselsWtf.Council.CorpusImportBatch do
         length(meeting_page_ids) == 8 and metrics["pages_published"] == 8 and
         metrics["generation_calls"] == 24 and review_case_ids == [] and
         published_pages?(meeting_page_ids, changeset.data) and successful_runs?(changeset) and
+        current_publications_match?(meeting_page_ids) and
         not open_related_cases?(changeset.data, changeset)
 
     if valid?, do: :ok, else: {:error, "real corpus publication is not complete"}
+  end
+
+  def current_publications_match?(page_ids) do
+    Enum.all?(page_ids, fn id ->
+      page =
+        id
+        |> BrusselsWtf.Council.get_meeting_page!()
+        |> Ash.load!(current_revision: [:canonical_run, :nl_run, :en_run])
+
+      revision = page.current_revision
+      canonical = revision.canonical_run
+      runs = [{"fr", canonical}, {"nl", revision.nl_run}, {"en", revision.en_run}]
+
+      Enum.all?(runs, fn {locale, run} ->
+        case BrusselsWtf.Corpus.Manifest.recorded_bundle(canonical.input, locale) do
+          {:ok, expected} ->
+            Map.take(run.output, ["page", "items"]) == Map.take(expected, ["page", "items"])
+
+          {:error, _} ->
+            false
+        end
+      end) and BrusselsWtf.Council.PublicationGate.evaluate(id, canonical.input_hash).ready?
+    end)
+  rescue
+    _error -> false
   end
 
   defp exact_normalized_contract?(batch) do
