@@ -99,7 +99,7 @@ defmodule BrusselsWtf.Review.Suggestion do
 
     attribute :subject_type, :atom do
       allow_nil? false
-      constraints one_of: [:legal_entity, :person]
+      constraints one_of: [:legal_entity, :person, :agenda_item]
     end
 
     attribute :subject_id, :uuid, allow_nil?: false

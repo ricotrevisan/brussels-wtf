@@ -20,6 +20,7 @@ defmodule BrusselsWtf.Council.Decision do
       accept [
         :agenda_item_id,
         :source_version_id,
+        :interpretation_key,
         :disposition,
         :statement,
         :votes_for,
@@ -80,6 +81,7 @@ defmodule BrusselsWtf.Council.Decision do
     end
 
     attribute :statement, :string, allow_nil?: false, public?: true
+    attribute :interpretation_key, :string, allow_nil?: false, default: "legacy", public?: true
     attribute :render_key, :string, public?: true
     attribute :votes_for, :integer, public?: true, constraints: [min: 0]
     attribute :votes_against, :integer, public?: true, constraints: [min: 0]
@@ -95,7 +97,7 @@ defmodule BrusselsWtf.Council.Decision do
   end
 
   identities do
-    identity :one_per_item_source, [:agenda_item_id, :source_version_id]
+    identity :one_per_item_source, [:agenda_item_id, :source_version_id, :interpretation_key]
     identity :one_rendered_per_item, [:agenda_item_id, :render_key]
   end
 end

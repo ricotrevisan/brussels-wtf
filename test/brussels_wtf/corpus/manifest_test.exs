@@ -33,16 +33,7 @@ defmodule BrusselsWtf.Corpus.ManifestTest do
 
   test "every approved source hash normalizes only when its markers are present" do
     for meeting <- Manifest.load!()["meetings"], source <- meeting["sources"] do
-      evidence =
-        meeting["items"]
-        |> Enum.filter(&(&1["source"] == source["name"]))
-        |> Enum.map(fn item ->
-          if item["state"] == "proposal",
-            do: item["proposal"]["excerpt"],
-            else: item["decision"]["excerpt"]
-        end)
-
-      text = Enum.join(source["markers"] ++ evidence, "\n")
+      {text, 0} = System.cmd("pdftotext", ["-layout", Manifest.bundle_path!(source), "-"])
 
       assert {:ok, normalized} =
                Manifest.normalize(%{"sha256" => source["sha256"], "text" => text})
@@ -56,6 +47,24 @@ defmodule BrusselsWtf.Corpus.ManifestTest do
 
     assert {:error, :processor_unimplemented} =
              Manifest.normalize(%{"sha256" => String.duplicate("0", 64), "text" => "unknown"})
+  end
+
+  test "an approval elsewhere in the PDF cannot support an item's cited pages" do
+    meeting = Manifest.meeting!("forest-2026-03-24")
+    source = hd(meeting["sources"])
+    {text, 0} = System.cmd("pdftotext", ["-layout", Manifest.bundle_path!(source), "-"])
+    pages = String.split(text, "\f")
+    # Keep every word and the immutable source identity, but exchange cited and unrelated pages.
+    swapped =
+      pages |> List.replace_at(57, Enum.at(pages, 17)) |> List.replace_at(17, Enum.at(pages, 57))
+
+    assert {:error, {:normalization_ambiguity, details}} =
+             Manifest.normalize(%{
+               "sha256" => source["sha256"],
+               "text" => Enum.join(swapped, "\f")
+             })
+
+    assert Enum.any?(details["missing_markers"], &String.contains?(&1, "forest-2026-03-24-20"))
   end
 
   test "recorded coverage requires the exact complete claim contract and returns all locales" do

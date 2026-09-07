@@ -14,12 +14,17 @@ defmodule BrusselsWtf.Workers.NormalizeSource do
       }) do
     generation_kind = if args["generation_kind"] == "backfill", do: :backfill, else: :automatic
 
-    BrusselsWtf.Ingestion.Pipeline.normalize(
-      run_id,
-      url,
-      attempt,
-      @max_attempts,
-      generation_kind
-    )
+    if args["processor_contract"] &&
+         args["processor_contract"] != BrusselsWtf.Processors.normalization_contract() do
+      {:discard, "normalization contract changed; requeue from the current release"}
+    else
+      BrusselsWtf.Ingestion.Pipeline.normalize(
+        run_id,
+        url,
+        attempt,
+        @max_attempts,
+        generation_kind
+      )
+    end
   end
 end

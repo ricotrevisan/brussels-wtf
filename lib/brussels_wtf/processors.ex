@@ -14,5 +14,15 @@ defmodule BrusselsWtf.Processors do
   def extract(meta, bytes), do: impl().extract(meta, bytes)
   def normalize(extracted), do: impl().normalize(extracted)
 
+  def normalization_contract do
+    processor = impl()
+
+    contract =
+      {processor, processor.module_info(:md5), BrusselsWtf.Corpus.Manifest.module_info(:md5),
+       BrusselsWtf.Corpus.Manifest.digest()}
+
+    contract |> :erlang.term_to_binary([:deterministic]) |> BrusselsWtf.Digest.sha256()
+  end
+
   defp impl, do: Application.fetch_env!(:brussels_wtf, :processors)
 end

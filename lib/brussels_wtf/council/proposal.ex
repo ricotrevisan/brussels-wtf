@@ -16,7 +16,16 @@ defmodule BrusselsWtf.Council.Proposal do
 
     create :record do
       primary? true
-      accept [:agenda_item_id, :source_version_id, :source_version_order, :text, :status]
+
+      accept [
+        :agenda_item_id,
+        :source_version_id,
+        :source_version_order,
+        :text,
+        :status,
+        :interpretation_key
+      ]
+
       validate present(:source_version_id)
 
       upsert? true
@@ -37,6 +46,7 @@ defmodule BrusselsWtf.Council.Proposal do
   attributes do
     uuid_v7_primary_key :id
     attribute :text, :string, allow_nil?: false, public?: true
+    attribute :interpretation_key, :string, allow_nil?: false, default: "legacy", public?: true
     attribute :render_key, :string, public?: true
     attribute :source_version_order, :string, public?: true
     attribute :synthetic, :boolean, allow_nil?: false, public?: true, default: false
@@ -58,7 +68,7 @@ defmodule BrusselsWtf.Council.Proposal do
   end
 
   identities do
-    identity :unique_item_source, [:agenda_item_id, :source_version_id]
+    identity :unique_item_source, [:agenda_item_id, :source_version_id, :interpretation_key]
     identity :unique_rendered_item, [:agenda_item_id, :render_key]
   end
 end

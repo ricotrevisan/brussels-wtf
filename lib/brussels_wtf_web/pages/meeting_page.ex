@@ -29,6 +29,12 @@ defmodule BrusselsWtfWeb.MeetingPage do
           withdrawn: withdrawn,
           withdrawal_reason: page.withdrawal_reasons[locale],
           corrections: correction_notes(page.publication_revisions, locale),
+          historical_items:
+            Enum.filter(
+              page.council_meeting.agenda_items,
+              &(not &1.published? and not is_nil(&1.published_item_number))
+            ),
+          revision_history: page.publication_revisions,
           locale: locale,
           commune_name: commune_name(locale, commune, page.council_meeting.commune.name),
           items:
@@ -65,7 +71,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
     </a>
     <header class="border-b border-base-300">
       <div class="mx-auto flex max-w-4xl items-center justify-between gap-4 px-4 py-4">
-        <Layouts.brand_link href={"/?lang=" <> @locale} />
+        <Layouts.brand_link data-reader-back href={"/?lang=" <> @locale} />
         <nav aria-label="Language">
           <ul class="flex gap-3 text-sm">
             <li :for={{code, label} <- [{"fr", "FR"}, {"nl", "NL"}, {"en", "EN"}]}>
@@ -150,6 +156,34 @@ defmodule BrusselsWtfWeb.MeetingPage do
         </ul>
       </section>
 
+      <p class="mt-4 text-sm">
+        <a data-reader-back href={"/?lang=" <> @locale} class="underline">{text(
+          @locale,
+          :back_to_results
+        )}</a>
+      </p>
+      <section
+        :if={not @withdrawn and @historical_items != []}
+        class="mt-6 border-l-4 border-warning pl-3"
+      >
+        <p>{text(@locale, :retired_item)}</p>
+        <p :for={item <- @historical_items} id={item.stable_anchor} class="scroll-mt-4" tabindex="-1">
+          {text(@locale, :item)} {item.published_item_number}: {text(@locale, :retired_item)}
+        </p>
+      </section>
+      <details :if={not @withdrawn and @revision_history != []} class="mt-5 text-sm">
+        <summary class="cursor-pointer underline">{text(@locale, :history)}</summary>
+        <p class="mt-2">{text(@locale, :historical_warning)}</p>
+        <section :for={revision <- @revision_history} class="mt-4 border-t border-base-300 pt-3">
+          <h2 class="font-semibold">{format_datetime(revision.published_at)}</h2>
+          <ul class="mt-2 space-y-2">
+            <li :for={{_key, item} <- Enum.sort(revision.content["items"] || %{})}>
+              <p>{get_in(item, ["variants", @locale, "title"])}</p>
+              <p class="text-base-content/70">{get_in(item, ["variants", @locale, "summary"])}</p>
+            </li>
+          </ul>
+        </section>
+      </details>
       <div :if={not @withdrawn} class="mt-9 divide-y divide-base-300">
         <.coverage_item :for={item <- @items} item={item} page={@meeting_page} locale={@locale} />
       </div>
@@ -157,6 +191,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
       <footer class="mt-12 border-t border-base-300 pt-5 text-sm text-base-content/70">
         {text(@locale, :byline)} Rico Trevisan
       </footer>
+      <BrusselsWtfWeb.PublicationComponents.footer locale={@locale} />
     </main>
     """
   end
@@ -173,6 +208,10 @@ defmodule BrusselsWtfWeb.MeetingPage do
     assigns =
       assigns
       |> assign(:coverage_variant, variant)
+      |> assign(
+        :past,
+        BrusselsWtfWeb.MeetingTime.past?(assigns.page.council_meeting.scheduled_on)
+      )
       |> assign(:display_state, display_state(assigns.item))
       |> assign(:proposals, BrusselsWtfWeb.PublicEvidence.proposals(assigns.item))
       |> assign(:source_proposals, BrusselsWtfWeb.PublicEvidence.source_proposals(assigns.item))
@@ -189,14 +228,18 @@ defmodule BrusselsWtfWeb.MeetingPage do
         <div :if={@proposals != []}>
           <h3 class="font-semibold">{text(@locale, :proposal)}</h3>
           <p class="mt-1 leading-7">
-            {proposal_copy(@coverage_variant, @display_state, @locale)}
+            {proposal_copy(@coverage_variant, @display_state, @locale, @past)}
           </p>
-          <blockquote
-            :for={proposal <- @source_proposals}
-            class="mt-3 border-l-2 border-base-300 pl-3 text-sm"
-          >
-            {proposal.text}
-          </blockquote>
+          <details :if={@source_proposals != []} class="mt-3 text-sm">
+            <summary class="cursor-pointer">{text(@locale, :original_excerpt)}</summary>
+            <blockquote
+              :for={proposal <- @source_proposals}
+              lang={source_language(proposal)}
+              class="mt-3 border-l-2 border-base-300 pl-3 text-sm"
+            >
+              {proposal.text}
+            </blockquote>
+          </details>
           <p
             :if={@source_proposals != [] and (@item.published_outcome || :unknown) == :unknown}
             class="mt-2 text-sm"
@@ -210,6 +253,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
           class="border-l-4 border-warning pl-3"
         >
           <h3 class="font-semibold">{text(@locale, :outcome_unknown)}</h3>
+          <p :if={@past} class="mt-1 text-sm">{text(@locale, :past_explanation)}</p>
           <p class="mt-1 text-sm">{text(@locale, :unknown_explanation)}</p>
         </div>
 
@@ -231,7 +275,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
 
       <div class="mt-4 flex flex-wrap gap-2" aria-label={text(@locale, :provenance)}>
         <span
-          :for={label <- provenance_labels(@coverage_variant.provenance)}
+          :for={label <- provenance_labels(@coverage_variant.provenance, @locale)}
           class="badge badge-outline"
         >
           {label}
@@ -245,7 +289,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
             <a
               href={"/dossiers/#{link.dossier.slug}?lang=#{@locale}"}
               class="underline underline-offset-2"
-            >{link.dossier.title}</a>
+            >{Map.get(link.dossier.localized_titles || %{}, @locale, link.dossier.title)}</a>
           </li>
         </ul>
       </div>
@@ -254,8 +298,12 @@ defmodule BrusselsWtfWeb.MeetingPage do
         <h3 class="font-semibold">{text(@locale, :evidence)}</h3>
         <ul :if={@evidences != []} class="mt-2 space-y-3">
           <li :for={evidence <- @evidences} class="text-sm">
-            <a href={evidence.citation_url} rel="external" class="underline underline-offset-2">
-              {evidence.source_title}
+            <a
+              href={BrusselsWtfWeb.PublicEvidence.citation_href(evidence)}
+              rel="external"
+              class="underline underline-offset-2"
+            >
+              {evidence_title(evidence, @locale)}
             </a>
             <span :if={evidence.synthetic} class="block font-medium text-warning">
               {text(@locale, :synthetic_reference)}
@@ -265,9 +313,10 @@ defmodule BrusselsWtfWeb.MeetingPage do
               <time datetime={DateTime.to_iso8601(evidence.retrieved_at)}>
                 {format_datetime(evidence.retrieved_at)}
               </time>
-              <%= if evidence.checksum do %>
-                · SHA-256 <code class="break-all">{evidence.checksum}</code>
-              <% end %>
+              <details :if={evidence.checksum} class="mt-1">
+                <summary class="cursor-pointer">{text(@locale, :source_details)}</summary>
+                SHA-256 <code class="break-all">{evidence.checksum}</code>
+              </details>
             </span>
           </li>
         </ul>
@@ -277,6 +326,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
           </a>
         </p>
       </section>
+      <BrusselsWtfWeb.PublicationComponents.correction_form locale={@locale} item_id={@item.id} />
     </article>
     """
   end
@@ -300,11 +350,48 @@ defmodule BrusselsWtfWeb.MeetingPage do
     |> Enum.reject(&is_nil(&1.note))
   end
 
-  defp proposal_copy(variant, :decision, locale),
+  defp proposal_copy(variant, :decision, locale, _past),
     do: variant.proposal_summary || text(locale, :proposal_copy_unavailable)
 
-  defp proposal_copy(variant, _state, _locale),
-    do: variant.proposal_summary || variant.summary
+  defp proposal_copy(variant, _state, locale, past) do
+    copy = variant.proposal_summary || variant.summary
+
+    if past and
+         Enum.any?(
+           [
+             "has yet to consider",
+             "is due to consider",
+             "doit encore",
+             "doit examiner",
+             "moet de",
+             "moet dit"
+           ],
+           &String.contains?(copy || "", &1)
+         ),
+       do: text(locale, :past_proposal),
+       else: copy
+  end
+
+  defp source_language(proposal) do
+    case proposal do
+      %{source_version: %{source_record: %{original_language: language}}}
+      when language in [:fr, :nl, :en] ->
+        to_string(language)
+
+      _ ->
+        "und"
+    end
+  end
+
+  defp evidence_title(evidence, locale) do
+    case evidence.source_title do
+      "Authoritative municipal source" ->
+        text(locale, :source) <> " · " <> to_string(evidence.location)
+
+      title ->
+        title
+    end
+  end
 
   defp display_state(item) do
     cond do
@@ -377,12 +464,26 @@ defmodule BrusselsWtfWeb.MeetingPage do
   defp disposition_label("nl", :other), do: "andere"
   defp disposition_label(_locale, value), do: value |> to_string() |> String.replace("_", " ")
 
-  defp provenance_labels(values) do
-    Enum.map(values, fn
-      :ai_generated -> "AI-generated"
-      :machine_translated -> "machine-translated"
-      :human_reviewed -> "human-reviewed"
-    end)
+  defp provenance_labels(values, locale) do
+    labels = %{
+      "en" => %{
+        ai_generated: "AI-generated",
+        machine_translated: "machine-translated",
+        human_reviewed: "human-reviewed"
+      },
+      "fr" => %{
+        ai_generated: "Généré par IA",
+        machine_translated: "Traduction automatique",
+        human_reviewed: "Révisé par une personne"
+      },
+      "nl" => %{
+        ai_generated: "AI-gegenereerd",
+        machine_translated: "Machinevertaling",
+        human_reviewed: "Door een mens nagekeken"
+      }
+    }
+
+    Enum.map(values, &labels[locale][&1])
   end
 
   defp commune_name("fr", "city-of-brussels", _name), do: "Ville de Bruxelles"
@@ -406,6 +507,12 @@ defmodule BrusselsWtfWeb.MeetingPage do
   defp en_text do
     %{
       skip: "Skip to content",
+      past_explanation:
+        "The meeting date has passed. Its final outcome is not yet documented here.",
+      past_proposal:
+        "The agenda records this proposal. No authoritative final outcome is attached.",
+      original_excerpt: "Original-language source excerpt",
+      source_details: "Source verification details",
       unavailable_title: "Coverage unavailable in English",
       item_unavailable: "Agenda-item coverage unavailable in English",
       unavailable_explanation:
@@ -413,6 +520,12 @@ defmodule BrusselsWtfWeb.MeetingPage do
       decision_copy_unavailable: "Decision copy is unavailable in English.",
       proposal_copy_unavailable: "Proposal copy is unavailable in English.",
       synthetic_reference: "Demonstration reference — not evidence of council activity",
+      retired_item:
+        "This item was removed from the current selection after review. See the current items and dated history.",
+      history: "Dated publication history",
+      historical_warning:
+        "Earlier wording is retained for transparency and may contain errors corrected in the current version.",
+      back_to_results: "Back to results",
       revision: "Page revision:",
       item: "Agenda item",
       proposal: "Proposal",
@@ -437,6 +550,12 @@ defmodule BrusselsWtfWeb.MeetingPage do
   defp fr_text do
     %{
       skip: "Aller au contenu",
+      past_explanation:
+        "La date de la réunion est passée. Son résultat final n’est pas encore documenté ici.",
+      past_proposal:
+        "L’ordre du jour présente cette proposition. Aucun résultat final officiel n’est joint.",
+      original_excerpt: "Extrait dans la langue de la source",
+      source_details: "Détails de vérification de la source",
       unavailable_title: "Contenu indisponible en français",
       item_unavailable: "Contenu du point indisponible en français",
       unavailable_explanation:
@@ -445,6 +564,12 @@ defmodule BrusselsWtfWeb.MeetingPage do
       proposal_copy_unavailable: "Le texte de la proposition n’est pas disponible en français.",
       synthetic_reference:
         "Référence de démonstration — ne constitue pas une preuve d’activité communale",
+      retired_item:
+        "Ce point a été retiré de la sélection après vérification. Consultez les points actuels et l’historique daté.",
+      history: "Historique daté des publications",
+      historical_warning:
+        "Les anciens textes sont conservés par transparence et peuvent contenir des erreurs corrigées dans la version actuelle.",
+      back_to_results: "Retour aux résultats",
       revision: "Révision de la page :",
       item: "Point",
       proposal: "Proposition",
@@ -470,6 +595,12 @@ defmodule BrusselsWtfWeb.MeetingPage do
   defp nl_text do
     %{
       skip: "Naar inhoud",
+      past_explanation:
+        "De vergaderdatum is verstreken. De definitieve uitkomst is hier nog niet gedocumenteerd.",
+      past_proposal:
+        "De agenda vermeldt dit voorstel. Er is geen officiële definitieve uitkomst toegevoegd.",
+      original_excerpt: "Bronfragment in de oorspronkelijke taal",
+      source_details: "Details voor bronverificatie",
       unavailable_title: "Inhoud niet beschikbaar in het Nederlands",
       item_unavailable: "Inhoud van het agendapunt niet beschikbaar in het Nederlands",
       unavailable_explanation:
@@ -477,6 +608,12 @@ defmodule BrusselsWtfWeb.MeetingPage do
       decision_copy_unavailable: "De beslissingstekst is niet beschikbaar in het Nederlands.",
       proposal_copy_unavailable: "De voorsteltekst is niet beschikbaar in het Nederlands.",
       synthetic_reference: "Demonstratiereferentie — geen bewijs van gemeentelijke activiteit",
+      retired_item:
+        "Dit punt is na controle uit de selectie verwijderd. Bekijk de huidige punten en de gedateerde geschiedenis.",
+      history: "Gedateerde publicatiegeschiedenis",
+      historical_warning:
+        "Eerdere teksten worden voor transparantie bewaard en kunnen fouten bevatten die in de huidige versie zijn gecorrigeerd.",
+      back_to_results: "Terug naar resultaten",
       revision: "Paginarevisie:",
       item: "Agendapunt",
       proposal: "Voorstel",

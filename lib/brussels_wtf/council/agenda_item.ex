@@ -150,7 +150,7 @@ defmodule BrusselsWtf.Council.AgendaItem do
   end
 
   defp proposal_version_order(proposal) do
-    proposal.source_version_order || "0:#{proposal.source_version.id}"
+    {proposal.source_version_order || "0:#{proposal.source_version.id}", proposal.id}
   end
 
   attributes do

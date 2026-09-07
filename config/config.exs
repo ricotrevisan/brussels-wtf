@@ -240,3 +240,6 @@ config :phoenix, :filter_parameters, ["email", "token", "management_secret", "ci
 import_config "#{config_env()}.exs"
 
 config :ash_authentication, return_error_on_invalid_magic_link_token?: true
+
+# Ship reviewed timezone data with the release; avoid background network mutation.
+config :tzdata, :autoupdate, :disabled

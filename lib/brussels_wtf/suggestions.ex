@@ -540,7 +540,8 @@ defmodule BrusselsWtf.Suggestions do
 
   defp normalize_input(attrs) do
     with {:ok, kind} <- enum(value(attrs, :kind), [:ownership, :correction]),
-         {:ok, subject_type} <- enum(value(attrs, :subject_type), [:legal_entity, :person]),
+         {:ok, subject_type} <-
+           enum(value(attrs, :subject_type), [:legal_entity, :person, :agenda_item]),
          {:ok, subject_id} <-
            resolve_subject(kind, subject_type, value(attrs, :subject_reference)),
          {:ok, body} <- open_text(value(attrs, :body), config!()),
@@ -555,6 +556,17 @@ defmodule BrusselsWtf.Suggestions do
        }}
     else
       _ -> {:error, :invalid_submission}
+    end
+  end
+
+  defp resolve_subject(:correction, :agenda_item, reference) when is_binary(reference) do
+    with {:ok, id} <- cast_uuid(reference),
+         {:ok, %{published?: true} = item} <-
+           Ash.get(BrusselsWtf.Council.AgendaItem, id, load: [council_meeting: :meeting_page]),
+         %{publication_status: :published} <- item.council_meeting.meeting_page do
+      {:ok, item.id}
+    else
+      _ -> {:error, :invalid}
     end
   end
 

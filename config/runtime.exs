@@ -43,7 +43,13 @@ if config_env() == :dev do
 end
 
 if config_env() == :prod do
-  release_sha = System.get_env("RELEASE_SHA", "unknown")
+  # The release carries its build identity; stale Coolify runtime variables cannot relabel it.
+  release_sha =
+    case File.read(Application.app_dir(:brussels_wtf, "priv/source_commit")) do
+      {:ok, value} -> String.trim(value)
+      {:error, :enoent} -> System.get_env("RELEASE_SHA", "unknown")
+      {:error, reason} -> raise "cannot read release identity: #{inspect(reason)}"
+    end
 
   unless Regex.match?(~r/\A(?:unknown|[0-9a-f]{7,40})\z/, release_sha) do
     raise "RELEASE_SHA must be a Git commit hash or unknown"
