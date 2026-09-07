@@ -1,6 +1,6 @@
-# Brand asset prompts
+# Historical imagegen prompts
 
-Visual adaptations generated with the built-in image_gen tool from `../logo-concepts/05-compact-hand-v2.png`. Format/size exports use FFmpeg via `export.sh`.
+These prompts record the original raster exploration. Current production exports come from `assets/brand/master.svg` through `scripts/export_brand.py`; the prompts below are not used by that exporter.
 
 ## icon-light.png
 

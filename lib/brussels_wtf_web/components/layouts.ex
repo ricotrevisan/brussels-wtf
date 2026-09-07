@@ -11,6 +11,30 @@ defmodule BrusselsWtfWeb.Layouts do
   # and other static content.
   embed_templates "layouts/*"
 
+  @doc "The shared home link, with the approved wordmark for each surface theme."
+  attr :href, :string, default: "/"
+
+  def brand_link(assigns) do
+    ~H"""
+    <a href={@href} aria-label="brussels.wtf" class="brand-link shrink-0">
+      <img
+        src={~p"/images/brand/logo-horizontal-light.svg"}
+        class="brand-logo-light"
+        width="180"
+        height="43"
+        alt=""
+      />
+      <img
+        src={~p"/images/brand/logo-horizontal-dark.svg"}
+        class="brand-logo-dark"
+        width="180"
+        height="43"
+        alt=""
+      />
+    </a>
+    """
+  end
+
   @doc """
   Renders your app layout.
 
@@ -37,10 +61,7 @@ defmodule BrusselsWtfWeb.Layouts do
     ~H"""
     <header class="navbar px-4 sm:px-6 lg:px-8">
       <div class="flex-1">
-        <a href="/" class="flex-1 flex w-fit items-center gap-2">
-          <img src={~p"/images/logo.svg"} width="36" />
-          <span class="text-sm font-semibold">v{Application.spec(:phoenix, :vsn)}</span>
-        </a>
+        <.brand_link />
       </div>
       <div class="flex-none">
         <ul class="flex flex-column px-1 space-x-4 items-center">
