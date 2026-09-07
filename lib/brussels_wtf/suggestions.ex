@@ -102,6 +102,15 @@ defmodule BrusselsWtf.Suggestions do
     end
   end
 
+  @doc "Close an item correction by referencing its independently published corrected revision."
+  def address(id, publication_revision_id, note, actor) do
+    with :ok <- reviewer(actor),
+         {:ok, revision_id} <- cast_uuid(publication_revision_id),
+         {:ok, note} <- required_text(note, 2_000) do
+      moderate(id, :address, revision_id, "addressed_in_publication_revision", note, actor)
+    end
+  end
+
   @doc "Purge all due private values from one suggestion and its decision note."
   def purge_expired(id) do
     now = BrusselsWtf.Clock.utc_now()
@@ -257,7 +266,7 @@ defmodule BrusselsWtf.Suggestions do
                  suggestion,
                  :decide,
                  %{
-                   status: if(action == :reject, do: :rejected, else: :approved),
+                   status: %{reject: :rejected, approve: :approved, address: :addressed}[action],
                    decided_by: actor.id,
                    decided_at: now,
                    decision_reason_code: reason_code,
@@ -280,6 +289,7 @@ defmodule BrusselsWtf.Suggestions do
                    reason_code: reason_code,
                    note: note,
                    verified_fact_id: verified_fact_id,
+                   publication_revision_id: if(action == :address, do: fact_id),
                    note_retention_deadline: note_deadline,
                    inserted_at: now
                  },
@@ -294,7 +304,11 @@ defmodule BrusselsWtf.Suggestions do
                review_case
                |> Ash.Changeset.for_update(:close_suggestion, %{
                  disposition:
-                   if(action == :reject, do: :suggestion_rejected, else: :suggestion_approved)
+                   %{
+                     reject: :suggestion_rejected,
+                     approve: :suggestion_approved,
+                     address: :suggestion_addressed
+                   }[action]
                })
                |> Ash.update!(authorize?: false, domain: Review, return_notifications?: true)
 
@@ -351,6 +365,28 @@ defmodule BrusselsWtf.Suggestions do
       _ -> {:error, :invalid_review_case}
     end
   end
+
+  defp moderation_fact(
+         :address,
+         revision_id,
+         %{kind: :correction, subject_type: :agenda_item} = suggestion
+       ) do
+    with {:ok, item} <-
+           Ash.get(BrusselsWtf.Council.AgendaItem, suggestion.subject_id,
+             load: [council_meeting: :meeting_page]
+           ),
+         %{publication_status: :published, current_revision_id: ^revision_id} = page <-
+           item.council_meeting.meeting_page,
+         {:ok, revision} <- Ash.get(BrusselsWtf.Council.PublicationRevision, revision_id),
+         true <- revision.meeting_page_id == page.id,
+         true <- DateTime.compare(revision.published_at, suggestion.inserted_at) != :lt do
+      {:ok, nil}
+    else
+      _ -> {:error, :revision_not_published_or_matching}
+    end
+  end
+
+  defp moderation_fact(:address, _revision_id, _suggestion), do: {:error, :invalid_submission}
 
   defp moderation_fact(:reject, nil, _suggestion), do: {:ok, nil}
 

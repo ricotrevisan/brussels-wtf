@@ -28,6 +28,7 @@ with sync_playwright() as pw:
         for path,label in pages:
             page.goto(a.base+path); page.get_by_role("button",name=label,exact=True).click(); page.wait_for_url("**/feed?lang=fr")
         page.goto(a.base+"/?lang=fr")
+        page.locator("details.reader-filters > summary").click()
         page.locator(f'button[form="follow-commune-{data["commune"]}"]').click(); page.wait_for_url("**/feed?lang=fr")
     else:
         page.goto(a.base+"/feed?lang=fr")

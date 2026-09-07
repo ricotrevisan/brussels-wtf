@@ -29,6 +29,7 @@ defmodule BrusselsWtf.Review.SuggestionDecision do
         :reason_code,
         :note,
         :verified_fact_id,
+        :publication_revision_id,
         :note_retention_deadline,
         :inserted_at
       ]
@@ -59,7 +60,7 @@ defmodule BrusselsWtf.Review.SuggestionDecision do
 
     attribute :action, :atom do
       allow_nil? false
-      constraints one_of: [:reject, :approve]
+      constraints one_of: [:reject, :approve, :address]
     end
 
     attribute :reason_code, :string, allow_nil?: false
@@ -72,6 +73,7 @@ defmodule BrusselsWtf.Review.SuggestionDecision do
   relationships do
     belongs_to :suggestion, BrusselsWtf.Review.Suggestion, allow_nil?: false
     belongs_to :review_case, BrusselsWtf.Review.Case, allow_nil?: false
+    belongs_to :publication_revision, BrusselsWtf.Council.PublicationRevision
     belongs_to :verified_fact, BrusselsWtf.Identity.SourcedFact
   end
 

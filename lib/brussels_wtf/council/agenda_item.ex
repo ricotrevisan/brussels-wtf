@@ -145,12 +145,8 @@ defmodule BrusselsWtf.Council.AgendaItem do
     |> Enum.reject(& &1.synthetic)
     |> case do
       [] -> published_id
-      candidates -> Enum.max_by(candidates, &proposal_version_order/1).id
+      candidates -> Enum.max_by(candidates, &BrusselsWtf.Council.Proposal.version_order/1).id
     end
-  end
-
-  defp proposal_version_order(proposal) do
-    {proposal.source_version_order || "0:#{proposal.source_version.id}", proposal.id}
   end
 
   attributes do

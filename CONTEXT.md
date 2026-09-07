@@ -130,7 +130,7 @@ A public open-ended text submission proposing missing ownership information. It 
 
 ## Correction suggestion
 
-A public open-ended text submission from a company, person or published agenda-item page. It follows the same private review workflow as an ownership suggestion. Approved identity merges, profile corrections, and relationship changes retain audit history and redirect retired duplicate profiles.
+A public open-ended text submission from a company, person or published agenda-item page. It follows the same private review workflow as an ownership suggestion. Approved identity merges, profile corrections, and relationship changes retain audit history and redirect retired duplicate profiles. An addressed agenda-item correction references an independently published revision of that item’s meeting; closing the report never publishes content.
 
 ## Follow collection
 

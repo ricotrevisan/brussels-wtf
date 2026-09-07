@@ -253,6 +253,12 @@ defmodule BrusselsWtfWeb.MeetingPage do
           class="border-l-4 border-warning pl-3"
         >
           <h3 class="font-semibold">{text(@locale, :outcome_unknown)}</h3>
+          <p
+            :if={@page.council_meeting.scheduled_on == BrusselsWtfWeb.MeetingTime.today()}
+            class="mt-1 text-sm"
+          >
+            {text(@locale, :today)}
+          </p>
           <p :if={@past} class="mt-1 text-sm">{text(@locale, :past_explanation)}</p>
           <p class="mt-1 text-sm">{text(@locale, :unknown_explanation)}</p>
         </div>
@@ -507,6 +513,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
   defp en_text do
     %{
       skip: "Skip to content",
+      today: "Scheduled today",
       past_explanation:
         "The meeting date has passed. Its final outcome is not yet documented here.",
       past_proposal:
@@ -550,6 +557,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
   defp fr_text do
     %{
       skip: "Aller au contenu",
+      today: "Prévu aujourd’hui",
       past_explanation:
         "La date de la réunion est passée. Son résultat final n’est pas encore documenté ici.",
       past_proposal:
@@ -595,6 +603,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
   defp nl_text do
     %{
       skip: "Naar inhoud",
+      today: "Vandaag gepland",
       past_explanation:
         "De vergaderdatum is verstreken. De definitieve uitkomst is hier nog niet gedocumenteerd.",
       past_proposal:

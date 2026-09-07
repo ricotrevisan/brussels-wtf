@@ -234,6 +234,10 @@ defmodule BrusselsWtfWeb.TimelinePage do
       <p class="shrink-0 text-sm text-base-content/70">
         {@entry.commune} ·
         <time datetime={Date.to_iso8601(@entry.date)}>{format_date(@entry.date)}</time>
+        <span :if={@entry.group == :coming and @entry.date == BrusselsWtfWeb.MeetingTime.today()}> · {text(
+          @locale,
+          :today
+        )}</span>
       </p>
     </article>
     """
@@ -382,6 +386,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       apply: "Apply selection",
       search: "Search",
       sections: "Sections",
+      today: "Scheduled today",
       coming: "Coming up",
       awaiting: "Awaiting documented outcome",
       none_awaiting: "No past proposals awaiting a documented outcome in this selection.",
@@ -420,6 +425,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       apply: "Appliquer la sélection",
       search: "Rechercher",
       sections: "Sections",
+      today: "Prévu aujourd’hui",
       coming: "À venir",
       awaiting: "En attente d’un résultat documenté",
       none_awaiting: "Aucune proposition passée sans résultat documenté dans cette sélection.",
@@ -457,6 +463,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       apply: "Selectie toepassen",
       search: "Zoeken",
       sections: "Onderdelen",
+      today: "Vandaag gepland",
       coming: "Binnenkort",
       awaiting: "In afwachting van een gedocumenteerde uitkomst",
       none_awaiting: "Geen eerdere voorstellen zonder gedocumenteerde uitkomst in deze selectie.",

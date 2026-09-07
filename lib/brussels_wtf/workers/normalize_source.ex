@@ -16,6 +16,12 @@ defmodule BrusselsWtf.Workers.NormalizeSource do
 
     if args["processor_contract"] &&
          args["processor_contract"] != BrusselsWtf.Processors.normalization_contract() do
+      BrusselsWtf.Ingestion.NormalizationReview.open_contract_change(
+        run_id,
+        args["processor_contract"],
+        BrusselsWtf.Processors.normalization_contract()
+      )
+
       {:discard, "normalization contract changed; requeue from the current release"}
     else
       BrusselsWtf.Ingestion.Pipeline.normalize(

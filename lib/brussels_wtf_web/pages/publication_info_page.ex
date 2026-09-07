@@ -65,8 +65,24 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
                   {text(@locale, :revision)}: {timestamp(meeting["published_at"], @locale)}
                 </p>
               <% else %>
-                · {text(@locale, :pending)}
+                · {text(@locale, pending_state(meeting))}
               <% end %>
+              <p
+                :if={
+                  meeting["published"] and
+                    (meeting["review_pending"] or meeting["acquisition_failed"] or
+                       meeting["source_update_pending"])
+                }
+                class="text-sm"
+              >
+                {text(@locale, pending_state(meeting))}
+              </p>
+              <p class="text-sm">
+                {text(@locale, :selected_count)}: {meeting["selected_items"]}. {text(
+                  @locale,
+                  :omitted_count
+                )}: {meeting["omitted_normalized_items"]}. {text(@locale, :total_unknown)}
+              </p>
               <p class="text-sm text-base-content/70">
                 {text(@locale, if(meeting["final_source_seen"], do: :final_seen, else: :final_absent))}
               </p>
@@ -89,6 +105,11 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
     """
   end
 
+  defp pending_state(%{"review_pending" => true}), do: :review_pending
+  defp pending_state(%{"acquisition_failed" => true}), do: :acquisition_failed
+  defp pending_state(%{"downloaded" => true}), do: :processing_pending
+  defp pending_state(_), do: :pending
+
   defp timestamp(nil, locale), do: text(locale, :unverified)
   defp timestamp(%NaiveDateTime{} = date, _locale), do: NaiveDateTime.to_iso8601(date) <> " UTC"
   defp timestamp(date, _locale), do: DateTime.to_iso8601(date)
@@ -96,6 +117,12 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
   defp text(locale, key) do
     %{
       "en" => %{
+        selected_count: "Published selected items",
+        omitted_count: "Other normalized items outside the selection",
+        total_unknown: "The full agenda has not been enumerated; the total omitted is unknown.",
+        review_pending: "Source or publication awaiting editorial review",
+        acquisition_failed: "Latest source retrieval failed or the document disappeared",
+        processing_pending: "Source retained; processing or publication pending",
         coverage: "Coverage and source checks",
         about: "About brussels.wtf",
         scope:
@@ -126,6 +153,13 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
           "You do not need an account to report an error. Contact details are optional and private, retained for at most 90 days and at most 30 days after a decision. Report text is retained for up to 365 days. Do not include sensitive personal details that are unnecessary for checking the claim."
       },
       "fr" => %{
+        selected_count: "Points sélectionnés publiés",
+        omitted_count: "Autres points normalisés hors sélection",
+        total_unknown:
+          "L’ordre du jour complet n’a pas été dénombré ; le total omis est inconnu.",
+        review_pending: "Source ou publication en attente de vérification rédactionnelle",
+        acquisition_failed: "Dernière collecte échouée ou document disparu",
+        processing_pending: "Source conservée ; traitement ou publication en attente",
         coverage: "Couverture et vérification des sources",
         about: "À propos de brussels.wtf",
         scope:
@@ -156,6 +190,13 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
           "Aucun compte n’est requis pour signaler une erreur. Les coordonnées sont facultatives et privées, conservées au maximum 90 jours et au maximum 30 jours après une décision. Le texte est conservé jusqu’à 365 jours. Évitez les informations personnelles sensibles inutiles à la vérification."
       },
       "nl" => %{
+        selected_count: "Gepubliceerde geselecteerde punten",
+        omitted_count: "Andere genormaliseerde punten buiten de selectie",
+        total_unknown:
+          "De volledige agenda is niet geteld; het totale aantal weggelaten punten is onbekend.",
+        review_pending: "Bron of publicatie wacht op redactionele controle",
+        acquisition_failed: "Laatste bronophaling mislukt of document verdwenen",
+        processing_pending: "Bron bewaard; verwerking of publicatie in afwachting",
         coverage: "Dekking en broncontroles",
         about: "Over brussels.wtf",
         scope:

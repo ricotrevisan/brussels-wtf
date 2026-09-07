@@ -112,6 +112,7 @@ defmodule BrusselsWtfWeb.Router do
     post "/cases/:case_id/actions/:action", ReviewActionController, :create
     post "/cases/:case_id/notes", ReviewNoteController, :create
     post "/cases/:case_id/suggestion/reject", SuggestionActionController, :reject
+    post "/cases/:case_id/suggestion/address", SuggestionActionController, :address
     post "/cases/:case_id/suggestion/approve", SuggestionActionController, :approve
 
     post "/publications/:page_id/factual-corrections",

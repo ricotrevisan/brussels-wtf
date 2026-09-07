@@ -120,7 +120,7 @@ defmodule BrusselsWtf.Review.Suggestion do
     attribute :status, :atom do
       allow_nil? false
       default :pending
-      constraints one_of: [:pending, :rejected, :approved]
+      constraints one_of: [:pending, :rejected, :approved, :addressed]
     end
 
     attribute :decided_by, :string

@@ -43,6 +43,11 @@ defmodule BrusselsWtf.Council.Proposal do
     end
   end
 
+  def version_order(proposal) do
+    {Map.get(proposal, :source_version_order) || "0:#{proposal.source_version.id}",
+     Map.get(proposal, :id, "")}
+  end
+
   attributes do
     uuid_v7_primary_key :id
     attribute :text, :string, allow_nil?: false, public?: true
