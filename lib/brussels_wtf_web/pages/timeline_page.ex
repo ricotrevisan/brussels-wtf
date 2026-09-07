@@ -77,7 +77,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
     </a>
     <header class="border-b border-base-300">
       <div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4">
-        <a href={~p"/"} class="font-semibold tracking-wide">brussels.wtf</a>
+        <Layouts.brand_link href={"/?lang=" <> @locale} />
         <.language_nav locale={@locale} path="/" />
       </div>
     </header>

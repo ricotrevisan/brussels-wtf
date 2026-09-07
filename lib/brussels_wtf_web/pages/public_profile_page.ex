@@ -43,7 +43,7 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
     </a>
     <header class="border-b border-base-300">
       <div class="mx-auto flex max-w-4xl items-center justify-between gap-4 px-4 py-4">
-        <a href={"/?lang=" <> @locale} class="font-semibold tracking-wide">brussels.wtf</a>
+        <Layouts.brand_link href={"/?lang=" <> @locale} />
         <nav aria-label={text(@locale, :language)}>
           <ul class="flex gap-3 text-sm">
             <li :for={{code, label} <- [{"fr", "FR"}, {"nl", "NL"}, {"en", "EN"}]}>
