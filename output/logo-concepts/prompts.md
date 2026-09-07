@@ -1,0 +1,18 @@
+# Logo concepts
+
+Generated with the built-in image_gen tool. Raster explorations for selection, not integrated into the app.
+
+Geography reference: https://fr.wikivoyage.org/wiki/Fichier:Petite_ceinture_Bruxelles.PNG
+
+## Option 1
+
+Use case: logo-brand. Create one polished logo concept for 'brussels.wtf', an independent Brussels civic publication with a questioning, irreverent personality. Concept 1: bold negative-space cutout. Use the attached map ONLY as a geography reference: extract the peach central Pentagon silhouette bounded by the red ring, ignore all text, roads and legend. Preserve its irregular north-up outline (upper-left apex, sloping top down right, bulging short eastern edge, diagonal southeast edge and curved bottom-left, long western edge); never a regular geometric pentagon. Create a solid near-black silhouette with a clear white pinched-fingers hand 🤌 cut out in its center, fingertips together pointing up, thumb touching fingertips, palm narrowing to wrist at bottom. Recognizable hand with minimal finger details. Strong flat vector-like shape, no gradients, no texture. Center mark over exact lowercase wordmark 'brussels.wtf' in heavy contemporary sans serif. White square canvas, generous margins, very clean editorial identity. Only one logo lockup, no mockups, no extra text.
+
+## Option 2
+
+Use case: logo-brand. Create one polished logo concept for 'brussels.wtf', an independent Brussels civic publication with a questioning, irreverent personality. Concept 2: playful sticker. Use attached map ONLY as geography reference: peach central Pentagon silhouette bounded by red ring. Ignore labels, roads, legend. Preserve the irregular north-up silhouette with high upper-left apex, top sloping toward right, short bulging east side, long diagonal southeast edge and curved bottom-left; not a regular pentagon. Make the map a warm yellow flat silhouette with thick black contour. Overlay a large expressive white pinched-fingers hand 🤌 outlined in black, fingertips clustered together pointing upward, thumb touching fingers, palm and wrist below, a small part of wrist extends beyond lower map edge. Minimal bold comic-like linework, graphic readable hand, charming skeptical energy. No face, no extra symbols, no shadows or gradients. Exact lowercase wordmark 'brussels.wtf' beneath, heavy slightly condensed sans serif. Single centered logo lockup on white square canvas with generous space, no presentation mockups, no other text.
+
+## Option 3
+
+Use case: logo-brand. Create one polished logo concept for 'brussels.wtf', an independent Brussels civic publication with a questioning, irreverent personality. Concept 3: minimal outline emblem. Use attached map ONLY as geography reference: peach central Pentagon inside red ring. Ignore map text, roads and legend. Preserve its irregular north-up silhouette: high upper-left corner, top slopes down toward right, short bulging eastern edge, long diagonal southeast side to curved lower-left, long west side. Not a regular geometric pentagon. Draw the recognizable map contour in confident medium-weight black monoline. Center a compact black monoline pinched-fingers hand 🤌 inside, fingertips pointing up and clustered touching thumb, rounded palm and short wrist below. Hand is intelligently simplified to few curves with clear negative space, harmonious with map stroke. Flat black on white, no fill in map, no gradients, no shadows, no extra symbols. Exact lowercase wordmark 'brussels.wtf' beneath in clean modern medium-weight sans serif with careful spacing. One centered lockup on white square canvas with generous margins. Quiet crisp identity, no mockups, no extra text.
+
