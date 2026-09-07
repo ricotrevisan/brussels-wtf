@@ -109,50 +109,71 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
         <p :if={@profile.relationships == []} class="mt-3 text-base-content/70">
           {text(@locale, :no_relationships)}
         </p>
-        <ol :if={@profile.relationships != []} class="mt-4 space-y-5">
-          <li :for={relationship <- @profile.relationships} class="border-l-2 border-base-300 pl-4">
-            <h3 class="font-semibold">{kind_label(@locale, relationship.kind)}</h3>
-            <p class="mt-1">{relationship.subject_name} — {relationship.object_name}</p>
-            <p
-              :if={relationship.effective_from || relationship.effective_to}
-              class="mt-2 text-sm text-base-content/70"
+        <div :for={{group, relationships} <- @relationship_groups} class="mt-4">
+          <h3 class="text-lg font-semibold">{text(@locale, group)}</h3>
+          <ol class="mt-4 space-y-5">
+            <li
+              :for={relationship <- relationships}
+              id={"fact-" <> relationship.fact_id}
+              class="border-l-2 border-base-300 pl-4"
             >
-              {text(@locale, :effective)}
-              <time
-                :if={relationship.effective_from}
-                datetime={Date.to_iso8601(relationship.effective_from)}
+              <h4 class="font-semibold" lang={@locale}>
+                {role_label(@locale, relationship)}
+              </h4>
+              <p :if={relationship.mandate_declaration} class="mt-1 text-sm">
+                {text(@locale, :declared_mandate)} · {relationship.mandate_declaration["body"]}
+              </p>
+              <p :if={relationship.mandate_declaration} class="mt-1 text-sm" lang="fr">
+                {relationship.mandate_declaration["role"]}
+              </p>
+              <p :if={relationship.state == :superseded} class="mt-1 text-sm">
+                {text(@locale, :superseded)}
+              </p>
+              <p class="mt-1">{relationship.subject_name} — {relationship.object_name}</p>
+              <p
+                :if={relationship.effective_from || relationship.effective_to}
+                class="mt-2 text-sm text-base-content/70"
               >
-                {Date.to_iso8601(relationship.effective_from)}
-              </time>
-              <span :if={relationship.effective_from && relationship.effective_to}> – </span>
-              <time
-                :if={relationship.effective_to}
-                datetime={Date.to_iso8601(relationship.effective_to)}
-              >
-                {Date.to_iso8601(relationship.effective_to)}
-              </time>
-            </p>
-            <p class="mt-2 text-sm">
-              <a
-                :if={relationship.authoritative_url}
-                href={relationship.authoritative_url}
-                rel="external"
-                class="underline underline-offset-2"
-              >{source_label(@locale, relationship.source_authority)}</a>
-              <span> · {relationship.evidence_location}</span>
-            </p>
-            <p class="mt-1 text-sm text-base-content/70">
-              {text(@locale, :retrieved)}
-              <time datetime={DateTime.to_iso8601(relationship.source_retrieved_at)}>
-                {format_datetime(relationship.source_retrieved_at)}
-              </time>
-              · {text(@locale, :verified)}
-              <time datetime={DateTime.to_iso8601(relationship.verified_at)}>
-                {format_datetime(relationship.verified_at)}
-              </time>
-            </p>
-          </li>
-        </ol>
+                {text(
+                  @locale,
+                  if(relationship.mandate_declaration, do: :reporting_period, else: :effective)
+                )}
+                <time
+                  :if={relationship.effective_from}
+                  datetime={Date.to_iso8601(relationship.effective_from)}
+                >
+                  {Date.to_iso8601(relationship.effective_from)}
+                </time>
+                <span :if={relationship.effective_from && relationship.effective_to}> – </span>
+                <time
+                  :if={relationship.effective_to}
+                  datetime={Date.to_iso8601(relationship.effective_to)}
+                >
+                  {Date.to_iso8601(relationship.effective_to)}
+                </time>
+              </p>
+              <p class="mt-2 text-sm">
+                <a
+                  :if={relationship.authoritative_url}
+                  href={relationship.authoritative_url}
+                  rel="external"
+                  class="underline underline-offset-2"
+                >{relationship_source(@locale, relationship)}</a>
+                <span> · {relationship.evidence_location}</span>
+              </p>
+              <p class="mt-1 text-sm text-base-content/70">
+                {text(@locale, :retrieved)}
+                <time datetime={DateTime.to_iso8601(relationship.source_retrieved_at)}>
+                  {format_datetime(relationship.source_retrieved_at)}
+                </time>
+                · {text(@locale, :verified)}
+                <time datetime={DateTime.to_iso8601(relationship.verified_at)}>
+                  {format_datetime(relationship.verified_at)}
+                </time>
+              </p>
+            </li>
+          </ol>
+        </div>
       </section>
 
       <section
@@ -248,6 +269,13 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
       resource_path: resource_path,
       locale: locale,
       profile: profile,
+      relationship_groups:
+        [
+          {:current_facts, Enum.filter(profile.relationships, &(&1.state in [nil, :current]))},
+          {:dated_history,
+           Enum.filter(profile.relationships, &(&1.state in [:ended, :superseded]))}
+        ]
+        |> Enum.reject(fn {_, facts} -> facts == [] end),
       suggestions_enabled: enabled,
       honeypot: if(enabled, do: Suggestions.honeypot_attributes(), else: nil),
       csrf_token: Plug.CSRFProtection.get_csrf_token()
@@ -277,6 +305,17 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
   defp status_label("nl", :inactive), do: "Inactief"
   defp status_label(_locale, :active), do: "Active"
   defp status_label(_locale, :inactive), do: "Inactive"
+
+  defp role_label(locale, %{mandate_declaration: %{"role_labels" => labels}}),
+    do: Map.fetch!(labels, locale)
+
+  defp role_label(locale, relationship), do: kind_label(locale, relationship.kind)
+
+  defp relationship_source(_locale, %{mandate_declaration: %{"reporting_year" => year}}),
+    do: "Commune d'Ixelles · Liste des mandats #{year}"
+
+  defp relationship_source(locale, relationship),
+    do: source_label(locale, relationship.source_authority)
 
   defp kind_label("fr", kind), do: Map.fetch!(fr_kinds(), kind)
   defp kind_label("nl", kind), do: Map.fetch!(nl_kinds(), kind)
@@ -350,7 +389,12 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
       cbe_description: "Crossroads Bank for Enterprises (CBE) Open Data",
       release_date: "Release date",
       checksum: "SHA-256 checksum",
-      relationships: "Verified public relationships",
+      relationships: "Verified facts",
+      current_facts: "Current facts",
+      dated_history: "Dated history",
+      declared_mandate: "Declared mandate",
+      reporting_period: "Declared period:",
+      superseded: "Superseded by a corrected declaration",
       no_relationships: "No verified public relationships are available.",
       effective: "Effective:",
       retrieved: "Retrieved",
@@ -378,7 +422,12 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
       cbe_description: "Banque-Carrefour des Entreprises (BCE) — données ouvertes",
       release_date: "Date de la publication",
       checksum: "Somme de contrôle SHA-256",
-      relationships: "Relations publiques vérifiées",
+      relationships: "Faits vérifiés",
+      current_facts: "Faits actuels",
+      dated_history: "Historique daté",
+      declared_mandate: "Mandat déclaré",
+      reporting_period: "Période déclarée :",
+      superseded: "Remplacé par une déclaration corrigée",
       no_relationships: "Aucune relation publique vérifiée n’est disponible.",
       effective: "En vigueur :",
       retrieved: "Récupérée",
@@ -406,7 +455,12 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
       cbe_description: "Kruispuntbank van Ondernemingen (KBO) — Open Data",
       release_date: "Publicatiedatum",
       checksum: "SHA-256-controlesom",
-      relationships: "Geverifieerde openbare relaties",
+      relationships: "Geverifieerde feiten",
+      current_facts: "Actuele feiten",
+      dated_history: "Gedateerde geschiedenis",
+      declared_mandate: "Aangegeven mandaat",
+      reporting_period: "Aangegeven periode:",
+      superseded: "Vervangen door een gecorrigeerde aangifte",
       no_relationships: "Er zijn geen geverifieerde openbare relaties beschikbaar.",
       effective: "Van kracht:",
       retrieved: "Opgehaald",

@@ -25,7 +25,8 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     :motion,
     :question,
     :interpellation,
-    :supporting_document
+    :supporting_document,
+    :mandate_declaration
   ]
 
   @spec discover_and_enqueue(
@@ -302,6 +303,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
                %{sha256: version.sha256, media_type: version.media_type},
                bytes
              ),
+           extracted = declaration_result(version, extracted, :native),
            {:ok, archived_text} <- BrusselsWtf.Archive.store(extracted.text, :derived) do
         record_native_result(version, run, extracted, archived_text, attempt)
       else
@@ -328,6 +330,36 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         error
     end
   end
+
+  defp pdf_meta(version) do
+    meta = %{sha256: version.sha256, media_type: version.media_type}
+
+    if version.source_record.role == :mandate_declaration,
+      do: Map.put(meta, :ocr_profile, :scanned_declaration),
+      else: meta
+  end
+
+  defp declaration_result(
+         %{source_record: %{role: :mandate_declaration}} = version,
+         result,
+         stage
+       ) do
+    text = BrusselsWtf.Identity.MandateDeclaration.safe_text(version.sha256, result.text)
+
+    quality =
+      BrusselsWtf.Identity.MandateDeclaration.quality(
+        version.sha256,
+        result.quality_measurements,
+        stage
+      )
+
+    result
+    |> Map.put(:text, text)
+    |> Map.put(:quality_measurements, quality)
+    |> Map.put(:output, %{"text" => text, "page_count" => result.page_count})
+  end
+
+  defp declaration_result(_version, result, _stage), do: result
 
   defp prepare_native_generation(version, generation_kind) do
     metadata = BrusselsWtf.PDF.Processor.metadata()
@@ -436,10 +468,6 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
           BrusselsWtf.Identity.IxellesPublicMandateProcessor.enqueue_waiting_for_source_version!(
             version.id
           )
-
-          BrusselsWtf.Identity.IxellesMandateDeclarationProcessor.enqueue_waiting_for_source_version!(
-            version.id
-          )
         end
 
         notifications =
@@ -488,10 +516,6 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         version.id
       )
 
-      BrusselsWtf.Identity.IxellesMandateDeclarationProcessor.enqueue_waiting_for_source_version!(
-        version.id
-      )
-
       if review_case_id = run.output["review_case_id"] do
         BrusselsWtf.Review.complete_retry!(review_case_id)
       end
@@ -511,7 +535,10 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
   end
 
   defp verify_processor_provenance(run, role) do
-    metadata = BrusselsWtf.PDF.Processor.metadata()
+    metadata =
+      if role == :ocr and run.inputs["ocr_profile"] == "scanned_declaration",
+        do: BrusselsWtf.PDF.Processor.metadata(%{ocr_profile: :scanned_declaration}),
+        else: BrusselsWtf.PDF.Processor.metadata()
 
     expected =
       case role do
@@ -530,8 +557,20 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
       else: {:error, {:processor_provenance_mismatch, role}}
   end
 
+  defp enqueue_ocr(
+         %{source_record: %{role: :mandate_declaration}} = version,
+         _native_run,
+         _native_artifact,
+         %{"rejected_pages" => []}
+       ) do
+    BrusselsWtf.Identity.IxellesMandateDeclarationProcessor.review_document(
+      version,
+      :uninspected_source_version
+    )
+  end
+
   defp enqueue_ocr(version, native_run, native_artifact, quality) do
-    metadata = BrusselsWtf.PDF.Processor.metadata()
+    metadata = BrusselsWtf.PDF.Processor.metadata(pdf_meta(version))
     limits = Application.fetch_env!(:brussels_wtf, :pdf_limits)
 
     run =
@@ -546,6 +585,11 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
           "review_case_id" => native_run.output["review_case_id"],
           "generation_kind" => native_run.inputs["generation_kind"] || "automatic",
           "pages" => quality["rejected_pages"],
+          "ocr_profile" =>
+            if(version.source_record.role == :mandate_declaration,
+              do: "scanned_declaration",
+              else: "default"
+            ),
           "languages" => limits.ocr_languages,
           "limits" => Map.new(limits, fn {key, value} -> {to_string(key), value} end)
         },
@@ -569,6 +613,18 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
   end
 
   defp enqueue_normalization(run, locator_url) do
+    version = Ingestion.get_source_version!(run.source_version_id) |> Ash.load!(:source_record)
+
+    if version.source_record.role == :mandate_declaration do
+      BrusselsWtf.Identity.IxellesMandateDeclarationProcessor.enqueue_waiting_for_source_version!(
+        version.id
+      )
+    else
+      enqueue_council_normalization(run, locator_url)
+    end
+  end
+
+  defp enqueue_council_normalization(run, locator_url) do
     %{
       processing_run_id: run.id,
       locator_url: locator_url,
@@ -606,10 +662,11 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
            actual when actual == version.sha256 <- BrusselsWtf.Digest.sha256(bytes),
            {:ok, extracted} <-
              BrusselsWtf.PDF.Processor.ocr(
-               %{sha256: version.sha256, media_type: version.media_type},
+               pdf_meta(version),
                bytes,
                pages
              ),
+           extracted = declaration_result(version, extracted, :ocr),
            {:ok, archived_pdf} <- BrusselsWtf.Archive.store(extracted.searchable_pdf, :derived),
            {:ok, archived_text} <- BrusselsWtf.Archive.store(extracted.text, :derived) do
         case ensure_accepted_quality(extracted.quality_measurements) do
@@ -732,15 +789,6 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         artifact_notifications =
           persist_ocr_artifacts(completed, result, archived_pdf, archived_text)
 
-        :ok =
-          if result.quality_measurements["accepted"] do
-            BrusselsWtf.Identity.IxellesMandateDeclarationProcessor.enqueue_waiting_for_source_version!(
-              completed.source_version_id
-            )
-          else
-            :ok
-          end
-
         review_notifications =
           if review_case_id = completed.inputs["review_case_id"] do
             {_case, notifications} =
@@ -791,6 +839,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
                %{sha256: version.sha256, media_type: version.media_type},
                bytes
              ),
+           extracted = declaration_result(version, extracted, :native),
            {:ok, archived_text} <- BrusselsWtf.Archive.store(extracted.text, :derived) do
         complete_review_extraction(run, extracted, archived_text, attempt)
       else

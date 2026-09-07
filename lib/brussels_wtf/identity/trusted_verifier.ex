@@ -9,6 +9,7 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
   """
 
   alias BrusselsWtf.Identity
+  alias BrusselsWtf.Identity.MandateDeclaration
   alias BrusselsWtf.Ingestion
   alias BrusselsWtf.Repo
 
@@ -31,8 +32,10 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
   @declaration_parent_index_url "https://www.ixelles.be/site/773-Rapports-annuels-Remunerations-et-avantages?langue=fr"
 
   @declaration_config_inputs %{
-    "ruleset" => "ixelles-mandate-declaration-v1",
-    "sections" => ["mandats", "fonctions", "fonctions derivees"],
+    "ruleset" => "ixelles-mandate-declaration-v2",
+    "sections" => ["mandats"],
+    "signature_policy" => "inspected-immutable-version",
+    "identity_policy" => "complete-name-and-independent-minutes",
     "origin_path" => "/site/fr/download/transparence/mandats-YYYY.pdf",
     "parent_index_url" => @declaration_parent_index_url,
     "forbidden_excerpt_markers" => [
@@ -51,18 +54,20 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
                              )
 
   @ixelles_declaration %{
-    id: :ixelles_mandate_declaration_v1,
-    verifier_id: "ixelles_mandate_declaration_v1",
+    id: :ixelles_mandate_declaration_v2,
+    verifier_id: "ixelles_mandate_declaration_v2",
     commune_slug: "ixelles",
     processor_name: "ixelles-mandate-declarations",
     processor_version: "1.0.0",
     config_hash: @declaration_config_hash,
-    ruleset_version: "ixelles-mandate-declaration-v1",
+    ruleset_version: "ixelles-mandate-declaration-v2",
     artifact_kind: "relationship-claim-json",
     kind: :public_mandate,
     source: %{
       label: "mandate declaration",
-      evidence_location_regex: ~r/\Adeclaration [0-9]{4}\z/,
+      source_authority: :municipal_declaration,
+      evidence_kind: :official_declaration,
+      evidence_location_regex: ~r/\Adeclaration [0-9]{4} page [1-9][0-9]*\z/,
       record_role: :mandate_declaration,
       locator_role: :mandate_declaration,
       parent_index_url: @declaration_parent_index_url,
@@ -75,6 +80,8 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
 
   @ixelles_minutes_source %{
     label: "minutes",
+    source_authority: :municipal_decision,
+    evidence_kind: :official_decision,
     evidence_location_regex: ~r/\Adecision [0-9]+(?:[.-][0-9A-Za-z]+)*\z/,
     record_role: :minutes,
     locator_role: :minutes,
@@ -144,11 +151,6 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
   @doc false
   def declaration_semantic_payload(fact, person, commune, version) do
     semantic_payload(fact, person, commune, version, @ixelles_declaration)
-  end
-
-  @doc false
-  def declaration_name_match?(row, legal_name) do
-    contains_name?(row, legal_name)
   end
 
   def verify!(fact_id, verifier_id, processing_run_id) do
@@ -277,8 +279,8 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
     end
 
     unless fact.object_type == :commune and fact.object_id == commune.id and
-             fact.kind == :public_mandate and fact.source_authority == :municipal_decision and
-             fact.evidence_kind == :official_decision and
+             fact.kind == :public_mandate and fact.source_authority == policy.source_authority and
+             fact.evidence_kind == policy.evidence_kind and
              is_binary(fact.evidence_location) and
              Regex.match?(policy.evidence_location_regex, fact.evidence_location) and
              match?(%Date{}, fact.effective_from) do
@@ -357,7 +359,13 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
       run = Ingestion.get_processing_run!(run_id)
       artifact = Ingestion.get_derived_artifact!(artifact_id)
 
-      metadata = BrusselsWtf.PDF.Processor.metadata()
+      metadata =
+        if policy.text_input == :ocr,
+          do: BrusselsWtf.PDF.Processor.metadata(%{ocr_profile: :scanned_declaration}),
+          else: BrusselsWtf.PDF.Processor.metadata()
+
+      if policy.text_input == :ocr and run.inputs["ocr_profile"] != "scanned_declaration",
+        do: raise(ArgumentError, "declaration requires the inspected OCR profile")
 
       {output_kind, link_role, expected_processor} =
         case {policy.text_input, run.processor_role} do
@@ -425,6 +433,17 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
       "claim_sha256" => artifact.output_sha256
     }
 
+    {expected_inputs, expected_output} =
+      if verifier.id == :ixelles_mandate_declaration_v2 do
+        {:ok, document} = MandateDeclaration.contract(version.sha256)
+        declaration = MandateDeclaration.metadata(document)
+
+        {Map.put(expected_inputs, "mandate_declaration", declaration),
+         Map.put(expected_output, "mandate_declaration", declaration)}
+      else
+        {expected_inputs, expected_output}
+      end
+
     unless run.source_version_id == version.id and run.status == :succeeded and
              run.processor_role == :relationship_verification and
              run.processor_name == verifier.processor_name and
@@ -481,13 +500,29 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
 
         :ocr ->
           case BrusselsWtf.PDF.Processor.ocr(
-                 %{sha256: version.sha256, media_type: version.media_type},
+                 %{
+                   sha256: version.sha256,
+                   media_type: version.media_type,
+                   ocr_profile: :scanned_declaration
+                 },
                  source_bytes,
                  text_run.inputs["pages"]
                ) do
             {:ok, result} -> result
             {:error, _reason} -> raise ArgumentError, "configured OCR rerun failed"
           end
+      end
+
+    rerun =
+      if policy.evidence == :declaration_row do
+        rerun
+        |> Map.put(:text, MandateDeclaration.safe_text(version.sha256, rerun.text))
+        |> Map.update!(
+          :quality_measurements,
+          &MandateDeclaration.quality(version.sha256, &1, :ocr)
+        )
+      else
+        rerun
       end
 
     text_bytes = archive_bytes!(text_artifact.object_key, "archived extracted text")
@@ -535,59 +570,16 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
 
   @doc false
   def direct_declaration_evidence?(text, fact, person) when is_binary(text) do
-    excerpt = fact.evidence_excerpt
+    version = Ingestion.get_source_version!(fact.source_version_id)
 
-    with true <- is_binary(excerpt) and byte_size(excerpt) in 8..240,
-         true <- Enum.any?(String.split(text, ["\r\n", "\n", "\f"]), &(&1 == excerpt)),
-         true <- declaration_row_location?(fact),
-         true <- contains_name?(excerpt, person.legal_name),
-         true <- not forbidden_declaration_content?(excerpt),
-         true <- unique_active_identity?(person) do
+    with {:ok, document} <-
+           MandateDeclaration.parse(version.sha256, fact.authoritative_url, text),
+         true <- MandateDeclaration.matches?(fact, person, document),
+         true <- MandateDeclaration.unique_person?(person) do
       true
     else
       _ -> false
     end
-  end
-
-  defp declaration_row_location?(fact) do
-    with [_, location_year] <-
-           Regex.run(~r/\Adeclaration ([0-9]{4})\z/, fact.evidence_location || ""),
-         %URI{path: path} <- URI.parse(fact.authoritative_url),
-         [_, url_year] <- Regex.run(~r/mandats-([0-9]{4})\.pdf/, path || "") do
-      url_year == location_year
-    else
-      _ -> false
-    end
-  end
-
-  defp contains_name?(excerpt, legal_name) do
-    wanted = strip_non_letters(legal_name)
-
-    wanted != "" and String.contains?(strip_non_letters(excerpt), wanted)
-  end
-
-  defp strip_non_letters(value) when is_binary(value) do
-    value
-    |> :unicode.characters_to_nfd_binary()
-    |> String.downcase()
-    |> String.replace(~r/[^a-z]/, "")
-  end
-
-  @declaration_forbidden_markers [
-    "num\u{e9}ro national",
-    "numero national",
-    "adresse",
-    "signature",
-    "281.10",
-    "tranche"
-  ]
-
-  defp forbidden_declaration_content?(excerpt) do
-    lowered = String.downcase(excerpt)
-
-    Enum.any?(@declaration_forbidden_markers, &String.contains?(lowered, &1)) or
-      Regex.match?(~r/\b\d{2}\.\d{2}\.\d{2}-\d{3}\.\d{2}\b/, lowered) or
-      Regex.match?(~r/\d[\d\s.,]*\s?(?:€|eur\b)/i, lowered)
   end
 
   @doc false
@@ -664,7 +656,7 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
   end
 
   defp semantic_payload(fact, person, commune, version, verifier) do
-    %{
+    payload = %{
       "schema_version" => verifier.ruleset_version,
       "subject" => %{
         "type" => "person",
@@ -693,6 +685,10 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
         "location" => fact.evidence_location
       }
     }
+
+    if verifier.id == :ixelles_mandate_declaration_v2,
+      do: Map.put(payload, "mandate_declaration", fact.mandate_declaration),
+      else: payload
   end
 
   defp relationship_artifact!(run_id) do
@@ -729,13 +725,16 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
           fact.object_type,
           fact.object_id,
           fact.kind,
-          verifier.verifier_id
+          verifier.verifier_id,
+          declaration_key(fact)
         ],
         ":"
       )
 
     Repo.query!("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [key])
   end
+
+  defp declaration_key(fact), do: (fact.mandate_declaration || %{})["key"] || ""
 
   defp lock_current_fact(fact, verifier) do
     result =
@@ -750,6 +749,7 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
            AND object_id = $4::text::uuid
            AND kind = $5
            AND verified_by = $6
+           AND COALESCE(mandate_declaration ->> 'key', '') = $7
            AND verification_status = 'verified'
          FOR UPDATE
         """,
@@ -759,7 +759,8 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
           Atom.to_string(fact.object_type),
           fact.object_id,
           Atom.to_string(fact.kind),
-          verifier.verifier_id
+          verifier.verifier_id,
+          declaration_key(fact)
         ]
       )
 
@@ -799,7 +800,21 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
         current.object_type == Atom.to_string(fact.object_type) and
         current.object_id == fact.object_id and current.kind == Atom.to_string(fact.kind)
 
-    ordered? = Date.compare(fact.effective_from, current.effective_from) in [:eq, :gt]
+    ordered? =
+      if fact.mandate_declaration do
+        previous = Identity.get_sourced_fact!(current.id) |> Ash.load!(:source_version)
+        incoming = Ingestion.get_source_version!(fact.source_version_id)
+
+        previous.mandate_declaration != nil and
+          previous.mandate_declaration["key"] == fact.mandate_declaration["key"] and
+          previous.mandate_declaration["revision"] < fact.mandate_declaration["revision"] and
+          DateTime.compare(
+            incoming.first_retrieved_at,
+            previous.source_version.first_retrieved_at
+          ) == :gt
+      else
+        Date.compare(fact.effective_from, current.effective_from) in [:eq, :gt]
+      end
 
     unless same_semantics? and ordered? do
       raise ArgumentError,

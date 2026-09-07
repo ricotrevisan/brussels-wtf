@@ -5,37 +5,75 @@ defmodule BrusselsWtf.Identity.IxellesMandateDeclarationProcessor do
 
   Automated retrieval, private evidentiary retention, and minimal public
   citation are permitted under written terms confirmed by the operator
-  (issue #43, 2026-09-04). Remuneration data, fiscal sheets, national
-  numbers, addresses, and signatures are never extracted, stored, or
-  published.
+  (issue #43, 2026-09-04). Full PDF snapshots remain private evidence. Derived
+  text retains only validated declaration fields; remuneration data, fiscal
+  sheets, national numbers, addresses and signature images are never projected.
 
   It creates only the deterministic semantic artifact consumed by the trusted
   verifier. It never accepts reviewer provenance or a human approval.
   """
 
   alias BrusselsWtf.Identity
+  alias BrusselsWtf.Identity.MandateDeclaration
   alias BrusselsWtf.Identity.TrustedVerifier
   alias BrusselsWtf.Ingestion
   alias BrusselsWtf.Repo
 
   require Ash.Query
 
-  @verifier :ixelles_mandate_declaration_v1
-  @boilerplate_markers [
-    "liste des mandats",
-    "cellule transparence",
-    "vade-mecum",
-    "modele de formulaire",
-    "declaration faite en execution",
-    "arrete d'execution",
-    "ordonnance conjointe",
-    "y compris pour ceux",
-    "compris pour ceux",
-    "numero national",
-    "nom :",
-    "prenom",
-    "adresse"
-  ]
+  @verifier :ixelles_mandate_declaration_v2
+
+  @doc "Acquire the single approved report through its official index and the normal immutable retrieval pipeline."
+  def acquire(commune_id, poll_run_id) do
+    commune = Ingestion.get_commune!(commune_id)
+    if commune.slug != "ixelles", do: raise(ArgumentError, "unsupported declaring authority")
+    now = BrusselsWtf.Clock.utc_now()
+
+    index =
+      Ingestion.upsert_locator!(%{
+        commune_id: commune.id,
+        url: MandateDeclaration.index(),
+        parent_index_url: MandateDeclaration.index(),
+        meeting_identifier: "mandate-index",
+        role: :index,
+        language: :fr,
+        observed_label: "Liste des mandats",
+        discovered_at: now
+      })
+
+    with :ok <- Ingestion.Pipeline.retrieve(index.id, poll_run_id, "mandate-index:#{poll_run_id}") do
+      record =
+        Ingestion.SourceRecord
+        |> Ash.Query.filter(commune_id == ^commune.id and origin_url == ^index.url)
+        |> Ash.read_one!(authorize?: false)
+        |> Ash.load!(:versions)
+
+      version = Enum.max_by(record.versions, & &1.first_retrieved_at, DateTime)
+      {:ok, html} = BrusselsWtf.Archive.get(version.object_key)
+
+      links =
+        Regex.scan(~r/href\s*=\s*["']([^"']+)["']/i, html)
+        |> Enum.map(fn [_, href] -> URI.merge(index.url, href) |> URI.to_string() end)
+
+      if MandateDeclaration.origin() in links do
+        locator =
+          Ingestion.upsert_locator!(%{
+            commune_id: commune.id,
+            url: MandateDeclaration.origin(),
+            parent_index_url: index.url,
+            meeting_identifier: "mandats-2024",
+            role: :mandate_declaration,
+            language: :fr,
+            observed_label: "Liste des mandats 2024",
+            discovered_at: now
+          })
+
+        Ingestion.Pipeline.retrieve(locator.id, poll_run_id, "mandate-document:#{poll_run_id}")
+      else
+        open_document_review(version, :missing_official_declaration_link)
+      end
+    end
+  end
 
   @doc """
   Parses accepted OCR text for declaration source versions and records
@@ -88,8 +126,8 @@ defmodule BrusselsWtf.Identity.IxellesMandateDeclarationProcessor do
              person.resolution_basis == :explicit_identifier and
              is_binary(person.explicit_identifier) and person.explicit_identifier != "" and
              fact.object_type == :commune and fact.object_id == commune.id and
-             fact.kind == :public_mandate and fact.source_authority == :municipal_decision and
-             fact.evidence_kind == :official_decision and match?(%Date{}, fact.effective_from) and
+             fact.kind == :public_mandate and fact.source_authority == :municipal_declaration and
+             fact.evidence_kind == :official_declaration and match?(%Date{}, fact.effective_from) and
              record.role == policy.record_role and
              fact.authoritative_url == record.origin_url and
              commune.slug == "ixelles" and
@@ -110,12 +148,21 @@ defmodule BrusselsWtf.Identity.IxellesMandateDeclarationProcessor do
         :ok
 
       {:ok, fact} ->
-        if eligible?(fact), do: process_eligible(fact), else: :ok
+        cond do
+          not eligible?(fact) -> :ok
+          predecessor_pending?(fact) -> {:error, :predecessor_pending}
+          true -> process_eligible(fact)
+        end
 
       _ ->
         :ok
     end
   end
+
+  defp predecessor_pending?(%{supersedes_id: nil}), do: false
+
+  defp predecessor_pending?(fact),
+    do: Identity.get_sourced_fact!(fact.supersedes_id).verification_status == :unreviewed
 
   def open_terminal_review(fact_id, reason) do
     case Identity.get_sourced_fact(fact_id) do
@@ -141,166 +188,98 @@ defmodule BrusselsWtf.Identity.IxellesMandateDeclarationProcessor do
   ## Parsing and candidate recording
 
   defp process_declaration_text(version, text) do
-    year = declaration_year!(version)
-    commune = version.source_record.commune
-    rows = mandate_rows(text)
+    with {:ok, document} <-
+           MandateDeclaration.parse(version.sha256, version.source_record.origin_url, text) do
+      people =
+        Identity.Person
+        |> Ash.Query.filter(status == :active)
+        |> Ash.read!(authorize?: false, domain: Identity)
+        |> Enum.filter(
+          &(MandateDeclaration.normalize(&1.legal_name) == MandateDeclaration.name(document))
+        )
 
-    if rows == [] do
-      open_document_review(version, :no_parseable_mandate_rows)
-    end
+      case people do
+        [person] ->
+          if corroborated_person?(person.id, version.source_record.commune_id) do
+            record_fact!(version, person, document)
+          else
+            open_document_review(version, :uncorroborated_person)
+          end
 
-    Enum.each(rows, fn row -> record_row_candidate(version, commune, row, year) end)
+        [] ->
+          open_document_review(version, :unresolved_person)
 
-    :ok
-  end
-
-  defp record_row_candidate(version, commune, row, year) do
-    case resolve_persons(row) do
-      [person] -> record_fact!(version, commune, person, row, year)
-      [] -> :ok
-      _multiple -> open_ambiguity_review(version, row)
-    end
-  end
-
-  defp record_fact!(version, commune, person, row, year) do
-    if existing_candidate?(version, person, row) do
-      :ok
+        _ ->
+          open_document_review(version, :ambiguous_person)
+      end
     else
-      {:ok, period_start} = Date.new(year, 1, 1)
-      {:ok, period_end} = Date.new(year, 12, 31)
+      {:error, reason} -> open_document_review(version, reason)
+    end
+  end
 
-      fact =
+  defp record_fact!(version, person, document) do
+    # Serialize candidate discovery as well as verification. Oban uniqueness is
+    # not the authority for at-least-once acquisition or correction delivery.
+    Repo.transaction(fn ->
+      Repo.query!("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [
+        "declaration-candidate:#{person.id}:#{document.key}"
+      ])
+
+      existing =
+        Identity.SourcedFact
+        |> Ash.Query.filter(subject_id == ^person.id and source_version_id == ^version.id)
+        |> Ash.read!(authorize?: false, domain: Identity)
+        |> Enum.find(&(&1.mandate_declaration == MandateDeclaration.metadata(document)))
+
+      if existing do
+        enqueue_if_eligible!(existing)
+      else
+        predecessor =
+          Identity.SourcedFact
+          |> Ash.Query.filter(
+            subject_id == ^person.id and verification_status in [:unreviewed, :verified]
+          )
+          |> Ash.read!(authorize?: false, domain: Identity)
+          |> Enum.filter(
+            &(not is_nil(&1.mandate_declaration) and &1.mandate_declaration["key"] == document.key and
+                &1.mandate_declaration["revision"] < document.revision)
+          )
+          |> Enum.max_by(& &1.mandate_declaration["revision"], fn -> nil end)
+
         Identity.record_sourced_fact!(%{
           subject_type: :person,
           subject_id: person.id,
           object_type: :commune,
-          object_id: commune.id,
+          object_id: version.source_record.commune_id,
           kind: :public_mandate,
-          effective_from: period_start,
-          effective_to: period_end,
+          effective_from: document.effective_from,
+          effective_to: document.effective_to,
           source_version_id: version.id,
           authoritative_url: version.source_record.origin_url,
-          source_authority: :municipal_decision,
-          evidence_kind: :official_decision,
-          evidence_excerpt: row,
-          evidence_location: "declaration #{year}"
+          source_authority: :municipal_declaration,
+          evidence_kind: :official_declaration,
+          evidence_excerpt: document.row,
+          evidence_location: MandateDeclaration.location(document),
+          mandate_declaration: MandateDeclaration.metadata(document),
+          supersedes_id: predecessor && predecessor.id
         })
-
-      enqueue_if_eligible!(fact)
-      :ok
-    end
-  end
-
-  defp existing_candidate?(version, person, row) do
-    Identity.SourcedFact
-    |> Ash.Query.filter(
-      subject_id == ^person.id and source_version_id == ^version.id and
-        evidence_excerpt == ^row and verification_status in [:unreviewed, :verified]
-    )
-    |> Ash.read!(authorize?: false, domain: Identity)
-    |> Enum.any?()
-  end
-
-  defp resolve_persons(row) do
-    result =
-      Repo.query!(
-        "SELECT id::text, legal_name FROM people WHERE status = 'active' AND resolution_basis = 'explicit_identifier'"
-      )
-
-    result.rows
-    |> Enum.map(fn [id, legal_name] -> {Ecto.UUID.cast!(id), legal_name} end)
-    |> Enum.filter(fn {_id, legal_name} ->
-      TrustedVerifier.declaration_name_match?(row, legal_name)
+      end
     end)
-    |> Enum.map(fn {id, _name} -> Identity.get_person!(id) end)
+
+    :ok
   end
 
   defp corroborated_person?(person_id, commune_id) do
-    result =
-      Repo.query!(
-        """
-        SELECT 1
-          FROM sourced_facts
-         WHERE subject_id = $1::text::uuid
-           AND object_id = $2::text::uuid
-           AND kind = 'public_mandate'
-           AND trusted_ixelles_public_mandate_fact(sourced_facts)
-         LIMIT 1
-        """,
-        [person_id, commune_id]
-      )
-
-    result.num_rows == 1
-  rescue
-    _ -> false
-  end
-
-  defp mandate_rows(text) do
-    text
-    |> String.split("\f")
-    |> Enum.flat_map(&mandate_rows_for_page/1)
-    |> Enum.uniq()
-  end
-
-  defp mandate_rows_for_page(page) do
-    lines = String.split(page, ["\r\n", "\n"])
-
-    with start when is_integer(start) <- find_header(lines, [:mandats], 0) do
-      upper =
-        case find_header(lines, [:fonctions, :derivees], start + 1) do
-          nil -> length(lines)
-          index -> index
-        end
-
-      lines
-      |> Enum.slice((start + 1)..(upper - 1)//1)
-      |> Enum.map(&String.trim/1)
-      |> Enum.reject(&(boilerplate?(&1) or String.trim(&1) == ""))
-      |> Enum.filter(&(String.length(&1) in 8..240))
-    else
-      _ -> []
-    end
-  end
-
-  defp find_header(lines, kinds, from) do
-    lines
-    |> Enum.with_index()
-    |> Enum.drop(from)
-    |> Enum.find_value(fn {line, index} ->
-      if header_kind(line) in kinds, do: index
-    end)
-  end
-
-  defp header_kind(line) do
-    norm = strip_letters(line)
-
-    cond do
-      norm == "mandats" -> :mandats
-      norm == "fonctionsderivees" -> :derivees
-      norm == "fonctions" -> :fonctions
-      true -> nil
-    end
-  end
-
-  defp boilerplate?(line) do
-    lowered = String.downcase(line)
-
-    String.length(String.trim(line)) < 4 or
-      Enum.any?(@boilerplate_markers, &String.contains?(lowered, &1))
-  end
-
-  defp strip_letters(line) do
-    line
-    |> :unicode.characters_to_nfd_binary()
-    |> String.downcase()
-    |> String.replace(~r/[^a-z]/, "")
-  end
-
-  defp declaration_year!(version) do
-    case Regex.run(~r/mandats-([0-9]{4})\.pdf/, version.source_record.origin_url) do
-      [_, year] -> String.to_integer(year)
-      _ -> raise ArgumentError, "declaration source has no recognizable reporting year"
-    end
+    Repo.query!(
+      """
+      SELECT 1 FROM sourced_facts
+      WHERE subject_id = $1::text::uuid AND object_id = $2::text::uuid
+        AND verified_by = 'ixelles_municipal_minutes_public_mandate_v1'
+        AND trusted_ixelles_public_mandate_fact(sourced_facts)
+      LIMIT 1
+      """,
+      [person_id, commune_id]
+    ).num_rows == 1
   end
 
   defp declaration_origin_url?(url) when is_binary(url) do
@@ -346,7 +325,7 @@ defmodule BrusselsWtf.Identity.IxellesMandateDeclarationProcessor do
   # Discovery consumes the immutable accepted artifact. The trusted verifier
   # independently recomputes OCR in its isolated :ocr worker before publication.
   defp accepted_declaration_input(version) do
-    metadata = BrusselsWtf.PDF.Processor.metadata()
+    metadata = BrusselsWtf.PDF.Processor.metadata(%{ocr_profile: :scanned_declaration})
 
     version
     |> Ash.load!(:processing_runs)
@@ -395,7 +374,7 @@ defmodule BrusselsWtf.Identity.IxellesMandateDeclarationProcessor do
 
     with {:ok, archived} <- BrusselsWtf.Archive.store(claim_bytes, :derived) do
       generation_key =
-        "relationship:ixelles-mandate-declaration-v1:#{fact.id}:#{text_artifact.output_sha256}"
+        "relationship:ixelles-mandate-declaration-v2:#{fact.id}:#{text_artifact.output_sha256}"
 
       run =
         Ingestion.record_processing_run!(%{
@@ -406,7 +385,8 @@ defmodule BrusselsWtf.Identity.IxellesMandateDeclarationProcessor do
             "source_version_sha256" => version.sha256,
             "ruleset_version" => contract.ruleset_version,
             "extraction_run_id" => text_run.id,
-            "text_artifact_id" => text_artifact.id
+            "text_artifact_id" => text_artifact.id,
+            "mandate_declaration" => fact.mandate_declaration
           },
           processor_name: contract.processor_name,
           processor_version: contract.processor_version,
@@ -481,7 +461,9 @@ defmodule BrusselsWtf.Identity.IxellesMandateDeclarationProcessor do
       status: :succeeded,
       output: %{
         "schema_version" => contract.ruleset_version,
-        "claim_sha256" => artifact.output_sha256
+        "claim_sha256" => artifact.output_sha256,
+        "mandate_declaration" =>
+          Ingestion.get_processing_run!(run.id).inputs["mandate_declaration"]
       },
       quality_measurements: %{"accepted" => true},
       started_at: now,
@@ -489,6 +471,8 @@ defmodule BrusselsWtf.Identity.IxellesMandateDeclarationProcessor do
       duration_ms: 0
     })
   end
+
+  def review_document(version, reason), do: open_document_review(version, reason)
 
   defp open_document_review(version, reason) do
     BrusselsWtf.Review.open_review_case!(%{
@@ -500,21 +484,6 @@ defmodule BrusselsWtf.Identity.IxellesMandateDeclarationProcessor do
       urgency: :normal,
       summary: "Ixelles mandate declaration could not be parsed deterministically",
       diagnostics: %{"classification" => to_string(reason)}
-    })
-
-    :ok
-  end
-
-  defp open_ambiguity_review(version, row) do
-    BrusselsWtf.Review.open_review_case!(%{
-      kind: :evidence,
-      affected_record_id: version.id,
-      affected_record_type: "source_version",
-      source_version_id: version.id,
-      processing_generation: "ixelles-mandate-declaration:#{version.id}:ambiguous_person",
-      urgency: :normal,
-      summary: "Declaration row matches multiple active person identities",
-      diagnostics: %{"row_sha256" => BrusselsWtf.Digest.sha256(row)}
     })
 
     :ok

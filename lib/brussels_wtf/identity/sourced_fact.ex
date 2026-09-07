@@ -32,7 +32,8 @@ defmodule BrusselsWtf.Identity.SourcedFact do
         :evidence_kind,
         :evidence_excerpt,
         :evidence_location,
-        :supersedes_id
+        :supersedes_id,
+        :mandate_declaration
       ]
 
       upsert? true
@@ -83,7 +84,7 @@ defmodule BrusselsWtf.Identity.SourcedFact do
 
     attribute :source_authority, :atom do
       public? true
-      constraints one_of: [:municipal_decision]
+      constraints one_of: [:municipal_decision, :municipal_declaration]
     end
 
     attribute :evidence_kind, :atom, allow_nil?: false, public?: true
@@ -96,6 +97,8 @@ defmodule BrusselsWtf.Identity.SourcedFact do
       default :unreviewed
       constraints one_of: [:unreviewed, :verified, :rejected, :superseded]
     end
+
+    attribute :mandate_declaration, :map, public?: false
 
     attribute :verified_by, :string, public?: true
     attribute :verification_processor_version, :string, public?: true

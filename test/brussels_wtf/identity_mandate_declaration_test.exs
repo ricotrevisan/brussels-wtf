@@ -1,21 +1,24 @@
 defmodule BrusselsWtf.IdentityMandateDeclarationTest do
   use BrusselsWtf.DataCase, async: false
   use Oban.Testing, repo: BrusselsWtf.Repo
-
+  import Phoenix.ConnTest
+  @endpoint BrusselsWtfWeb.Endpoint
   require Ash.Query
-
   alias BrusselsWtf.Identity
   alias BrusselsWtf.Ingestion
+  alias BrusselsWtf.Identity.{MandateDeclaration, IxellesMandateDeclarationProcessor}
 
-  @verifier :ixelles_mandate_declaration_v1
   @minutes_verifier :ixelles_municipal_minutes_public_mandate_v1
   @minutes_url "https://www.ixelles.be/uploads/conseil/pv/267.pdf"
   @declaration_url "https://www.ixelles.be/site/fr/download/transparence/mandats-2024.pdf"
-  @transparency_index "https://www.ixelles.be/site/773-Rapports-annuels-Remunerations-et-avantages?langue=fr"
-  @declaration_row "Alex Example Premier Echevin, Officier de l'Etat Civil"
+  @declaration_row "Premier Echevin et Officier de l'Etat Civil (Décembre 2024)"
   @fiscal_page "FISCAL 281.10 tranche 12 345,67 EUR numero national 85.07.23-123.45"
 
   setup do
+    BrusselsWtf.Clock.Controlled.set(~U[2026-09-07 12:00:00Z])
+    BrusselsWtf.HTTP.Stub.reset()
+    Application.delete_env(:brussels_wtf, :mandate_test_documents)
+    on_exit(fn -> Application.delete_env(:brussels_wtf, :mandate_test_documents) end)
     BrusselsWtf.Archive.Memory.reset()
     BrusselsWtf.Processors.Stub.reset()
     configured = BrusselsWtf.Communes.configuration!("ixelles")
@@ -85,51 +88,6 @@ defmodule BrusselsWtf.IdentityMandateDeclarationTest do
       final_url: @minutes_url
     })
 
-    declaration_locator =
-      Ingestion.upsert_locator!(%{
-        commune_id: commune.id,
-        url: @declaration_url,
-        parent_index_url: @transparency_index,
-        meeting_identifier: "mandats-2024",
-        role: :mandate_declaration,
-        language: :fr,
-        observed_label: "Liste des mandats 2024",
-        discovered_at: ~U[2026-09-03 09:00:00Z]
-      })
-
-    declaration_bytes = "%PDF-1.7 scanned Ixelles mandate declarations"
-    {:ok, archived_declaration} = BrusselsWtf.Archive.store(declaration_bytes, :raw)
-
-    declaration_record =
-      Ingestion.upsert_source_record!(%{
-        commune_id: commune.id,
-        origin_url: @declaration_url,
-        role: :mandate_declaration,
-        original_language: :fr
-      })
-
-    declaration_version =
-      Ingestion.upsert_source_version!(%{
-        source_record_id: declaration_record.id,
-        sha256: archived_declaration.sha256,
-        byte_size: byte_size(declaration_bytes),
-        media_type: "application/pdf",
-        object_key: archived_declaration.object_key,
-        first_retrieved_at: ~U[2026-09-03 09:00:10Z]
-      })
-
-    Ingestion.record_observation!(%{
-      source_locator_id: declaration_locator.id,
-      source_version_id: declaration_version.id,
-      poll_run_id: poll_run.id,
-      check_key: "fetch:ixelles-mandats-2024",
-      observed_at: ~U[2026-09-03 09:00:10Z],
-      status: :success,
-      http_status: 200,
-      sha256: archived_declaration.sha256,
-      final_url: @declaration_url
-    })
-
     person =
       Identity.record_person!(%{
         legal_name: "Alex Example",
@@ -137,245 +95,432 @@ defmodule BrusselsWtf.IdentityMandateDeclarationTest do
         resolution_basis: :explicit_identifier
       })
 
-    %{
-      commune: commune,
-      person: person,
-      minutes_version: minutes_version,
-      declaration_version: declaration_version
-    }
+    %{commune: commune, person: person, minutes_version: minutes_version}
   end
 
-  test "minutes corroboration, declaration OCR, and trusted verification flow end to end",
-       %{
-         commune: commune,
-         person: person,
-         minutes_version: minutes_version,
-         declaration_version: declaration_version
-       } do
-    # Corroborating fact: a trusted minutes-sourced council mandate.
-    minutes_excerpt =
-      "2024-12-01 Alex Example [municipal-mandate-42] is appointed to the Ixelles municipal council."
-
-    minutes_fact = record_minutes_mandate!(person, minutes_version, minutes_excerpt, commune)
-    verify_minutes!(minutes_fact)
-
-    assert Identity.get_sourced_fact!(minutes_fact.id).verification_status == :verified
-
-    # Declaration document via the OCR pipeline hook.
-    declaration_page =
-      "Cellule transparence\nMANDATS\n#{@declaration_row}\nFONCTIONS\n#{@fiscal_page}"
-
-    stub_ocr(declaration_version, declaration_page)
-
-    assert :ok = Ingestion.Pipeline.extract(declaration_version.id)
-
-    ocr_run =
-      declaration_version
-      |> Ash.load!(:processing_runs)
-      |> Map.fetch!(:processing_runs)
-      |> Enum.find(&(&1.processor_role == :ocr))
-
-    assert :ok = Ingestion.Pipeline.ocr(ocr_run.id, 1)
-
-    facts =
-      Identity.SourcedFact
-      |> Ash.Query.filter(
-        subject_id == ^person.id and source_version_id == ^declaration_version.id
-      )
-      |> Ash.read!(authorize?: false, domain: Identity)
-
-    assert [%{verification_status: :unreviewed} = fact] = facts
+  test "approved declaration enters through acquisition and renders its exact dated role in every locale",
+       ctx do
+    corroborate!(ctx)
+    version = acquire!(ctx.commune)
+    [fact] = facts(version)
     assert fact.evidence_excerpt == @declaration_row
-    assert fact.evidence_location == "declaration 2024"
-    assert fact.effective_from == ~D[2024-01-01]
+    assert fact.effective_from == ~D[2024-12-01]
     assert fact.effective_to == ~D[2024-12-31]
+    assert fact.mandate_declaration["role"] == "Premier Echevin et Officier de l'Etat Civil"
 
     assert_enqueued(
-      queue: :ocr,
       worker: BrusselsWtf.Workers.VerifyIxellesMandateDeclaration,
+      queue: :ocr,
       args: %{fact_id: fact.id}
     )
 
+    verify!(fact)
+    assert Identity.get_sourced_fact!(fact.id).verification_status == :verified
+
+    for {locale, heading, history} <- [
+          {"en", "Verified facts", "Dated history"},
+          {"fr", "Faits vérifiés", "Historique daté"},
+          {"nl", "Geverifieerde feiten", "Gedateerde geschiedenis"}
+        ] do
+      html = build_conn() |> get("/people/#{ctx.person.id}?lang=#{locale}") |> html_response(200)
+      assert html =~ heading
+      assert html =~ history
+      assert html =~ "Premier Echevin et Officier de l&#39;Etat Civil"
+      assert html =~ "2024-12-01"
+      assert html =~ "2024-12-31"
+      assert html =~ "declaration 2024 page 2"
+      assert html =~ @declaration_url
+      refute html =~ "281.10"
+      refute html =~ "85.07.23"
+      refute html =~ "12 345"
+      refute html =~ "Signature"
+    end
+
+    for locale <- ~w(en fr nl) do
+      updates = feed_updates(ctx.person.id, locale)
+      assert Enum.any?(updates, &(&1.factId == fact.id))
+      encoded = Jason.encode!(updates)
+
+      for excluded <- ["281.10", "85.07.23", "12 345", "Signature"] do
+        refute encoded =~ excluded
+      end
+    end
+
+    assert length(BrusselsWtf.HTTP.Stub.requests(@declaration_url)) == 1
+
+    for artifact <- Ash.load!(version, :derived_artifacts).derived_artifacts,
+        artifact.output_kind in ["native-text", "ocr-text", "relationship-claim-json"] do
+      {:ok, bytes} = BrusselsWtf.Archive.get(artifact.object_key)
+      refute bytes =~ "281.10"
+      refute bytes =~ "85.07.23"
+      refute bytes =~ "12 345"
+    end
+
     assert :ok =
-             perform_job(BrusselsWtf.Workers.VerifyIxellesMandateDeclaration, %{fact_id: fact.id})
+             IxellesMandateDeclarationProcessor.enqueue_waiting_for_source_version!(version.id)
 
-    verified = Identity.get_sourced_fact!(fact.id)
-    assert verified.verification_status == :verified
-    assert verified.verified_by == Atom.to_string(@verifier)
-
-    assert BrusselsWtf.Identity.TrustedVerifier.trusted_fact?(verified)
-
-    assert [declaration] =
-             Identity.list_public_relationships!(%{subject_id: person.id})
-             |> Enum.filter(&(&1.authoritative_url == @declaration_url))
-
-    assert declaration.evidence_location == "declaration 2024"
-    assert declaration.effective_from == ~D[2024-01-01]
-
-    # Fiscal content never becomes a fact.
-    fiscal_facts =
-      Identity.SourcedFact
-      |> Ash.Query.filter(
-        source_version_id == ^declaration_version.id and evidence_excerpt == ^@fiscal_page
-      )
-      |> Ash.read!(authorize?: false, domain: Identity)
-
-    assert fiscal_facts == []
-
-    # Idempotent: rerunning the OCR hook does not duplicate candidates.
-    assert :ok = Ingestion.Pipeline.ocr(ocr_run.id, 1)
-
-    facts_after =
-      Identity.SourcedFact
-      |> Ash.Query.filter(
-        subject_id == ^person.id and source_version_id == ^declaration_version.id
-      )
-      |> Ash.read!(authorize?: false, domain: Identity)
-
-    assert length(facts_after) == 1
-
-    # A declaration must never corroborate itself once its independent minutes
-    # evidence is no longer eligible. Exercise the real public projection too.
+    assert length(facts(version)) == 1
+    # Changing the independent evidence removes the fact from every public query.
     BrusselsWtf.Repo.query!(
       "UPDATE source_records SET role = 'agenda' WHERE id = $1::text::uuid",
-      [minutes_version.source_record_id]
+      [ctx.minutes_version.source_record_id]
     )
 
-    refute BrusselsWtf.Identity.TrustedVerifier.trusted_fact?(verified)
-    assert Identity.list_public_relationships!(%{subject_id: person.id}) == []
+    assert Identity.list_public_relationships!(%{subject_id: ctx.person.id}) == []
+    assert {:error, :not_found} = Identity.get_public_person_profile(ctx.person.id)
+    assert build_conn() |> get("/people/#{ctx.person.id}") |> response(404)
+    assert feed_updates(ctx.person.id, "en") == []
+
+    refute BrusselsWtf.Follow.TargetEligibility.eligible?(%BrusselsWtf.Follow.Target{
+             type: :person,
+             identifier: ctx.person.id
+           })
   end
 
-  test "unverified minutes corroboration never makes declaration facts eligible",
-       %{person: person, declaration_version: declaration_version} do
-    stub_ocr(declaration_version, "MANDATS\n#{@declaration_row}\nFONCTIONS")
+  test "a corrected approved version supersedes explicitly and preserves dated evidence", ctx do
+    corroborate!(ctx)
+    first = acquire!(ctx.commune)
+    [original] = facts(first)
+    verify!(original)
+    BrusselsWtf.Clock.Controlled.set(~U[2026-09-08 12:00:00Z])
 
-    assert :ok = Ingestion.Pipeline.extract(declaration_version.id)
+    changed = %{
+      document()
+      | row: "Premier Echevin (Décembre 2024)",
+        role: "Premier Echevin",
+        revision: 2,
+        role_labels: %{
+          "fr" => "Premier Echevin",
+          "nl" => "Eerste schepen",
+          "en" => "First alderman"
+        }
+    }
 
-    ocr_run =
-      declaration_version
-      |> Ash.load!(:processing_runs)
-      |> Map.fetch!(:processing_runs)
-      |> Enum.find(&(&1.processor_role == :ocr))
+    second = acquire!(ctx.commune, document: changed, text: page_text(changed))
+    [correction] = facts(second)
+    assert correction.supersedes_id == original.id
+    verify!(correction)
+    assert Identity.get_sourced_fact!(original.id).verification_status == :superseded
+    assert Identity.get_sourced_fact!(correction.id).verification_status == :verified
+    assert first.sha256 != second.sha256
+    html = build_conn() |> get("/people/#{ctx.person.id}?lang=en") |> html_response(200)
+    assert html =~ "Superseded by a corrected declaration"
+    assert html =~ "Premier Echevin et Officier"
+    assert html =~ "fact-#{original.id}"
+    assert html =~ "fact-#{correction.id}"
+    assert :ok = IxellesMandateDeclarationProcessor.enqueue_waiting_for_source_version!(first.id)
+    assert length(facts(first)) == 1
+    assert length(facts(second)) == 1
+    updates = feed_updates(ctx.person.id, "en")
+    assert Enum.any?(updates, &(&1.factId == correction.id))
+    refute Enum.any?(updates, &(&1.factId == original.id))
+  end
 
-    assert :ok = Ingestion.Pipeline.ocr(ocr_run.id, 1)
-
-    facts =
-      Identity.SourcedFact
-      |> Ash.Query.filter(
-        subject_id == ^person.id and source_version_id == ^declaration_version.id
-      )
-      |> Ash.read!(authorize?: false, domain: Identity)
-
-    assert [%{verification_status: :unreviewed} = fact] = facts
-
-    refute_enqueued(
-      worker: BrusselsWtf.Workers.VerifyIxellesMandateDeclaration,
-      args: %{fact_id: fact.id}
+  defp feed_updates(person_id, locale) do
+    BrusselsWtf.Follow.PublicUpdates.list(
+      [%{"type" => "person", "id" => person_id, "importedAt" => "2026-08-01T00:00:00Z"}],
+      locale
     )
-
-    assert :ok =
-             perform_job(BrusselsWtf.Workers.VerifyIxellesMandateDeclaration, %{fact_id: fact.id})
-
-    assert Identity.get_sourced_fact!(fact.id).verification_status == :unreviewed
-    assert Identity.list_public_relationships!(%{subject_id: person.id}) == []
   end
 
-  test "forbidden declaration content fails closed into a review case",
-       %{
-         commune: commune,
-         person: person,
-         minutes_version: minutes_version,
-         declaration_version: declaration_version
-       } do
-    minutes_excerpt =
-      "2024-12-01 Alex Example [municipal-mandate-42] is appointed to the Ixelles municipal council."
-
-    minutes_fact = record_minutes_mandate!(person, minutes_version, minutes_excerpt, commune)
-    verify_minutes!(minutes_fact)
-
-    tainted_row = "#{@declaration_row} 2 345,67 EUR"
-
-    stub_ocr(declaration_version, "MANDATS\n#{tainted_row}\nFONCTIONS")
-
-    assert :ok = Ingestion.Pipeline.extract(declaration_version.id)
-
-    ocr_run =
-      declaration_version
-      |> Ash.load!(:processing_runs)
-      |> Map.fetch!(:processing_runs)
-      |> Enum.find(&(&1.processor_role == :ocr))
-
-    assert :ok = Ingestion.Pipeline.ocr(ocr_run.id, 1)
-
-    facts =
-      Identity.SourcedFact
-      |> Ash.Query.filter(
-        subject_id == ^person.id and source_version_id == ^declaration_version.id
-      )
-      |> Ash.read!(authorize?: false, domain: Identity)
-
-    assert [%{verification_status: :unreviewed} = fact] = facts
-
-    assert :ok =
-             perform_job(BrusselsWtf.Workers.VerifyIxellesMandateDeclaration, %{fact_id: fact.id})
-
-    assert Identity.get_sourced_fact!(fact.id).verification_status == :unreviewed
-
-    assert Identity.list_public_relationships!(%{subject_id: person.id})
-           |> Enum.filter(&(&1.authoritative_url == @declaration_url)) == []
-
-    cases =
-      BrusselsWtf.Review.Case
-      |> Ash.Query.filter(affected_record_id == ^fact.id)
-      |> Ash.read!(authorize?: false, domain: BrusselsWtf.Review)
-
-    assert Enum.any?(cases, &String.contains?(&1.summary || "", "failed closed"))
+  test "unresolved, uncorroborated, and ambiguous names create review cases", ctx do
+    # No trusted independent minutes evidence.
+    version = acquire!(ctx.commune)
+    assert facts(version) == []
+    assert reviewed?(version)
+    assert {:error, :not_found} = Identity.get_public_person_profile(ctx.person.id)
   end
 
-  test "ambiguous declarant names open a review case without recording a fact",
-       %{
-         commune: commune,
-         person: person,
-         minutes_version: minutes_version,
-         declaration_version: declaration_version
-       } do
-    minutes_excerpt =
-      "2024-12-01 Alex Example [municipal-mandate-42] is appointed to the Ixelles municipal council."
+  test "a longer surname never resolves to the existing person", ctx do
+    corroborate!(ctx)
+    changed = %{document() | family_name: "Exampleson"}
+    version = acquire!(ctx.commune, document: changed, text: page_text(changed))
+    assert facts(version) == []
+    assert reviewed?(version)
+  end
 
-    minutes_fact = record_minutes_mandate!(person, minutes_version, minutes_excerpt, commune)
-    verify_minutes!(minutes_fact)
+  test "multiple exact normalized identities remain ambiguous", ctx do
+    corroborate!(ctx)
 
     Identity.record_person!(%{
-      legal_name: "Alex Example",
-      explicit_identifier: "municipal-mandate-43",
+      legal_name: "ALEX EXAMPLE",
+      explicit_identifier: "second-id",
       resolution_basis: :explicit_identifier
     })
 
-    stub_ocr(declaration_version, "MANDATS\n#{@declaration_row}\nFONCTIONS")
+    version = acquire!(ctx.commune)
+    assert facts(version) == []
+    assert reviewed?(version)
+  end
 
-    assert :ok = Ingestion.Pipeline.extract(declaration_version.id)
+  for {name, transform} <- [
+        {"missing section", :section},
+        {"missing declarant", :name},
+        {"wrong reporting period", :period},
+        {"OCR ambiguity", :ocr},
+        {"wrong table scope", :scope},
+        {"financial data in role", :fiscal},
+        {"missing attestation", :attestation},
+        {"blank template", :template}
+      ] do
+    test "#{name} produces a review case and no declaration fact", ctx do
+      corroborate!(ctx)
+      text = invalid_text(unquote(transform))
+      version = acquire!(ctx.commune, text: text)
+      assert facts(version) == []
+      assert reviewed?(version)
+      html = build_conn() |> get("/people/#{ctx.person.id}?lang=en") |> html_response(200)
+      refute html =~ "Liste des mandats"
+      refute html =~ "281.10"
+    end
+  end
 
-    ocr_run =
-      declaration_version
-      |> Ash.load!(:processing_runs)
-      |> Map.fetch!(:processing_runs)
-      |> Enum.find(&(&1.processor_role == :ocr))
+  test "unsigned and uninspected byte versions cannot inherit an earlier signature", ctx do
+    corroborate!(ctx)
+    version = acquire!(ctx.commune, document: %{document() | signed?: false})
+    assert facts(version) == []
+    assert reviewed?(version)
+    refute_enqueued(worker: BrusselsWtf.Workers.VerifyIxellesMandateDeclaration)
+  end
 
-    assert :ok = Ingestion.Pipeline.ocr(ocr_run.id, 1)
+  test "new identity ambiguity withdraws an already verified declaration", ctx do
+    corroborate!(ctx)
+    version = acquire!(ctx.commune)
+    [fact] = facts(version)
+    verify!(fact)
 
-    facts =
+    assert Enum.any?(
+             Identity.list_public_relationships!(%{subject_id: ctx.person.id}),
+             &(&1.fact_id == fact.id)
+           )
+
+    Identity.record_person!(%{
+      legal_name: "ALEX EXAMPLE",
+      explicit_identifier: "later-id",
+      resolution_basis: :explicit_identifier
+    })
+
+    refute Enum.any?(
+             Identity.list_public_relationships!(%{subject_id: ctx.person.id}),
+             &(&1.fact_id == fact.id)
+           )
+
+    html = build_conn() |> get("/people/#{ctx.person.id}?lang=en") |> html_response(200)
+    refute html =~ "Liste des mandats"
+  end
+
+  test "correction acquisition before verification retains its predecessor", ctx do
+    corroborate!(ctx)
+    first = acquire!(ctx.commune)
+    [original] = facts(first)
+    BrusselsWtf.Clock.Controlled.set(~U[2026-09-08 12:00:00Z])
+
+    changed = %{
+      document()
+      | revision: 2,
+        row: "Premier Echevin (Décembre 2024)",
+        role: "Premier Echevin",
+        role_labels: %{
+          "fr" => "Premier Echevin",
+          "nl" => "Eerste schepen",
+          "en" => "First alderman"
+        }
+    }
+
+    second = acquire!(ctx.commune, document: changed, text: page_text(changed))
+    [correction] = facts(second)
+    assert correction.supersedes_id == original.id
+
+    assert {:error, :predecessor_pending} =
+             IxellesMandateDeclarationProcessor.process(correction.id)
+
+    verify!(original)
+    verify!(correction)
+    assert Identity.get_sourced_fact!(original.id).verification_status == :superseded
+    assert Identity.get_sourced_fact!(correction.id).verification_status == :verified
+  end
+
+  test "database rejects rewriting declaration semantics", ctx do
+    corroborate!(ctx)
+    version = acquire!(ctx.commune)
+    [fact] = facts(version)
+    verify!(fact)
+
+    assert_raise Postgrex.Error, fn ->
+      BrusselsWtf.Repo.query!(
+        "UPDATE sourced_facts SET mandate_declaration = '{}'::jsonb WHERE id = $1::text::uuid",
+        [fact.id]
+      )
+    end
+  end
+
+  defp document do
+    %{
+      origin: @declaration_url,
+      year: 2024,
+      page: 2,
+      attestation_page: 5,
+      attestation: "Fait à Ixelles, le 30 septembre 2025",
+      given_name: "Alex",
+      family_name: "Example",
+      row: @declaration_row,
+      role: "Premier Echevin et Officier de l'Etat Civil",
+      role_labels: %{
+        "fr" => "Premier Echevin et Officier de l'Etat Civil",
+        "nl" => "Eerste schepen en ambtenaar van de burgerlijke stand",
+        "en" => "First alderman and civil registrar"
+      },
+      revision: 1,
+      body: "Commune d'Ixelles",
+      section: "mandat",
+      key: "ixelles-municipal-executive-mandate",
+      effective_from: ~D[2024-12-01],
+      effective_to: ~D[2024-12-31],
+      signed?: true
+    }
+  end
+
+  defp page_text(doc) do
+    Enum.join(
+      [
+        "ANNEXE 2 — synthetic source fixture, not an authoritative publication",
+        "Nom : #{doc.family_name}\nPrénom : #{doc.given_name}\nNuméro national :\nAdresse :\n1. Liste des mandats, fonctions et fonctions dérivées\nMANDATS\n#{doc.row}\nFONCTIONS\nFONCTIONS DÉRIVÉES",
+        @fiscal_page,
+        "Excluded private activities — no public field may come from this page",
+        "#{doc.attestation}\nNombre d'annexes : 17\n#{doc.given_name} #{doc.family_name}\nSignature\nDéclaration pour publication sur le site de la commune selon le formulaire officiel"
+      ],
+      "\f"
+    )
+  end
+
+  defp invalid_text(kind) do
+    text = page_text(document())
+
+    case kind do
+      :section ->
+        String.replace(text, "MANDATS", "MISSING HEADER")
+
+      :name ->
+        String.replace(text, "Nom : Example", "Nom :")
+
+      :period ->
+        String.replace(text, "Décembre 2024", "Décembre 2023")
+
+      :ocr ->
+        String.replace(text, "Echevin", "Echev?n")
+
+      :scope ->
+        String.replace(text, "MANDATS", "FONCTIONS DÉRIVÉES")
+
+      :fiscal ->
+        String.replace(text, @declaration_row, @declaration_row <> " 12 345,67 EUR")
+
+      :attestation ->
+        String.replace(text, document().attestation, "Unsigned draft with no dated attestation")
+
+      :template ->
+        String.replace(text, @declaration_row, "")
+    end
+  end
+
+  defp acquire!(commune, opts \\ []) do
+    doc = Keyword.get(opts, :document, document())
+    text = Keyword.get(opts, :text, page_text(doc))
+    # The PDF binary boundary is controlled; fixture layout follows the inspected
+    # declaration, with synthetic identity and signature contracts only in tests.
+    bytes =
+      "%PDF-1.7 synthetic declaration scenario " <>
+        BrusselsWtf.Digest.sha256(text <> inspect(doc.signed?))
+
+    sha = BrusselsWtf.Digest.sha256(bytes)
+    contracts = Application.get_env(:brussels_wtf, :mandate_test_documents, %{})
+    Application.put_env(:brussels_wtf, :mandate_test_documents, Map.put(contracts, sha, doc))
+
+    BrusselsWtf.HTTP.Stub.put(MandateDeclaration.index(), %{
+      body: ~s(<a href="fr/download/transparence/mandats-2024.pdf">Liste des mandats 2024</a>),
+      headers: %{"content-type" => "text/html"}
+    })
+
+    BrusselsWtf.HTTP.Stub.put(@declaration_url, %{
+      body: bytes,
+      headers: %{"content-type" => "application/pdf"}
+    })
+
+    BrusselsWtf.Processors.Stub.put(sha, %{
+      extract: %{"text" => "", "page_texts" => List.duplicate("", 5)},
+      ocr: %{
+        "page_texts" => String.split(text, "\f"),
+        "searchable_pdf" => "%PDF synthetic searchable declaration"
+      }
+    })
+
+    poll =
+      Ingestion.start_poll_run!(%{
+        commune_id: commune.id,
+        started_at: BrusselsWtf.Clock.utc_now(),
+        kind: :scheduled,
+        requester_id: "system",
+        target_type: :commune,
+        target_id: commune.id,
+        check_key: "mandate:#{sha}",
+        status: :completed
+      })
+
+    assert :ok = IxellesMandateDeclarationProcessor.acquire(commune.id, poll.id)
+
+    version =
+      Ingestion.SourceVersion
+      |> Ash.Query.filter(sha256 == ^sha)
+      |> Ash.read_one!(authorize?: false)
+
+    assert version
+
+    assert_enqueued(
+      worker: BrusselsWtf.Workers.ExtractSource,
+      args: %{source_version_id: version.id, generation_kind: "automatic"}
+    )
+
+    assert :ok = Ingestion.Pipeline.extract(version.id)
+    runs = Ash.load!(version, :processing_runs).processing_runs
+
+    if run = Enum.find(runs, &(&1.processor_role == :ocr)) do
+      assert run.inputs["pages"] == [2, 5]
+      assert :ok = Ingestion.Pipeline.ocr(run.id, 1)
+    end
+
+    version
+  end
+
+  defp facts(version),
+    do:
       Identity.SourcedFact
-      |> Ash.Query.filter(source_version_id == ^declaration_version.id)
-      |> Ash.read!(authorize?: false, domain: Identity)
+      |> Ash.Query.filter(source_version_id == ^version.id)
+      |> Ash.read!(authorize?: false)
 
-    assert facts == []
-
-    cases =
+  defp reviewed?(version),
+    do:
       BrusselsWtf.Review.Case
-      |> Ash.Query.filter(source_version_id == ^declaration_version.id)
-      |> Ash.read!(authorize?: false, domain: BrusselsWtf.Review)
+      |> Ash.Query.filter(source_version_id == ^version.id and status == :open)
+      |> Ash.read!(authorize?: false)
+      |> Enum.any?()
 
-    assert Enum.any?(cases, &String.contains?(&1.summary || "", "multiple active person"))
+  defp verify!(fact),
+    do:
+      assert(
+        :ok =
+          perform_job(BrusselsWtf.Workers.VerifyIxellesMandateDeclaration, %{fact_id: fact.id})
+      )
+
+  defp corroborate!(ctx) do
+    fact =
+      record_minutes_mandate!(
+        ctx.person,
+        ctx.minutes_version,
+        "2024-12-01 Alex Example [municipal-mandate-42] is appointed to the Ixelles municipal council.",
+        ctx.commune
+      )
+
+    verify_minutes!(fact)
   end
 
   ## Helpers
@@ -526,15 +671,5 @@ defmodule BrusselsWtf.IdentityMandateDeclarationTest do
       })
 
     BrusselsWtf.Identity.TrustedVerifier.verify!(fact.id, @minutes_verifier, run.id)
-  end
-
-  defp stub_ocr(source_version, page_text) do
-    BrusselsWtf.Processors.Stub.put(source_version.sha256, %{
-      extract: %{"text" => "", "page_texts" => [""]},
-      ocr: %{
-        "page_texts" => [page_text],
-        "searchable_pdf" => "%PDF recorded searchable declaration"
-      }
-    })
   end
 end
