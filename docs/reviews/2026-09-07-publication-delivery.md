@@ -4,7 +4,7 @@ This delivery follows the [accepted definition of done](https://github.com/RicoT
 
 ## Changes and evidence
 
-- Compare the implementation with main at `8feaf0ed2c9659b6a867ac14f896c204494e6821`; the brand-kit change is preserved.
+- Compare the implementation with main at `6af0ddead942ddb7cd915f38799b04bfe3fc01b9`; the brand-kit change is preserved.
 - Correct the sealed eight-meeting/24-item corpus against all nine pinned PDFs. Six item identities and multiple page references were incorrect. The Uccle 2026 budget citation belongs on page 52. Forest newspaper/church items take note of executive decisions; the Ixelles charging item transfers an existing budget allocation into 2026.
 - Validate each item identity and operative excerpt within its cited PDF pages. A regression exchanges relevant and unrelated pages while preserving all document text and proves that generic approval text cannot satisfy the contract. Both CI and the production image run actual Poppler extraction.
 - Keep corrected source interpretations immutable alongside earlier ones. The same source bytes can support a corrected reading without overwriting the source, old claims or published revision. Changed normalization contracts enqueue a new job rather than being suppressed by old successful-job uniqueness.
