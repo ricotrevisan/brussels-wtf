@@ -51,7 +51,8 @@ defmodule BrusselsWtf.Contracts.ProductionImagePdfTest do
              "normalize" => 1,
              "enrich" => 1,
              "publish" => 1,
-             "corpus" => 1
+             "corpus" => 1,
+             "maintenance" => 1
            }
 
     assert ixelles["oban_plugins_enabled"]
