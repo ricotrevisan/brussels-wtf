@@ -1,6 +1,19 @@
 defmodule BrusselsWtfWeb.PublicEvidence do
   @moduledoc false
 
+  def citation_href(%{citation_url: url, location: location}) do
+    uri = URI.parse(url)
+
+    if String.ends_with?(String.downcase(uri.path || ""), ".pdf") and is_nil(uri.fragment) do
+      case Regex.run(~r/\bpages?\s+(\d+)/iu, location || "") do
+        [_, page] -> URI.to_string(%{uri | fragment: "page=" <> page})
+        _ -> url
+      end
+    else
+      url
+    end
+  end
+
   def proposals(%{proposals: %Ash.NotLoaded{}}), do: []
 
   def proposals(%{proposals: proposals} = item) do

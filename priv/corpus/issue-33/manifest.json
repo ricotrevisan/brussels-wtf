@@ -9,99 +9,123 @@
       "scheduled_on": "2026-06-11",
       "items": [
         {
-          "key": "11.06.2026/A/0005",
+          "key": "11.06.2026/A/0004",
           "item_number": "4",
           "source_wording": "Rapport annuel 2025 sur la situation des affaires de la Commune et sur la gestion effectuée.",
           "state": "decision",
           "decision": {
             "disposition": "approved",
-            "statement": "Le Conseil approuve.",
-            "excerpt": "Le Conseil approuve.",
-            "location": "Procès-verbal public, page 19/271"
+            "statement": "Le conseil approuve le rapport annuel 2025 sur les affaires et la gestion de la commune, par 37 voix pour.",
+            "excerpt": "d’approuver le rapport annuel 2025 sur la situation des affaires de la Commune et sur la gestion effectuée tel qu’annexé à la présente délibération pour en faire partie intégrante.",
+            "location": "Document officiel, point 4, pages 19-19/271"
           },
           "source": "primary",
           "coverage": {
             "fr": {
               "title": "Rapport annuel 2025 sur la situation des affaires de la Commune et sur la gestion effectuée.",
-              "summary": "Le procès-verbal indique que le conseil a approuvé ce point."
+              "summary": "Le conseil approuve le rapport annuel 2025 sur les affaires et la gestion de la commune, par 37 voix pour."
             },
             "nl": {
               "title": "Jaarverslag 2025 over de toestand van de gemeentezaken en het gevoerde beheer.",
-              "summary": "Het proces-verbaal vermeldt dat de raad dit punt heeft goedgekeurd."
+              "summary": "De raad keurt het jaarverslag 2025 over de gemeentelijke aangelegenheden en het beheer goed, met 37 stemmen voor."
             },
             "en": {
               "title": "2025 annual report on municipal affairs and management.",
-              "summary": "The minutes state that the council approved this item."
+              "summary": "The council approved the 2025 report on municipal affairs and management, with 37 votes in favour."
             }
-          }
+          },
+          "evidence_pages": [
+            19,
+            19
+          ],
+          "evidence_markers": [
+            "Le Conseil approuve."
+          ],
+          "identity_marker": "11.06.2026/A/0004"
         },
         {
-          "key": "11.06.2026/A/0015",
+          "key": "11.06.2026/A/0014",
           "item_number": "14",
           "source_wording": "Occupation temporaire de la maison de repos « Les Heures Douces » par l’ASBL « On est là » pour héberger des femmes et des enfants.",
           "state": "decision",
           "decision": {
             "disposition": "approved",
-            "statement": "Le Conseil approuve.",
-            "excerpt": "Le Conseil approuve.",
-            "location": "Procès-verbal public, pages 65-68/271"
+            "statement": "Le conseil approuve une convention avec l’ASBL On est là pour héberger temporairement des femmes et des enfants dans l’ancienne maison de repos Les Heures Douces. Le vote compte 37 voix pour ; la convention doit être signée entre les parties.",
+            "excerpt": "d’approuver la convention d’occupation temporaire relative à la maison de repos « Les Heures Douces » sise rue Victor Greyson 53, par l’ASBL « On est là », partenaire de « Rockin’squat », en vue d’y héberger des femmes et enfants, qui devra être signée entre les parties, telle qu’annexée à la présente délibération pour en faire partie intégrante.",
+            "location": "Document officiel, point 14, pages 56-59/271"
           },
           "source": "primary",
           "coverage": {
             "fr": {
               "title": "Occupation temporaire de la maison de repos « Les Heures Douces » par l’ASBL « On est là » pour héberger des femmes et des enfants.",
-              "summary": "Le procès-verbal indique que le conseil a approuvé ce point."
+              "summary": "Le conseil approuve une convention avec l’ASBL On est là pour héberger temporairement des femmes et des enfants dans l’ancienne maison de repos Les Heures Douces. Le vote compte 37 voix pour ; la convention doit être signée entre les parties."
             },
             "nl": {
               "title": "Tijdelijk gebruik van rusthuis “Les Heures Douces” door vzw “On est là” voor de opvang van vrouwen en kinderen.",
-              "summary": "Het proces-verbaal vermeldt dat de raad dit punt heeft goedgekeurd."
+              "summary": "De raad keurt een overeenkomst met On est là vzw goed om vrouwen en kinderen tijdelijk onder te brengen in het voormalige rusthuis Uren van Geluk. Er zijn 37 stemmen voor; de partijen moeten de overeenkomst nog ondertekenen."
             },
             "en": {
               "title": "Temporary use of the “Les Heures Douces” care home by “On est là” ASBL to house women and children.",
-              "summary": "The minutes state that the council approved this item."
+              "summary": "The council approved an agreement with On est là ASBL to temporarily house women and children in the former Les Heures Douces care home. There were 37 votes in favour; the agreement still requires the parties’ signatures."
             }
-          }
+          },
+          "evidence_pages": [
+            56,
+            59
+          ],
+          "evidence_markers": [
+            "Le Conseil approuve."
+          ],
+          "identity_marker": "11.06.2026/A/0014"
         },
         {
-          "key": "11.06.2026/A/0042",
+          "key": "11.06.2026/A/0041",
           "item_number": "41",
           "source_wording": "Installation de quatre doubles bornes de recharge pour véhicules électriques sur le patrimoine communal.",
           "state": "decision",
           "decision": {
             "disposition": "approved",
-            "statement": "Le Conseil approuve.",
-            "excerpt": "Le Conseil approuve.",
-            "location": "Procès-verbal public, pages 218-221/271"
+            "statement": "Le conseil reporte une enveloppe de 336.663,24 € TVAC du budget 2025 vers 2026 pour les bornes de recharge et leur gestion. L’inscription reste soumise à l’approbation du budget 2026 par le conseil et la tutelle ; le collège engage les dépenses selon les besoins et crédits disponibles.",
+            "excerpt": "de modifier l'inscription budgétaire d’une dépense de 336.663,24 EUR TVAC du marché public de services n° 2024-1034 relatif à l’acquisition de véhicules à carburants alternatifs, de bornes de recharge et d’outils de gestion de ces bornes au profit des pouvoirs locaux et régionaux de la Région de Bruxelles-Capitale, qui était initialement inscrite sur le budget 2025 en l’inscrivant sur le budget 2026, sous réserve de l'approbation du budget 2026 par le Conseil communal et l'autorité de Tutelle ;",
+            "location": "Document officiel, point 41, pages 204-208/271"
           },
           "source": "primary",
           "coverage": {
             "fr": {
               "title": "Installation de quatre doubles bornes de recharge pour véhicules électriques sur le patrimoine communal.",
-              "summary": "Le procès-verbal indique que le conseil a approuvé ce point."
+              "summary": "Le conseil reporte une enveloppe de 336.663,24 € TVAC du budget 2025 vers 2026 pour les bornes de recharge et leur gestion. L’inscription reste soumise à l’approbation du budget 2026 par le conseil et la tutelle ; le collège engage les dépenses selon les besoins et crédits disponibles."
             },
             "nl": {
               "title": "Installatie van vier dubbele laadpalen voor elektrische voertuigen op gemeentelijk patrimonium.",
-              "summary": "Het proces-verbaal vermeldt dat de raad dit punt heeft goedgekeurd."
+              "summary": "De raad boekt 336.663,24 € inclusief btw over van de begroting 2025 naar 2026 voor laadpunten en hun beheer. Dit blijft afhankelijk van de goedkeuring van de begroting 2026 door de raad en de toezichthouder; het college legt uitgaven vast volgens de behoeften en beschikbare kredieten."
             },
             "en": {
               "title": "Installation of four double electric-vehicle charging stations on municipal property.",
-              "summary": "The minutes state that the council approved this item."
+              "summary": "The council moved a €336,663.24 allocation, including VAT, from the 2025 budget to 2026 for charging points and their management. The allocation remains subject to council and supervisory approval of the 2026 budget; the executive commits spending according to needs and available funds."
             }
-          }
+          },
+          "evidence_pages": [
+            204,
+            208
+          ],
+          "evidence_markers": [
+            "Le Conseil approuve."
+          ],
+          "identity_marker": "11.06.2026/A/0041"
         }
       ],
       "coverage": {
         "fr": {
           "title": "Conseil communal d’Ixelles — 2026-06-11",
-          "summary": "Trois points issus des documents municipaux officiels."
+          "summary": "Sélection de trois points : Rapport annuel 2025 sur la situation des affaires de la Commune et sur la gestion effectuée; Occupation temporaire de la maison de repos « Les Heures Douces » par l’ASBL « On est là » pour héberger des femmes et des enfants; Installation de quatre doubles bornes de recharge pour véhicules électriques sur le patrimoine communal."
         },
         "nl": {
           "title": "Gemeenteraad van Elsene — 2026-06-11",
-          "summary": "Drie punten uit officiële gemeentelijke documenten."
+          "summary": "Selectie van drie punten: Jaarverslag 2025 over de toestand van de gemeentezaken en het gevoerde beheer; Tijdelijk gebruik van rusthuis “Les Heures Douces” door vzw “On est là” voor de opvang van vrouwen en kinderen; Installatie van vier dubbele laadpalen voor elektrische voertuigen op gemeentelijk patrimonium."
         },
         "en": {
           "title": "Ixelles council meeting — 2026-06-11",
-          "summary": "Three items from official municipal records."
+          "summary": "Three selected items: 2025 annual report on municipal affairs and management; Temporary use of the “Les Heures Douces” care home by “On est là” ASBL to house women and children; Installation of four double electric-vehicle charging stations on municipal property."
         }
       },
       "sources": [
@@ -144,17 +168,23 @@
           "coverage": {
             "fr": {
               "title": "Interpellation citoyenne sur les mesures prises dans les écoles communales pour faire face aux canicules.",
-              "summary": "Le conseil doit encore examiner cette proposition; l’issue reste inconnue."
+              "summary": "L’ordre du jour porte sur : Interpellation citoyenne sur les mesures prises dans les écoles communales pour faire face aux canicules. Aucun résultat final n’est établi par cette source."
             },
             "nl": {
               "title": "Burgerinterpellatie over maatregelen tegen hittegolven in de gemeentescholen.",
-              "summary": "De raad moet dit voorstel nog behandelen; de uitkomst is onbekend."
+              "summary": "Op de agenda staat: Burgerinterpellatie over maatregelen tegen hittegolven in de gemeentescholen. Deze bron stelt geen definitieve uitkomst vast."
             },
             "en": {
               "title": "Citizen question about measures to address heatwaves in municipal schools.",
-              "summary": "The council has yet to consider this proposal; the outcome is unknown."
+              "summary": "The agenda lists: Citizen question about measures to address heatwaves in municipal schools. This source does not establish a final outcome."
             }
-          }
+          },
+          "evidence_pages": [
+            1,
+            1
+          ],
+          "identity_marker": "1 Interpellation citoyenne introduite de la part de l'ensemble des Associations de Parents des écoles",
+          "evidence_markers": []
         },
         {
           "key": "10",
@@ -170,17 +200,23 @@
           "coverage": {
             "fr": {
               "title": "Cession par vente publique notariée du terrain communal à l’intersection de la rue des Mérisiers et de la rue du Relais.",
-              "summary": "Le conseil doit encore examiner cette proposition; l’issue reste inconnue."
+              "summary": "L’ordre du jour porte sur : Cession par vente publique notariée du terrain communal à l’intersection de la rue des Mérisiers et de la rue du Relais. Aucun résultat final n’est établi par cette source."
             },
             "nl": {
               "title": "Notariële openbare verkoop van het gemeentelijk terrein aan de Kriekenbomenstraat en de Pleisterstraat.",
-              "summary": "De raad moet dit voorstel nog behandelen; de uitkomst is onbekend."
+              "summary": "Op de agenda staat: Notariële openbare verkoop van het gemeentelijk terrein aan de Kriekenbomenstraat en de Pleisterstraat. Deze bron stelt geen definitieve uitkomst vast."
             },
             "en": {
               "title": "Notarial public sale of municipal land at rue des Mérisiers and rue du Relais.",
-              "summary": "The council has yet to consider this proposal; the outcome is unknown."
+              "summary": "The agenda lists: Notarial public sale of municipal land at rue des Mérisiers and rue du Relais. This source does not establish a final outcome."
             }
-          }
+          },
+          "evidence_pages": [
+            3,
+            3
+          ],
+          "identity_marker": "10 Terrain situé à l’intersection entre la rue des Mérisiers et la rue du Relais - cadastré 21446 D 60S &",
+          "evidence_markers": []
         },
         {
           "key": "13",
@@ -196,31 +232,37 @@
           "coverage": {
             "fr": {
               "title": "Subvention de 3.100,00 EUR au projet « Ixelles Speedcubing Contest », lauréat du budget participatif 2025-2026.",
-              "summary": "Le conseil doit encore examiner cette proposition; l’issue reste inconnue."
+              "summary": "Le conseil est saisi d’une subvention de 3.100 € à Réginald de Coster pour organiser Ixelles Speedcubing Contest, projet lauréat du budget participatif 2025–2026. L’ordre du jour prévoit aussi l’approbation de la convention ; il ne documente pas le vote final."
             },
             "nl": {
               "title": "Subsidie van 3.100,00 EUR voor “Ixelles Speedcubing Contest”, winnaar van het participatiebudget.",
-              "summary": "De raad moet dit voorstel nog behandelen; de uitkomst is onbekend."
+              "summary": "De raad wordt gevraagd een subsidie van 3.100 € aan Réginald de Coster toe te kennen voor Ixelles Speedcubing Contest, geselecteerd via de participatieve begroting 2025–2026. Ook de overeenkomst ligt ter goedkeuring voor; de agenda documenteert geen eindstemming."
             },
             "en": {
               "title": "EUR 3,100 grant for “Ixelles Speedcubing Contest”, selected by the participatory budget.",
-              "summary": "The council has yet to consider this proposal; the outcome is unknown."
+              "summary": "The council was asked to grant €3,100 to Réginald de Coster for Ixelles Speedcubing Contest, selected through the 2025–2026 participatory budget. The agreement was also submitted for approval; this agenda does not document the final vote."
             }
-          }
+          },
+          "evidence_pages": [
+            3,
+            3
+          ],
+          "identity_marker": "13 Octroi d'une subvention de projet en numéraire d'un montant de 3.100,00 EUR relative à la réalisation",
+          "evidence_markers": []
         }
       ],
       "coverage": {
         "fr": {
           "title": "Conseil communal d’Ixelles — 2026-07-02",
-          "summary": "Trois points issus des documents municipaux officiels."
+          "summary": "Sélection de trois points : Interpellation citoyenne sur les mesures prises dans les écoles communales pour faire face aux canicules; Cession par vente publique notariée du terrain communal à l’intersection de la rue des Mérisiers et de la rue du Relais; Subvention de 3.100,00 EUR au projet « Ixelles Speedcubing Contest », lauréat du budget participatif 2025-2026."
         },
         "nl": {
           "title": "Gemeenteraad van Elsene — 2026-07-02",
-          "summary": "Drie punten uit officiële gemeentelijke documenten."
+          "summary": "Selectie van drie punten: Burgerinterpellatie over maatregelen tegen hittegolven in de gemeentescholen; Notariële openbare verkoop van het gemeentelijk terrein aan de Kriekenbomenstraat en de Pleisterstraat; Subsidie van 3.100,00 EUR voor “Ixelles Speedcubing Contest”, winnaar van het participatiebudget."
         },
         "en": {
           "title": "Ixelles council meeting — 2026-07-02",
-          "summary": "Three items from official municipal records."
+          "summary": "Three selected items: Citizen question about measures to address heatwaves in municipal schools; Notarial public sale of municipal land at rue des Mérisiers and rue du Relais; EUR 3,100 grant for “Ixelles Speedcubing Contest”, selected by the participatory budget."
         }
       },
       "sources": [
@@ -256,25 +298,33 @@
           "state": "decision",
           "decision": {
             "disposition": "approved",
-            "statement": "Le Conseil approuve le point.",
-            "excerpt": "Le Conseil approuve le point.",
-            "location": "Registre public, page 10/229"
+            "statement": "Le conseil autorise des caméras fixes temporaires dans l’espace public pour constater les dépôts clandestins et autres problèmes de propreté. L’avis vaut trois ans ; les caméras sont déplacées régulièrement et le traitement des images est confié au service de la Propreté publique.",
+            "excerpt": "d'approuver l’utilisation de caméras fixes temporaires sur l'espace public d'Uccle;",
+            "location": "Document officiel, point 5, pages 10-11/229"
           },
           "source": "primary",
           "coverage": {
             "fr": {
               "title": "Utilisation de caméras fixes temporaires contre les dépôts clandestins et les problèmes de propreté.",
-              "summary": "Le procès-verbal indique que le conseil a approuvé ce point."
+              "summary": "Le conseil autorise des caméras fixes temporaires dans l’espace public pour constater les dépôts clandestins et autres problèmes de propreté. L’avis vaut trois ans ; les caméras sont déplacées régulièrement et le traitement des images est confié au service de la Propreté publique."
             },
             "nl": {
               "title": "Gebruik van tijdelijke vaste camera’s tegen sluikstorten en netheidsproblemen.",
-              "summary": "Het proces-verbaal vermeldt dat de raad dit punt heeft goedgekeurd."
+              "summary": "De raad staat tijdelijke vaste camera’s op de openbare ruimte toe om sluikstorten en andere reinheidsproblemen vast te stellen. Het advies geldt drie jaar; de camera’s worden regelmatig verplaatst en de dienst Openbare Reinheid verwerkt de beelden."
             },
             "en": {
               "title": "Use of temporary fixed cameras against illegal dumping and cleanliness problems.",
-              "summary": "The minutes state that the council approved this item."
+              "summary": "The council authorized temporary fixed cameras in public spaces to detect illegal dumping and other cleanliness offences. The approval lasts three years; cameras move regularly and the Public Cleanliness service handles the images."
             }
-          }
+          },
+          "evidence_pages": [
+            10,
+            11
+          ],
+          "evidence_markers": [
+            "Le Conseil approuve le point."
+          ],
+          "identity_marker": "26.06.2025/A/0005"
         },
         {
           "key": "26.06.2025/A/0012",
@@ -283,25 +333,33 @@
           "state": "decision",
           "decision": {
             "disposition": "approved",
-            "statement": "Le Conseil approuve le point.",
-            "excerpt": "Le Conseil approuve le point.",
-            "location": "Registre public, pages 32-40/229"
+            "statement": "Le conseil adopte une taxe annuelle sur les points de recharge électrique en voirie publique, du 1er août 2025 au 31 décembre 2031. Le règlement fixe le taux à 125 € par point de recharge et par an.",
+            "excerpt": "D’adopter le règlement-taxe sur les bornes de recharge pour véhicules électriques situées sur la voirie publique.",
+            "location": "Document officiel, point 12, pages 32-40/229"
           },
           "source": "primary",
           "coverage": {
             "fr": {
               "title": "Règlement-taxe 2025-2031 sur les bornes de recharge pour véhicules électriques situées sur la voirie publique.",
-              "summary": "Le procès-verbal indique que le conseil a approuvé ce point."
+              "summary": "Le conseil adopte une taxe annuelle sur les points de recharge électrique en voirie publique, du 1er août 2025 au 31 décembre 2031. Le règlement fixe le taux à 125 € par point de recharge et par an."
             },
             "nl": {
               "title": "Belastingreglement 2025-2031 voor laadpalen voor elektrische voertuigen op de openbare weg.",
-              "summary": "Het proces-verbaal vermeldt dat de raad dit punt heeft goedgekeurd."
+              "summary": "De raad neemt een jaarlijkse belasting op elektrische laadpunten op de openbare weg aan, van 1 augustus 2025 tot 31 december 2031. Het reglement bepaalt een tarief van 125 € per laadpunt per jaar."
             },
             "en": {
               "title": "2025–2031 tax regulation for electric-vehicle charging points on public roads.",
-              "summary": "The minutes state that the council approved this item."
+              "summary": "The council adopted an annual tax on electric-vehicle charging points on public roads, covering 1 August 2025 to 31 December 2031. The regulation sets the rate at €125 per charging point per year."
             }
-          }
+          },
+          "evidence_pages": [
+            32,
+            40
+          ],
+          "evidence_markers": [
+            "Le Conseil approuve le point."
+          ],
+          "identity_marker": "26.06.2025/A/0012"
         },
         {
           "key": "26.06.2025/A/0020",
@@ -310,39 +368,47 @@
           "state": "decision",
           "decision": {
             "disposition": "approved",
-            "statement": "Le Conseil approuve le point.",
-            "excerpt": "Le Conseil approuve le point.",
-            "location": "Registre public, pages 69-74/229"
+            "statement": "Le conseil approuve une estimation de 748.024,66 € TVAC, le cahier des charges et la procédure de marché pour réaménager le Bosveldweg entre la rue Langeveld et l’avenue Moscicki. Le projet prévoit notamment des plantations et un carrefour surélevé pour ralentir les véhicules.",
+            "excerpt": "d'approuver l'estimation d'un montant de 748.024,66€ TVA comprise;",
+            "location": "Document officiel, point 20, pages 79-80/229"
           },
           "source": "primary",
           "coverage": {
             "fr": {
               "title": "Réaménagement du Bosveldweg : avant-projet, dépense, documents du marché et procédure de passation.",
-              "summary": "Le procès-verbal indique que le conseil a approuvé ce point."
+              "summary": "Le conseil approuve une estimation de 748.024,66 € TVAC, le cahier des charges et la procédure de marché pour réaménager le Bosveldweg entre la rue Langeveld et l’avenue Moscicki. Le projet prévoit notamment des plantations et un carrefour surélevé pour ralentir les véhicules."
             },
             "nl": {
               "title": "Herinrichting van de Bosveldweg: voorontwerp, uitgave en aanbestedingsprocedure.",
-              "summary": "Het proces-verbaal vermeldt dat de raad dit punt heeft goedgekeurd."
+              "summary": "De raad keurt een raming van 748.024,66 € inclusief btw, het bestek en de plaatsingsprocedure goed voor de heraanleg van de Bosveldweg tussen de Langeveldstraat en de Moscickilaan. Het ontwerp omvat beplanting en een verhoogd kruispunt om voertuigen af te remmen."
             },
             "en": {
               "title": "Bosveldweg redesign: preliminary design, expenditure and procurement procedure.",
-              "summary": "The minutes state that the council approved this item."
+              "summary": "The council approved a €748,024.66 estimate including VAT, the specifications and the procurement procedure for redesigning Bosveldweg between rue Langeveld and avenue Moscicki. The design includes planting and a raised junction to slow traffic."
             }
-          }
+          },
+          "evidence_pages": [
+            79,
+            80
+          ],
+          "evidence_markers": [
+            "Le Conseil approuve le point."
+          ],
+          "identity_marker": "26.06.2025/A/0020"
         }
       ],
       "coverage": {
         "fr": {
           "title": "Conseil communal d’Uccle — 2025-06-26",
-          "summary": "Trois points issus des documents municipaux officiels."
+          "summary": "Sélection de trois points : Utilisation de caméras fixes temporaires contre les dépôts clandestins et les problèmes de propreté; Règlement-taxe 2025-2031 sur les bornes de recharge pour véhicules électriques situées sur la voirie publique; Réaménagement du Bosveldweg : avant-projet, dépense, documents du marché et procédure de passation."
         },
         "nl": {
           "title": "Gemeenteraad van Ukkel — 2025-06-26",
-          "summary": "Drie punten uit officiële gemeentelijke documenten."
+          "summary": "Selectie van drie punten: Gebruik van tijdelijke vaste camera’s tegen sluikstorten en netheidsproblemen; Belastingreglement 2025-2031 voor laadpalen voor elektrische voertuigen op de openbare weg; Herinrichting van de Bosveldweg: voorontwerp, uitgave en aanbestedingsprocedure."
         },
         "en": {
           "title": "Uccle council meeting — 2025-06-26",
-          "summary": "Three items from official municipal records."
+          "summary": "Three selected items: Use of temporary fixed cameras against illegal dumping and cleanliness problems; 2025–2031 tax regulation for electric-vehicle charging points on public roads; Bosveldweg redesign: preliminary design, expenditure and procurement procedure."
         }
       },
       "sources": [
@@ -385,17 +451,23 @@
           "coverage": {
             "fr": {
               "title": "Interpellation citoyenne sur la vente du parc du home Brugmann.",
-              "summary": "Le conseil doit encore examiner cette proposition; l’issue reste inconnue."
+              "summary": "L’ordre du jour porte sur : Interpellation citoyenne sur la vente du parc du home Brugmann. Aucun résultat final n’est établi par cette source."
             },
             "nl": {
               "title": "Burgerinterpellatie over de verkoop van het park van het Brugmann-tehuis.",
-              "summary": "De raad moet dit voorstel nog behandelen; de uitkomst is onbekend."
+              "summary": "Op de agenda staat: Burgerinterpellatie over de verkoop van het park van het Brugmann-tehuis. Deze bron stelt geen definitieve uitkomst vast."
             },
             "en": {
               "title": "Citizen question about the sale of the Brugmann care-home park.",
-              "summary": "The council has yet to consider this proposal; the outcome is unknown."
+              "summary": "The agenda lists: Citizen question about the sale of the Brugmann care-home park. This source does not establish a final outcome."
             }
-          }
+          },
+          "evidence_pages": [
+            1,
+            1
+          ],
+          "identity_marker": "3 Interpellation citoyenne : la vente du parc du home Brugmann.",
+          "evidence_markers": []
         },
         {
           "key": "18",
@@ -411,17 +483,23 @@
           "coverage": {
             "fr": {
               "title": "Règlement pour le déploiement d’un réseau de bornes de recharge pour véhicules électriques sur les voiries communales.",
-              "summary": "Le conseil doit encore examiner cette proposition; l’issue reste inconnue."
+              "summary": "L’ordre du jour porte sur : Règlement pour le déploiement d’un réseau de bornes de recharge pour véhicules électriques sur les voiries communales. Aucun résultat final n’est établi par cette source."
             },
             "nl": {
               "title": "Reglement voor de uitrol van een netwerk van laadpalen voor elektrische voertuigen op gemeentewegen.",
-              "summary": "De raad moet dit voorstel nog behandelen; de uitkomst is onbekend."
+              "summary": "Op de agenda staat: Reglement voor de uitrol van een netwerk van laadpalen voor elektrische voertuigen op gemeentewegen. Deze bron stelt geen definitieve uitkomst vast."
             },
             "en": {
               "title": "Regulation for deploying an electric-vehicle charging network on municipal roads.",
-              "summary": "The council has yet to consider this proposal; the outcome is unknown."
+              "summary": "The agenda lists: Regulation for deploying an electric-vehicle charging network on municipal roads. This source does not establish a final outcome."
             }
-          }
+          },
+          "evidence_pages": [
+            28,
+            31
+          ],
+          "identity_marker": "18 Règlement pour le déploiement sur les voiries communales de la Commune d’Uccle d’un réseau",
+          "evidence_markers": []
         },
         {
           "key": "25",
@@ -431,37 +509,43 @@
           "proposal": {
             "text": "Budget communal 2026 : approbation.",
             "excerpt": "Budget 2026.- Approbation.",
-            "location": "Notes explicatives publiques, point 25, pages 41-44/66"
+            "location": "Notes explicatives publiques, point 25, page 52/66"
           },
           "source": "primary",
           "coverage": {
             "fr": {
               "title": "Budget communal 2026 : approbation.",
-              "summary": "Le conseil doit encore examiner cette proposition; l’issue reste inconnue."
+              "summary": "L’ordre du jour porte sur : Budget communal 2026 : approbation. Aucun résultat final n’est établi par cette source."
             },
             "nl": {
               "title": "Gemeentebegroting 2026: goedkeuring.",
-              "summary": "De raad moet dit voorstel nog behandelen; de uitkomst is onbekend."
+              "summary": "Op de agenda staat: Gemeentebegroting 2026: goedkeuring. Deze bron stelt geen definitieve uitkomst vast."
             },
             "en": {
               "title": "2026 municipal budget: approval.",
-              "summary": "The council has yet to consider this proposal; the outcome is unknown."
+              "summary": "The agenda lists: 2026 municipal budget: approval. This source does not establish a final outcome."
             }
-          }
+          },
+          "evidence_pages": [
+            52,
+            52
+          ],
+          "identity_marker": "25 Budget 2026.- Approbation.",
+          "evidence_markers": []
         }
       ],
       "coverage": {
         "fr": {
           "title": "Conseil communal d’Uccle — 2026-04-23",
-          "summary": "Trois points issus des documents municipaux officiels."
+          "summary": "Sélection de trois points : Interpellation citoyenne sur la vente du parc du home Brugmann; Règlement pour le déploiement d’un réseau de bornes de recharge pour véhicules électriques sur les voiries communales; Budget communal 2026 : approbation."
         },
         "nl": {
           "title": "Gemeenteraad van Ukkel — 2026-04-23",
-          "summary": "Drie punten uit officiële gemeentelijke documenten."
+          "summary": "Selectie van drie punten: Burgerinterpellatie over de verkoop van het park van het Brugmann-tehuis; Reglement voor de uitrol van een netwerk van laadpalen voor elektrische voertuigen op gemeentewegen; Gemeentebegroting 2026: goedkeuring."
         },
         "en": {
           "title": "Uccle council meeting — 2026-04-23",
-          "summary": "Three items from official municipal records."
+          "summary": "Three selected items: Citizen question about the sale of the Brugmann care-home park; Regulation for deploying an electric-vehicle charging network on municipal roads; 2026 municipal budget: approval."
         }
       },
       "sources": [
@@ -491,99 +575,123 @@
       "scheduled_on": "2026-03-24",
       "items": [
         {
-          "key": "forest-2026-03-24-5",
-          "item_number": "5",
+          "key": "forest-2026-03-24-9",
+          "item_number": "9",
           "source_wording": "Marché SCA-2026-S-004 pour la réalisation, l’impression et la distribution du journal communal.",
           "state": "decision",
           "decision": {
             "disposition": "approved",
-            "statement": "Le Conseil approuve le projet de délibération.",
-            "excerpt": "Le Conseil approuve le projet de délibération.",
-            "location": "Procès-verbal public, pages 18-20/92"
+            "statement": "Le conseil prend connaissance des décisions du collège sur le marché du journal communal pour 2026–2028. L’estimation est de 154.834,20 € TVAC pour la réalisation, l’impression et la distribution ; il s’agit d’une information au conseil sur la procédure choisie par le collège.",
+            "excerpt": "De prendre connaissance des décisions du Collège des Bourgmestre et Échevins des 13 et 27 novembre 2025 relatives à la passation d'un marché public de services ayant pour objet “Réalisation, impression et distribution du journal communal” (SCA-2026-S-004) par la procédure négociée sans publication préalable pour un montant estimé à 142.020 euros HTVA ou 154.834,20 euros TVAC et de solliciter les crédits permettant de financer ces dépenses à l’article budgétaire 133/124-06/31 du service ordinaire des exercices 2026 à 2028.",
+            "location": "Document officiel, point 9, pages 30-31/92"
           },
           "source": "primary",
           "coverage": {
             "fr": {
               "title": "Marché SCA-2026-S-004 pour la réalisation, l’impression et la distribution du journal communal.",
-              "summary": "Le procès-verbal indique que le conseil a approuvé ce point."
+              "summary": "Le conseil prend connaissance des décisions du collège sur le marché du journal communal pour 2026–2028. L’estimation est de 154.834,20 € TVAC pour la réalisation, l’impression et la distribution ; il s’agit d’une information au conseil sur la procédure choisie par le collège."
             },
             "nl": {
               "title": "Opdracht SCA-2026-S-004 voor de opmaak, het drukken en de verspreiding van het gemeenteblad.",
-              "summary": "Het proces-verbaal vermeldt dat de raad dit punt heeft goedgekeurd."
+              "summary": "De raad neemt kennis van de collegebesluiten over het gemeenteblad voor 2026–2028. De raming voor opmaak, drukken en verspreiden bedraagt 154.834,20 € inclusief btw; de raad wordt geïnformeerd over de door het college gekozen procedure."
             },
             "en": {
               "title": "Contract SCA-2026-S-004 to produce, print and distribute the municipal newspaper.",
-              "summary": "The minutes state that the council approved this item."
+              "summary": "The council took note of executive decisions on the municipal newspaper contract for 2026–2028. Production, printing and distribution are estimated at €154,834.20 including VAT; this item informs the council about the executive’s procurement procedure."
             }
-          }
+          },
+          "evidence_pages": [
+            30,
+            31
+          ],
+          "evidence_markers": [
+            "Le Conseil approuve le projet de délibération."
+          ],
+          "identity_marker": "9 Centrale d’achats – Marchés publics - SCA-2026-S-004 – Réalisation, impression et distribution"
         },
         {
-          "key": "forest-2026-03-24-11",
-          "item_number": "11",
+          "key": "forest-2026-03-24-15",
+          "item_number": "15",
           "source_wording": "Marché MP-2026-T-001 pour des travaux urgents sur les vitrages de l’église Saint-Denis.",
           "state": "decision",
           "decision": {
             "disposition": "approved",
-            "statement": "Le Conseil approuve le projet de délibération.",
-            "excerpt": "Le Conseil approuve le projet de délibération.",
-            "location": "Procès-verbal public, pages 31-33/92"
+            "statement": "Le conseil prend connaissance du choix du collège pour les travaux urgents sur les vitrages de l’église Saint-Denis, estimés à 10.895 € TVAC et financés par emprunt. Les travaux visent à stabiliser ou protéger les vitrages abîmés pour éviter les chutes de verre ; la délibération réserve l’approbation de la tutelle.",
+            "excerpt": "De prendre connaissance de la décision du Collège des bourgmestre et échevins du 12 février 2026 faisant choix de la procédure par la facture acceptée (marchés publics de faible montant) comme mode de passation du marché « MP-2026-T-001 - Église Saint-Denis : travaux urgents (vitrages) », pour un montant estimé 9.004,13 euros HTVA ou 10.895 euros, 21% TVAC, inscrit à l’article 790/723-60/64 du budget extraordinaire de l’exercice 2026 et financé par un emprunt.",
+            "location": "Document officiel, point 15, pages 45-46/92"
           },
           "source": "primary",
           "coverage": {
             "fr": {
               "title": "Marché MP-2026-T-001 pour des travaux urgents sur les vitrages de l’église Saint-Denis.",
-              "summary": "Le procès-verbal indique que le conseil a approuvé ce point."
+              "summary": "Le conseil prend connaissance du choix du collège pour les travaux urgents sur les vitrages de l’église Saint-Denis, estimés à 10.895 € TVAC et financés par emprunt. Les travaux visent à stabiliser ou protéger les vitrages abîmés pour éviter les chutes de verre ; la délibération réserve l’approbation de la tutelle."
             },
             "nl": {
               "title": "Opdracht MP-2026-T-001 voor dringende werken aan de glasramen van de Sint-Denijskerk.",
-              "summary": "Het proces-verbaal vermeldt dat de raad dit punt heeft goedgekeurd."
+              "summary": "De raad neemt kennis van de collegebeslissing over dringende glaswerken aan de Sint-Denijskerk, geraamd op 10.895 € inclusief btw en gefinancierd met een lening. De werken moeten beschadigd glas stabiliseren of beschermen tegen neervallende scherven; de beslissing blijft onder voorbehoud van toezichtgoedkeuring."
             },
             "en": {
               "title": "Contract MP-2026-T-001 for urgent work on the glazing of Saint-Denis church.",
-              "summary": "The minutes state that the council approved this item."
+              "summary": "The council took note of the executive’s procedure for urgent glazing work at Saint-Denis church, estimated at €10,895 including VAT and financed by borrowing. The work aims to stabilize or protect damaged glazing against falling glass; the resolution is subject to supervisory approval."
             }
-          }
+          },
+          "evidence_pages": [
+            45,
+            46
+          ],
+          "evidence_markers": [
+            "Le Conseil approuve le projet de délibération."
+          ],
+          "identity_marker": "15 Marchés publics – MP-2026-T-001 – Église Saint Denis : travaux urgents (vitrages) – Procédure"
         },
         {
-          "key": "forest-2026-03-24-16",
-          "item_number": "16",
+          "key": "forest-2026-03-24-20",
+          "item_number": "20",
           "source_wording": "Achat de dispositifs de stationnement vélo sur le budget 2026 par la centrale d’achat de l’Agence du Stationnement.",
           "state": "decision",
           "decision": {
             "disposition": "approved",
-            "statement": "Le Conseil approuve le projet de délibération.",
-            "excerpt": "Le Conseil approuve le projet de délibération.",
-            "location": "Procès-verbal public, pages 57-58/92"
+            "statement": "Le conseil inscrit 16.423,25 € TVAC au budget 2026 pour acheter trois boxes vélos via la centrale d’achat de parking.brussels, financés par un subside de Bruxelles Mobilité. Quatre autres boxes sont prévus avec financement et installation directs par parking.brussels.",
+            "excerpt": "D’inscrire la dépense de 16.423,25 € TVAC pour l’achat de 3 box vélos à l’article 410/741-52/85 du service extraordinaire du budget 2026 ;",
+            "location": "Document officiel, point 20, pages 57-58/92"
           },
           "source": "primary",
           "coverage": {
             "fr": {
               "title": "Achat de dispositifs de stationnement vélo sur le budget 2026 par la centrale d’achat de l’Agence du Stationnement.",
-              "summary": "Le procès-verbal indique que le conseil a approuvé ce point."
+              "summary": "Le conseil inscrit 16.423,25 € TVAC au budget 2026 pour acheter trois boxes vélos via la centrale d’achat de parking.brussels, financés par un subside de Bruxelles Mobilité. Quatre autres boxes sont prévus avec financement et installation directs par parking.brussels."
             },
             "nl": {
               "title": "Aankoop van fietsparkeervoorzieningen via de aankoopcentrale van het Parkeeragentschap.",
-              "summary": "Het proces-verbaal vermeldt dat de raad dit punt heeft goedgekeurd."
+              "summary": "De raad schrijft 16.423,25 € inclusief btw in de begroting 2026 in voor drie fietsboxen via de aankoopcentrale van parking.brussels, met een subsidie van Brussel Mobiliteit. Vier andere boxen worden rechtstreeks door parking.brussels gefinancierd en geplaatst."
             },
             "en": {
               "title": "Purchase of bicycle-parking equipment through the Parking Agency purchasing centre.",
-              "summary": "The minutes state that the council approved this item."
+              "summary": "The council allocated €16,423.25 including VAT in the 2026 budget for three bicycle boxes through the parking.brussels purchasing centre, funded by a Brussels Mobility subsidy. Four further boxes are to be funded and installed directly by parking.brussels."
             }
-          }
+          },
+          "evidence_pages": [
+            57,
+            58
+          ],
+          "evidence_markers": [
+            "Le Conseil approuve le projet de délibération."
+          ],
+          "identity_marker": "20 Mobilité - Achat de dispositifs de stationnement vélo – Budget 2026 – Centrale d’achat de"
         }
       ],
       "coverage": {
         "fr": {
           "title": "Conseil communal de Forest — 2026-03-24",
-          "summary": "Trois points issus des documents municipaux officiels."
+          "summary": "Sélection de trois points : Marché SCA-2026-S-004 pour la réalisation, l’impression et la distribution du journal communal; Marché MP-2026-T-001 pour des travaux urgents sur les vitrages de l’église Saint-Denis; Achat de dispositifs de stationnement vélo sur le budget 2026 par la centrale d’achat de l’Agence du Stationnement."
         },
         "nl": {
           "title": "Gemeenteraad van Vorst — 2026-03-24",
-          "summary": "Drie punten uit officiële gemeentelijke documenten."
+          "summary": "Selectie van drie punten: Opdracht SCA-2026-S-004 voor de opmaak, het drukken en de verspreiding van het gemeenteblad; Opdracht MP-2026-T-001 voor dringende werken aan de glasramen van de Sint-Denijskerk; Aankoop van fietsparkeervoorzieningen via de aankoopcentrale van het Parkeeragentschap."
         },
         "en": {
           "title": "Forest council meeting — 2026-03-24",
-          "summary": "Three items from official municipal records."
+          "summary": "Three selected items: Contract SCA-2026-S-004 to produce, print and distribute the municipal newspaper; Contract MP-2026-T-001 for urgent work on the glazing of Saint-Denis church; Purchase of bicycle-parking equipment through the Parking Agency purchasing centre."
         }
       },
       "sources": [
@@ -619,25 +727,33 @@
           "state": "decision",
           "decision": {
             "disposition": "approved",
-            "statement": "Le Conseil approuve le projet de délibération.",
-            "excerpt": "Le Conseil approuve le projet de délibération.",
-            "location": "Procès-verbal public, pages 146-148/190"
+            "statement": "Le conseil adopte la motion déclarant Forest commune antifasciste : 23 voix pour, une contre et dix abstentions. Le texte prévoit notamment des actions contre les discours de haine, un canal avec la Coalition 8 mai et des actions de mémoire et de sensibilisation de la jeunesse.",
+            "excerpt": "de consacrer Forest commune antifasciste.",
+            "location": "Document officiel, point 35, pages 147-149/190"
           },
           "source": "primary",
           "coverage": {
             "fr": {
               "title": "Motion relative à la déclaration de Forest comme commune antifasciste et appartenant à la « coalition 8 mai ».",
-              "summary": "Le procès-verbal indique que le conseil a approuvé ce point."
+              "summary": "Le conseil adopte la motion déclarant Forest commune antifasciste : 23 voix pour, une contre et dix abstentions. Le texte prévoit notamment des actions contre les discours de haine, un canal avec la Coalition 8 mai et des actions de mémoire et de sensibilisation de la jeunesse."
             },
             "nl": {
               "title": "Motie die Vorst uitroept tot antifascistische gemeente en lid van de 8-meicoalitie.",
-              "summary": "Het proces-verbaal vermeldt dat de raad dit punt heeft goedgekeurd."
+              "summary": "De raad neemt de motie aan die Vorst tot antifascistische gemeente verklaart: 23 stemmen voor, één tegen en tien onthoudingen. De tekst voorziet onder meer in acties tegen haatspraak, een communicatiekanaal met de 8 mei-coalitie en herinnerings- en sensibiliseringsactiviteiten voor jongeren."
             },
             "en": {
               "title": "Motion declaring Forest an anti-fascist municipality and member of the 8 May coalition.",
-              "summary": "The minutes state that the council approved this item."
+              "summary": "The council adopted the motion declaring Forest an anti-fascist municipality: 23 votes for, one against and ten abstentions. It calls for action against hate speech, a channel with the 8 May Coalition, and remembrance and youth education activities."
             }
-          }
+          },
+          "evidence_pages": [
+            147,
+            149
+          ],
+          "evidence_markers": [
+            "Le Conseil approuve le projet de délibération."
+          ],
+          "identity_marker": "35 Motion relative à la déclaration de Forest comme commune antifasciste et appartenant à la \""
         },
         {
           "key": "forest-2025-04-22-18",
@@ -646,25 +762,33 @@
           "state": "decision",
           "decision": {
             "disposition": "approved",
-            "statement": "Le Conseil approuve le projet de délibération.",
-            "excerpt": "Le Conseil approuve le projet de délibération.",
-            "location": "Procès-verbal public, pages 98-99/190"
+            "statement": "Le conseil approuve le partenariat avec le CECP pour Opération Recyclons dans les écoles maternelle et primaire Kaléidoscope. L’objectif est de réduire les déchets résiduels de 75 % en trois ans ; la convention dépend de l’octroi d’un subside de Bruxelles Environnement.",
+            "excerpt": "D’approuver la convention jointe en annexe concernant le projet \"Opération Recyclons\" pour les écoles Kaléidoscope maternelle et primaire, située Rue Timmermans 54-56 à 1190 Forest, avec le CEPC, situé Avenue des Gaulois 32 à 1040 Bruxelles.",
+            "location": "Document officiel, point 18, pages 98-99/190"
           },
           "source": "primary",
           "coverage": {
             "fr": {
               "title": "Convention CECP pour le projet « Opération Recyclons » dans les écoles Kaléidoscope.",
-              "summary": "Le procès-verbal indique que le conseil a approuvé ce point."
+              "summary": "Le conseil approuve le partenariat avec le CECP pour Opération Recyclons dans les écoles maternelle et primaire Kaléidoscope. L’objectif est de réduire les déchets résiduels de 75 % en trois ans ; la convention dépend de l’octroi d’un subside de Bruxelles Environnement."
             },
             "nl": {
               "title": "CECP-overeenkomst voor “Opération Recyclons” in de Kaléidoscope-scholen.",
-              "summary": "Het proces-verbaal vermeldt dat de raad dit punt heeft goedgekeurd."
+              "summary": "De raad keurt het partnerschap met CECP voor Opération Recyclons in de kleuter- en lagere school Kaléidoscope goed. Het doel is 75% minder restafval in drie jaar; de overeenkomst is afhankelijk van een subsidie van Leefmilieu Brussel."
             },
             "en": {
               "title": "CECP agreement for the “Opération Recyclons” project in the Kaléidoscope schools.",
-              "summary": "The minutes state that the council approved this item."
+              "summary": "The council approved the CECP partnership for Opération Recyclons in the Kaléidoscope nursery and primary schools. It aims to cut residual waste by 75% in three years; the agreement is conditional on a Brussels Environment subsidy."
             }
-          }
+          },
+          "evidence_pages": [
+            98,
+            99
+          ],
+          "evidence_markers": [
+            "Le Conseil approuve le projet de délibération."
+          ],
+          "identity_marker": "18 Instruction Publique – Ecoles Kaléidoscope maternelle et primaire – Convention de partenariat"
         },
         {
           "key": "forest-2025-04-22-31",
@@ -673,39 +797,47 @@
           "state": "decision",
           "decision": {
             "disposition": "approved",
-            "statement": "Le Conseil approuve le projet de délibération.",
-            "excerpt": "Le Conseil approuve le projet de délibération.",
-            "location": "Procès-verbal public, pages 129-131/190"
+            "statement": "Le conseil adopte la convention avec Sibelga pour un tarif de rotation après la fin de la recharge électrique. Pour 2025, le texte indique 0,04 € par minute entre 9 h et 22 h, afin de libérer les bornes pour d’autres véhicules.",
+            "excerpt": "D’adopter la convention jointe au dossier entre la Sibelga et la commune de Forest pour la mise en œuvre du tarif de rotation sur les bornes de recharge pour véhicules électriques ;",
+            "location": "Document officiel, point 31, pages 130-131/190"
           },
           "source": "primary",
           "coverage": {
             "fr": {
               "title": "Convention avec Sibelga relative au tarif de rotation sur les bornes de recharge pour véhicules électriques.",
-              "summary": "Le procès-verbal indique que le conseil a approuvé ce point."
+              "summary": "Le conseil adopte la convention avec Sibelga pour un tarif de rotation après la fin de la recharge électrique. Pour 2025, le texte indique 0,04 € par minute entre 9 h et 22 h, afin de libérer les bornes pour d’autres véhicules."
             },
             "nl": {
               "title": "Overeenkomst met Sibelga over het rotatietarief aan laadpalen voor elektrische voertuigen.",
-              "summary": "Het proces-verbaal vermeldt dat de raad dit punt heeft goedgekeurd."
+              "summary": "De raad neemt de overeenkomst met Sibelga aan voor een rotatietarief na het einde van het elektrisch laden. Voor 2025 vermeldt de tekst 0,04 € per minuut tussen 9 en 22 uur, zodat andere voertuigen de laadpunten kunnen gebruiken."
             },
             "en": {
               "title": "Agreement with Sibelga on a rotation tariff at electric-vehicle charging points.",
-              "summary": "The minutes state that the council approved this item."
+              "summary": "The council adopted the agreement with Sibelga for a rotation charge after electric-vehicle charging ends. For 2025, the text specifies €0.04 per minute between 09:00 and 22:00, intended to free charging points for other vehicles."
             }
-          }
+          },
+          "evidence_pages": [
+            130,
+            131
+          ],
+          "evidence_markers": [
+            "Le Conseil approuve le projet de délibération."
+          ],
+          "identity_marker": "31 Mobilité – Tarif de rotation sur bornes de recharge pour véhicules électriques – Convention"
         }
       ],
       "coverage": {
         "fr": {
           "title": "Conseil communal de Forest — 2025-04-22",
-          "summary": "Trois points issus des documents municipaux officiels."
+          "summary": "Sélection de trois points : Motion relative à la déclaration de Forest comme commune antifasciste et appartenant à la « coalition 8 mai »; Convention CECP pour le projet « Opération Recyclons » dans les écoles Kaléidoscope; Convention avec Sibelga relative au tarif de rotation sur les bornes de recharge pour véhicules électriques."
         },
         "nl": {
           "title": "Gemeenteraad van Vorst — 2025-04-22",
-          "summary": "Drie punten uit officiële gemeentelijke documenten."
+          "summary": "Selectie van drie punten: Motie die Vorst uitroept tot antifascistische gemeente en lid van de 8-meicoalitie; CECP-overeenkomst voor “Opération Recyclons” in de Kaléidoscope-scholen; Overeenkomst met Sibelga over het rotatietarief aan laadpalen voor elektrische voertuigen."
         },
         "en": {
           "title": "Forest council meeting — 2025-04-22",
-          "summary": "Three items from official municipal records."
+          "summary": "Three selected items: Motion declaring Forest an anti-fascist municipality and member of the 8 May coalition; CECP agreement for the “Opération Recyclons” project in the Kaléidoscope schools; Agreement with Sibelga on a rotation tariff at electric-vehicle charging points."
         }
       },
       "sources": [
@@ -748,17 +880,23 @@
           "coverage": {
             "fr": {
               "title": "Comptes de la Ville de l’exercice 2025 : arrêt provisoire.",
-              "summary": "Le conseil doit encore examiner cette proposition; l’issue reste inconnue."
+              "summary": "L’ordre du jour porte sur : Comptes de la Ville de l’exercice 2025 : arrêt provisoire. Aucun résultat final n’est établi par cette source."
             },
             "nl": {
               "title": "Stadsrekeningen voor het dienstjaar 2025: voorlopige vaststelling.",
-              "summary": "De raad moet dit voorstel nog behandelen; de uitkomst is onbekend."
+              "summary": "Op de agenda staat: Stadsrekeningen voor het dienstjaar 2025: voorlopige vaststelling. Deze bron stelt geen definitieve uitkomst vast."
             },
             "en": {
               "title": "City accounts for 2025: provisional adoption.",
-              "summary": "The council has yet to consider this proposal; the outcome is unknown."
+              "summary": "The agenda lists: City accounts for 2025: provisional adoption. This source does not establish a final outcome."
             }
-          }
+          },
+          "evidence_pages": [
+            3,
+            3
+          ],
+          "identity_marker": "[23] Budget & Finances - Gestion de la comptabilité - - 2713287 (R)",
+          "evidence_markers": []
         },
         {
           "key": "2721246",
@@ -774,17 +912,23 @@
           "coverage": {
             "fr": {
               "title": "Adhésion à eBox comme émetteur de communications officielles aux citoyens et entreprises.",
-              "summary": "Le conseil doit encore examiner cette proposition; l’issue reste inconnue."
+              "summary": "L’ordre du jour porte sur : Adhésion à eBox comme émetteur de communications officielles aux citoyens et entreprises. Aucun résultat final n’est établi par cette source."
             },
             "nl": {
               "title": "Aansluiting bij eBox als afzender van officiële communicatie aan burgers en ondernemingen.",
-              "summary": "De raad moet dit voorstel nog behandelen; de uitkomst is onbekend."
+              "summary": "Op de agenda staat: Aansluiting bij eBox als afzender van officiële communicatie aan burgers en ondernemingen. Deze bron stelt geen definitieve uitkomst vast."
             },
             "en": {
               "title": "Joining eBox as a sender of official communications to citizens and businesses.",
-              "summary": "The council has yet to consider this proposal; the outcome is unknown."
+              "summary": "The agenda lists: Joining eBox as a sender of official communications to citizens and businesses. This source does not establish a final outcome."
             }
-          }
+          },
+          "evidence_pages": [
+            5,
+            5
+          ],
+          "identity_marker": "[40] Secrétaire - Stratégie & Transformation digitale - - 2721246 (R)",
+          "evidence_markers": []
         },
         {
           "key": "2721906",
@@ -801,31 +945,37 @@
           "coverage": {
             "fr": {
               "title": "Dossier OPP/2026/185 : socles en béton pour modules Fritkot préfabriqués, attribution avec dépense supplémentaire.",
-              "summary": "Le conseil doit encore examiner cette proposition; l’issue reste inconnue."
+              "summary": "Le conseil est saisi de l’attribution du marché pour construire les socles en béton des modules Fritkot, avec une dépense supplémentaire. Le point indique une procédure négociée sans publication préalable. L’ordre du jour ne précise ici ni le bénéficiaire ni le montant supplémentaire et ne prouve pas que l’attribution a été adoptée."
             },
             "nl": {
               "title": "Dossier OPP/2026/185: betonnen sokkels voor Fritkot-modules, gunning met bijkomende uitgave.",
-              "summary": "De raad moet dit voorstel nog behandelen; de uitkomst is onbekend."
+              "summary": "De raad krijgt de gunning van de opdracht voor de betonnen sokkels van de Fritkot-modules voorgelegd, met een bijkomende uitgave. Het punt vermeldt een onderhandelingsprocedure zonder voorafgaande bekendmaking. De agenda noemt hier geen opdrachtnemer of extra bedrag en bewijst niet dat de gunning is aangenomen."
             },
             "en": {
               "title": "Dossier OPP/2026/185: concrete bases for prefabricated Fritkot modules, award with extra expenditure.",
-              "summary": "The council has yet to consider this proposal; the outcome is unknown."
+              "summary": "The council was asked to consider awarding the contract for the Fritkot concrete bases, with additional spending. The item specifies negotiations without prior publication. This agenda item does not name the contractor or extra amount, and does not establish that the award was approved."
             }
-          }
+          },
+          "evidence_pages": [
+            7,
+            7
+          ],
+          "identity_marker": "[140] Patrimoine public - - Direction administration - 2721906 (R)",
+          "evidence_markers": []
         }
       ],
       "coverage": {
         "fr": {
           "title": "Conseil communal de la Ville de Bruxelles — 2026-06-29",
-          "summary": "Trois points issus des documents municipaux officiels."
+          "summary": "Sélection de trois points : Comptes de la Ville de l’exercice 2025 : arrêt provisoire; Adhésion à eBox comme émetteur de communications officielles aux citoyens et entreprises; Dossier OPP/2026/185 : socles en béton pour modules Fritkot préfabriqués, attribution avec dépense supplémentaire."
         },
         "nl": {
           "title": "Gemeenteraad van de Stad Brussel — 2026-06-29",
-          "summary": "Drie punten uit officiële gemeentelijke documenten."
+          "summary": "Selectie van drie punten: Stadsrekeningen voor het dienstjaar 2025: voorlopige vaststelling; Aansluiting bij eBox als afzender van officiële communicatie aan burgers en ondernemingen; Dossier OPP/2026/185: betonnen sokkels voor Fritkot-modules, gunning met bijkomende uitgave."
         },
         "en": {
           "title": "City of Brussels council meeting — 2026-06-29",
-          "summary": "Three items from official municipal records."
+          "summary": "Three selected items: City accounts for 2025: provisional adoption; Joining eBox as a sender of official communications to citizens and businesses; Dossier OPP/2026/185: concrete bases for prefabricated Fritkot modules, award with extra expenditure."
         }
       },
       "sources": [
@@ -885,17 +1035,23 @@
           "coverage": {
             "fr": {
               "title": "Convention pour une avance de trésorerie de 4.000.000,00 EUR au CHU Brugmann.",
-              "summary": "Le conseil doit encore examiner cette proposition; l’issue reste inconnue."
+              "summary": "L’ordre du jour porte sur : Convention pour une avance de trésorerie de 4.000.000,00 EUR au CHU Brugmann. Aucun résultat final n’est établi par cette source."
             },
             "nl": {
               "title": "Overeenkomst voor een kasvoorschot van 4.000.000,00 EUR aan het UVC Brugmann.",
-              "summary": "De raad moet dit voorstel nog behandelen; de uitkomst is onbekend."
+              "summary": "Op de agenda staat: Overeenkomst voor een kasvoorschot van 4.000.000,00 EUR aan het UVC Brugmann. Deze bron stelt geen definitieve uitkomst vast."
             },
             "en": {
               "title": "Agreement for a EUR 4,000,000 cash advance to CHU Brugmann.",
-              "summary": "The council has yet to consider this proposal; the outcome is unknown."
+              "summary": "The agenda lists: Agreement for a EUR 4,000,000 cash advance to CHU Brugmann. This source does not establish a final outcome."
             }
-          }
+          },
+          "evidence_pages": [
+            2,
+            2
+          ],
+          "identity_marker": "[8] Budget & Finances - Secrétariat central FIN - - 2717489 (R)",
+          "evidence_markers": []
         },
         {
           "key": "2716802",
@@ -912,17 +1068,23 @@
           "coverage": {
             "fr": {
               "title": "Dossier OPP/2026/185 : socles en béton pour modules Fritkot préfabriqués, principe.",
-              "summary": "Le conseil doit encore examiner cette proposition; l’issue reste inconnue."
+              "summary": "Le conseil est appelé à se prononcer sur le principe d’un marché de travaux pour construire les socles en béton destinés aux modules Fritkot préfabriqués. Ce stade porte sur le lancement du projet, pas sur une attribution documentée à une entreprise. Aucun résultat final n’est établi par cet ordre du jour."
             },
             "nl": {
               "title": "Dossier OPP/2026/185: betonnen sokkels voor geprefabriceerde Fritkot-modules, principe.",
-              "summary": "De raad moet dit voorstel nog behandelen; de uitkomst is onbekend."
+              "summary": "De raad wordt gevraagd zich in principe uit te spreken over een werkenopdracht voor betonnen sokkels voor geprefabriceerde Fritkot-modules. Dit stadium gaat over het opzetten van het project; de agenda legt geen gunning aan een bedrijf of definitieve uitkomst vast."
             },
             "en": {
               "title": "Dossier OPP/2026/185: concrete bases for prefabricated Fritkot modules, principle.",
-              "summary": "The council has yet to consider this proposal; the outcome is unknown."
+              "summary": "The council was asked to consider proceeding with a works contract to build concrete bases for prefabricated Fritkot modules. This is the project’s in-principle stage; the agenda does not document a contract awarded to a company or a final council outcome."
             }
-          }
+          },
+          "evidence_pages": [
+            3,
+            3
+          ],
+          "identity_marker": "[13] Patrimoine public - - Direction administration - 2716802 (R)",
+          "evidence_markers": []
         },
         {
           "key": "2717652",
@@ -938,31 +1100,37 @@
           "coverage": {
             "fr": {
               "title": "Subside de 90.000,00 EUR à Pro Vélo pour l’éducation au vélo dans les écoles de la Ville.",
-              "summary": "Le conseil doit encore examiner cette proposition; l’issue reste inconnue."
+              "summary": "L’ordre du jour porte sur : Subside de 90.000,00 EUR à Pro Vélo pour l’éducation au vélo dans les écoles de la Ville. Aucun résultat final n’est établi par cette source."
             },
             "nl": {
               "title": "Subsidie van 90.000,00 EUR aan Pro Vélo voor fietseducatie in de stadsscholen.",
-              "summary": "De raad moet dit voorstel nog behandelen; de uitkomst is onbekend."
+              "summary": "Op de agenda staat: Subsidie van 90.000,00 EUR aan Pro Vélo voor fietseducatie in de stadsscholen. Deze bron stelt geen definitieve uitkomst vast."
             },
             "en": {
               "title": "EUR 90,000 grant to Pro Vélo for cycling education in City schools.",
-              "summary": "The council has yet to consider this proposal; the outcome is unknown."
+              "summary": "The agenda lists: EUR 90,000 grant to Pro Vélo for cycling education in City schools. This source does not establish a final outcome."
             }
-          }
+          },
+          "evidence_pages": [
+            6,
+            6
+          ],
+          "identity_marker": "[36] Développement urbain - Mobilité et Aménagements urbains - - 2717652 (R)",
+          "evidence_markers": []
         }
       ],
       "coverage": {
         "fr": {
           "title": "Conseil communal de la Ville de Bruxelles — 2026-06-08",
-          "summary": "Trois points issus des documents municipaux officiels."
+          "summary": "Sélection de trois points : Convention pour une avance de trésorerie de 4.000.000,00 EUR au CHU Brugmann; Dossier OPP/2026/185 : socles en béton pour modules Fritkot préfabriqués, principe; Subside de 90.000,00 EUR à Pro Vélo pour l’éducation au vélo dans les écoles de la Ville."
         },
         "nl": {
           "title": "Gemeenteraad van de Stad Brussel — 2026-06-08",
-          "summary": "Drie punten uit officiële gemeentelijke documenten."
+          "summary": "Selectie van drie punten: Overeenkomst voor een kasvoorschot van 4.000.000,00 EUR aan het UVC Brugmann; Dossier OPP/2026/185: betonnen sokkels voor geprefabriceerde Fritkot-modules, principe; Subsidie van 90.000,00 EUR aan Pro Vélo voor fietseducatie in de stadsscholen."
         },
         "en": {
           "title": "City of Brussels council meeting — 2026-06-08",
-          "summary": "Three items from official municipal records."
+          "summary": "Three selected items: Agreement for a EUR 4,000,000 cash advance to CHU Brugmann; Dossier OPP/2026/185: concrete bases for prefabricated Fritkot modules, principle; EUR 90,000 grant to Pro Vélo for cycling education in City schools."
         }
       },
       "sources": [

@@ -74,3 +74,19 @@ the serving code.
 Production enables suggestion intake by default with `SUGGESTIONS_ENABLED=true`; set it to `false` for a legal or operational hold. The application derives a domain-separated 32-byte HMAC key from `SECRET_KEY_BASE`. `SUGGESTION_RATE_LIMIT_SECRET` is an optional rotation override, not a required Coolify secret.
 
 Forwarded client addresses are ignored unless the immediate peer is listed in the comma-separated `SUGGESTION_TRUSTED_PROXIES` setting. List only the exact canonical IP addresses of trusted Traefik hops. An empty list uses the socket peer and cannot be spoofed with `X-Forwarded-For`.
+
+### Reusing the app image for OCR
+
+The OCR application uses the repository's `docker-compose.ocr.yml` with Coolify's
+Docker Compose build pack. Set `APP_IMAGE` to the local image tag shown by the
+successful app build (`sn1f08alzbb5reus2ynxrswz:<full-commit>` on this estate).
+`pull_policy: never` makes a missing local image fail instead of obtaining a
+different artifact. Do not independently rebuild the OCR role. The compose
+service sets one CPU, 1 GiB memory, no public ports, and a process health check;
+the HTTP readiness check belongs to the app role. Preserve the existing OCR
+application's database and private-archive credentials. Both deployments must
+use the same Coolify server.
+
+The build embeds `priv/source_commit` in the release. `/health/version` reads
+that file before considering a fallback `RELEASE_SHA` environment variable, so
+runtime environment configuration cannot relabel a built image.

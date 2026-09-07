@@ -46,7 +46,7 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
     assert Enum.count(document[~s(section[aria-labelledby="coming-up"])]) == 1
     assert Enum.count(document[~s(section[aria-labelledby="previously"])]) == 1
     assert html =~ "Coming up"
-    assert html =~ "Previously"
+    assert html =~ "What they decided"
 
     for commune <- ["Ixelles", "Uccle", "Forest", "City of Brussels"] do
       assert html =~ commune

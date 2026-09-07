@@ -104,7 +104,7 @@ defmodule BrusselsWtfWeb.IxellesFinalPrincipalSeamTest do
     assert Enum.all?(revisions, &(&1.meeting_page_id == page.id))
 
     timeline = build_conn() |> get("/?lang=en") |> html_response(200)
-    assert timeline =~ "Previously"
+    assert timeline =~ "What they decided"
     refute timeline =~ "37 against"
 
     for {locale, title, vote} <- [

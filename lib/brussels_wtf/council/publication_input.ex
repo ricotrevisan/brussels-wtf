@@ -143,7 +143,7 @@ defmodule BrusselsWtf.Council.PublicationInput do
         [
           Enum.max_by(
             proposals,
-            &(Map.get(&1, :source_version_order) || "0:#{&1.source_version.id}")
+            &BrusselsWtf.Council.Proposal.version_order/1
           )
         ]
     end

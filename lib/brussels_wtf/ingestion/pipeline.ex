@@ -628,6 +628,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     %{
       processing_run_id: run.id,
       locator_url: locator_url,
+      processor_contract: BrusselsWtf.Processors.normalization_contract(),
       generation_kind: run.inputs["generation_kind"] || "automatic"
     }
     |> Workers.NormalizeSource.new()
@@ -1326,6 +1327,10 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     })
   end
 
+  defp interpretation_key(candidate) do
+    candidate |> :erlang.term_to_binary([:deterministic]) |> BrusselsWtf.Digest.sha256()
+  end
+
   defp record_proposals(proposals, item, version, version_order, citation_url) do
     Enum.each(List.wrap(proposals), fn candidate ->
       proposal =
@@ -1333,6 +1338,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
           agenda_item_id: item.id,
           source_version_id: version.id,
           source_version_order: version_order,
+          interpretation_key: interpretation_key(candidate),
           text: candidate["text"],
           status: :proposed
         })
@@ -1384,6 +1390,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         Council.record_decision!(%{
           agenda_item_id: item.id,
           source_version_id: version.id,
+          interpretation_key: interpretation_key(candidate),
           disposition: disposition(candidate["disposition"]),
           statement: candidate["statement"],
           votes_for: get_in(candidate, ["vote", "for"]),

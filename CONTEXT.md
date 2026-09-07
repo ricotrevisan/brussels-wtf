@@ -72,6 +72,10 @@ A public report that a dossier link is incorrect. A report creates an editorial 
 
 The action described before the council has made its final decision. A proposal is never presented as an adopted decision.
 
+## Source interpretation
+
+A source-backed reading of a proposal or decision and its precise citation. Correcting an interpretation preserves the original source version, earlier interpretations and published history; it does not imply that the municipality changed its decision.
+
 ## Decision
 
 The council's documented final disposition of an agenda item, including approval, rejection, amendment, postponement, withdrawal, or another explicitly sourced outcome. A later meeting that changes an earlier decision produces a new decision linked through the dossier; it never rewrites the historical decision. Until an authoritative final record appears, the agenda item's outcome remains unknown.
@@ -126,7 +130,7 @@ A public open-ended text submission proposing missing ownership information. It 
 
 ## Correction suggestion
 
-A public open-ended text submission from a company or person page. It follows the same private review workflow as an ownership suggestion. Approved identity merges, profile corrections, and relationship changes retain audit history and redirect retired duplicate profiles.
+A public open-ended text submission from a company, person or published agenda-item page. It follows the same private review workflow as an ownership suggestion. Approved identity merges, profile corrections, and relationship changes retain audit history and redirect retired duplicate profiles. An addressed agenda-item correction references an independently published revision of that item’s meeting; closing the report never publishes content.
 
 ## Follow collection
 

@@ -1,0 +1,27 @@
+# Deploy only after the app image has passed readiness on this same Coolify server.
+# APP_IMAGE is the exact local app image tag produced by the reviewed Git deployment.
+services:
+  ocr:
+    image: ${APP_IMAGE:?Set APP_IMAGE to the successfully deployed app image}
+    pull_policy: never
+    restart: unless-stopped
+    cpus: 1
+    mem_limit: 1g
+    pids_limit: 512
+    environment:
+      PROCESS_ROLE: ocr
+      DATABASE_URL: ${DATABASE_URL:?}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:?}
+      REVIEW_USERNAME: ${REVIEW_USERNAME:?}
+      REVIEW_PASSWORD: ${REVIEW_PASSWORD:?}
+      SOURCE_ARCHIVE_S3_ACCESS_KEY_ID: ${SOURCE_ARCHIVE_S3_ACCESS_KEY_ID:?}
+      SOURCE_ARCHIVE_S3_SECRET_ACCESS_KEY: ${SOURCE_ARCHIVE_S3_SECRET_ACCESS_KEY:?}
+      SOURCE_ARCHIVE_S3_REGION: ${SOURCE_ARCHIVE_S3_REGION:?}
+      SOURCE_ARCHIVE_S3_ENDPOINT: ${SOURCE_ARCHIVE_S3_ENDPOINT:?}
+      SOURCE_ARCHIVE_S3_BUCKET: ${SOURCE_ARCHIVE_S3_BUCKET:?}
+    healthcheck:
+      test: ["CMD", "sh", "-c", "kill -0 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3

@@ -45,7 +45,7 @@ defmodule BrusselsWtfWeb.DossierPage do
     </a>
     <header class="border-b border-base-300">
       <div class="mx-auto flex max-w-4xl items-center justify-between gap-4 px-4 py-4">
-        <Layouts.brand_link href={"/?lang=" <> @locale} />
+        <Layouts.brand_link data-reader-back href={"/?lang=" <> @locale} />
         <nav aria-label="Language">
           <ul class="flex gap-3 text-sm">
             <li :for={{code, label} <- [{"fr", "FR"}, {"nl", "NL"}, {"en", "EN"}]}>
@@ -90,8 +90,14 @@ defmodule BrusselsWtfWeb.DossierPage do
           </h2>
           <p class="mt-2">{entry.summary}</p>
           <p :for={evidence <- entry.evidences} class="mt-2 text-sm">
-            <a href={evidence.citation_url} rel="external" class="underline underline-offset-2">
-              {evidence.source_title}
+            <a
+              href={BrusselsWtfWeb.PublicEvidence.citation_href(evidence)}
+              rel="external"
+              class="underline underline-offset-2"
+            >
+              {if evidence.source_title == "Authoritative municipal source",
+                do: source_title(@locale),
+                else: evidence.source_title}
             </a>
             <span :if={evidence.synthetic} class="block font-medium text-warning">
               {text(@locale, :synthetic_reference)}
@@ -125,6 +131,7 @@ defmodule BrusselsWtfWeb.DossierPage do
       <footer class="mt-8 border-t border-base-300 pt-5 text-sm text-base-content/70">
         {text(@locale, :byline)} Rico Trevisan
       </footer>
+      <BrusselsWtfWeb.PublicationComponents.footer locale={@locale} />
     </main>
     """
   end
@@ -163,6 +170,10 @@ defmodule BrusselsWtfWeb.DossierPage do
         }
     end
   end
+
+  defp source_title("fr"), do: "Source communale officielle"
+  defp source_title("nl"), do: "Officiële gemeentelijke bron"
+  defp source_title(_locale), do: "Official municipal source"
 
   defp entry(%{status: :removed}, _locale), do: []
 

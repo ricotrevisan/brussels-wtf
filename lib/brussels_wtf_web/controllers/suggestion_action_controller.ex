@@ -19,6 +19,18 @@ defmodule BrusselsWtfWeb.SuggestionActionController do
 
   def approve(conn, _params), do: send_resp(conn, 422, "Required moderation fields are missing")
 
+  def address(conn, %{
+        "case_id" => case_id,
+        "publication_revision_id" => revision_id,
+        "note" => note
+      }) do
+    moderate(conn, case_id, fn suggestion, actor ->
+      Suggestions.address(suggestion.id, revision_id, note, actor)
+    end)
+  end
+
+  def address(conn, _params), do: send_resp(conn, 422, "Required moderation fields are missing")
+
   defp moderate(conn, case_id, operation) do
     actor = conn.assigns.current_review_actor
 

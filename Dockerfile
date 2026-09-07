@@ -32,6 +32,8 @@ RUN mix assets.deploy
 
 COPY config/runtime.exs config/
 COPY rel rel
+ARG SOURCE_COMMIT=unknown
+RUN printf '%s\n' "$SOURCE_COMMIT" > priv/source_commit
 RUN mix release
 
 # Prove release-owned corpus paths resolve after the compiler tree is unavailable.
@@ -77,7 +79,7 @@ RUN REVIEW_USERNAME=release-check \
   DATABASE_URL=ecto://release:release@127.0.0.1/release \
   SECRET_KEY_BASE=0000000000000000000000000000000000000000000000000000000000000000 \
   /app/bin/brussels_wtf eval \
-    'meeting = BrusselsWtf.Corpus.Manifest.meeting!("uccle-2026-04-23"); source = hd(meeting["sources"]); bytes = File.read!(BrusselsWtf.Corpus.Manifest.bundle_path!(source)); {:ok, extracted} = BrusselsWtf.PDF.PopplerOcr.native(%{sha256: source["sha256"], media_type: source["media_type"]}, bytes); {:ok, _normalized} = BrusselsWtf.Corpus.Manifest.normalize(%{"sha256" => source["sha256"], "text" => extracted.text})'
+    'for meeting <- BrusselsWtf.Corpus.Manifest.load!()["meetings"], source <- meeting["sources"] do bytes = File.read!(BrusselsWtf.Corpus.Manifest.bundle_path!(source)); {:ok, extracted} = BrusselsWtf.PDF.PopplerOcr.native(%{sha256: source["sha256"], media_type: source["media_type"]}, bytes); {:ok, _normalized} = BrusselsWtf.Corpus.Manifest.normalize(%{"sha256" => source["sha256"], "text" => extracted.text}) end'
 
 USER nobody
 EXPOSE 3000

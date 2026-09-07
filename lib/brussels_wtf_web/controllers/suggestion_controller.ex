@@ -56,9 +56,11 @@ defmodule BrusselsWtfWeb.SuggestionController do
   defp safe_kind(_), do: :invalid
 
   defp subject_type(%{"enterprise_number" => _}), do: :legal_entity
+  defp subject_type(%{"agenda_item_id" => _}), do: :agenda_item
   defp subject_type(%{"id" => _}), do: :person
   defp subject_type(_), do: :invalid
   defp subject_reference(%{"enterprise_number" => number}), do: number
+  defp subject_reference(%{"agenda_item_id" => id}), do: id
   defp subject_reference(%{"id" => id}), do: id
   defp subject_reference(_), do: nil
 end

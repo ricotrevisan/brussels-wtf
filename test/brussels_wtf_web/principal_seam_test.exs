@@ -147,12 +147,18 @@ defmodule BrusselsWtfWeb.PrincipalSeamTest do
       assert html =~ title
       assert html =~ "agenda-item-4"
       assert html =~ "Rico Trevisan"
-      assert html =~ "AI-generated"
+
+      assert html =~
+               %{"en" => "AI-generated", "fr" => "Généré par IA", "nl" => "AI-gegenereerd"}[
+                 locale
+               ]
+
       assert html =~ scenario.expected.citation_url
       assert html =~ "Notes explicatives publiques, page 12/483"
       assert html =~ project_hash
 
-      if locale in ["nl", "en"], do: assert(html =~ "machine-translated")
+      if locale in ["nl", "en"],
+        do: assert(html =~ %{"nl" => "Machinevertaling", "en" => "machine-translated"}[locale])
     end
   end
 

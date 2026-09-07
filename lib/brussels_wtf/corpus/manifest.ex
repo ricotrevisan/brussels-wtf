@@ -167,19 +167,23 @@ defmodule BrusselsWtf.Corpus.Manifest do
   defp verify_markers(text, meeting, source) do
     normalized = String.replace(text, ~r/\s+/u, " ")
 
-    evidence_markers =
+    pages = String.split(text, "\f")
+
+    missing_items =
       meeting["items"]
       |> Enum.filter(&(&1["source"] == source["name"]))
-      |> Enum.map(fn item ->
-        if item["state"] == "proposal",
-          do: item["proposal"]["excerpt"],
-          else: item["decision"]["excerpt"]
+      |> Enum.flat_map(fn item ->
+        [first, last] = item["evidence_pages"]
+        scope = pages |> Enum.slice((first - 1)..(last - 1)) |> Enum.join(" ")
+        scope = String.replace(scope, ~r/\s+/u, " ")
+        claim = item[item["state"]]
+
+        [item["identity_marker"], claim["excerpt"] | item["evidence_markers"]]
+        |> Enum.reject(&String.contains?(scope, &1))
+        |> Enum.map(&"#{item["key"]} pages #{first}-#{last}: #{&1}")
       end)
 
-    missing =
-      source["markers"]
-      |> Kernel.++(evidence_markers)
-      |> Enum.reject(&String.contains?(normalized, &1))
+    missing = Enum.reject(source["markers"], &String.contains?(normalized, &1)) ++ missing_items
 
     if missing == [],
       do: :ok,

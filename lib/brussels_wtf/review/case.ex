@@ -91,7 +91,7 @@ defmodule BrusselsWtf.Review.Case do
 
       argument :disposition, :atom,
         allow_nil?: false,
-        constraints: [one_of: [:suggestion_rejected, :suggestion_approved]]
+        constraints: [one_of: [:suggestion_rejected, :suggestion_approved, :suggestion_addressed]]
 
       change BrusselsWtf.Review.Changes.CloseSuggestionCase
     end
@@ -263,6 +263,7 @@ defmodule BrusselsWtf.Review.Case do
                     :dossier_split,
                     :dossier_relinked,
                     :suggestion_rejected,
+                    :suggestion_addressed,
                     :suggestion_approved
                   ]
     end

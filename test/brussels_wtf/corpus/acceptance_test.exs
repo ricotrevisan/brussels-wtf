@@ -78,6 +78,33 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
         |> Map.fetch!(:processing_runs)
         |> Enum.find(&(&1.status == :succeeded and &1.processor_role == :native_extraction))
 
+      legacy =
+        if version.sha256 == hd(Manifest.meeting!("uccle-2025-06-26")["sources"])["sha256"] do
+          meeting =
+            Council.upsert_meeting!(%{
+              commune_id: version.source_record.commune_id,
+              municipal_identifier: "2025-06-26",
+              scheduled_on: ~D[2025-06-26]
+            })
+
+          item =
+            Council.upsert_agenda_item!(%{
+              council_meeting_id: meeting.id,
+              item_number: "5",
+              authoritative_identifier: "26.06.2025/A/0005",
+              source_wording: "Legacy camera interpretation",
+              current_version_order: "0:legacy",
+              current_source_version_id: version.id
+            })
+
+          Council.record_decision!(%{
+            agenda_item_id: item.id,
+            source_version_id: version.id,
+            disposition: :approved,
+            statement: "Le Conseil approuve le point."
+          })
+        end
+
       assert :ok =
                Ingestion.Pipeline.normalize(
                  run.id,
@@ -86,6 +113,13 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
                  3,
                  :backfill
                )
+
+      if legacy do
+        assert Council.get_decision!(legacy.id).statement == "Le Conseil approuve le point."
+        item = Council.get_agenda_item!(legacy.agenda_item_id)
+        refute item.current_decision_id == legacy.id
+        assert Council.get_decision!(item.current_decision_id).statement =~ "trois ans"
+      end
     end
 
     ixelles_268 =
@@ -320,16 +354,8 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
     }
   end
 
-  defp contract_text(meeting, source) do
-    evidence =
-      meeting["items"]
-      |> Enum.filter(&(&1["source"] == source["name"]))
-      |> Enum.map(fn item ->
-        if item["state"] == "proposal",
-          do: item["proposal"]["excerpt"],
-          else: item["decision"]["excerpt"]
-      end)
-
-    Enum.join(source["markers"] ++ evidence, "\n")
+  defp contract_text(_meeting, source) do
+    {text, 0} = System.cmd("pdftotext", ["-layout", Manifest.bundle_path!(source), "-"])
+    text
   end
 end

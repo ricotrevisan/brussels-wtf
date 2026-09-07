@@ -16,12 +16,12 @@ defmodule BrusselsWtf.Processors.RecordedCorpusCoverage do
   def metadata do
     %{
       processor_name: "recorded-real-corpus-coverage",
-      processor_version: "2026-08-21",
+      processor_version: "2026-09-07",
       config_hash: "sha256:" <> BrusselsWtf.Corpus.Manifest.digest(),
       provider_category: "recorded_agent_assisted_editorial",
       billing_mode: :recorded,
       network_access: :none,
-      model: "openai-codex/gpt-5.6-sol",
+      model: "openai-codex/agent-assisted",
       canonical_method: :ai_generation,
       translation_method: :machine_translation,
       usage: %{"network_calls" => 0}

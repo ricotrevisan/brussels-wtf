@@ -3,6 +3,32 @@ defmodule BrusselsWtf.Ingestion.NormalizationReview do
 
   alias BrusselsWtf.Ingestion
 
+  def open_contract_change(run_id, queued_contract, current_contract) do
+    run = Ingestion.get_processing_run!(run_id) |> Ash.load!(source_version: :source_record)
+    version = run.source_version
+
+    BrusselsWtf.Review.open_review_case!(%{
+      kind: :normalization,
+      commune_id: version.source_record.commune_id,
+      affected_record_id: version.id,
+      affected_record_type: "source_version",
+      source_record_id: version.source_record_id,
+      source_version_id: version.id,
+      processing_generation: "normalization-contract:#{run.id}:#{queued_contract}",
+      urgency: :normal,
+      summary: "Queued normalization contract changed; retry with the current release",
+      diagnostics: %{
+        "classification" => "processor_contract_changed",
+        "queued_contract" => queued_contract,
+        "current_contract" => current_contract
+      },
+      related_evidence: %{
+        "processing_run_id" => run.id,
+        "citation_url" => version.source_record.origin_url
+      }
+    })
+  end
+
   def open_for_run(run, citation_url),
     do: open_for_run(run, citation_url, :processor_unavailable, %{})
 

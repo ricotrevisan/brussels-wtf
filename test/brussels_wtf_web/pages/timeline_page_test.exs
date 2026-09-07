@@ -6,7 +6,7 @@ defmodule BrusselsWtfWeb.TimelinePageTest do
     html = html_response(conn, 200)
 
     assert html =~ "Coming up"
-    assert html =~ "Previously"
+    assert html =~ "What they decided"
     assert html =~ "brussels.wtf"
   end
 end

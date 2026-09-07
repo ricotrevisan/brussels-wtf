@@ -175,7 +175,31 @@ defmodule BrusselsWtfWeb.ReviewCasePage do
           </form>
 
           <form
-            :if={@suggestion_approval_available}
+            :if={@suggestion.subject_type == :agenda_item}
+            method="post"
+            action={"/review/cases/#{@review_case.id}/suggestion/address"}
+            class="border border-base-300 p-4"
+          >
+            <input type="hidden" name="_csrf_token" value={@csrf_token} />
+            <h3 class="font-semibold">Mark correction addressed</h3>
+            <p class="mt-2 text-sm">
+              First publish the correction independently. Reference the current revision of this item's meeting, published after the report.
+            </p>
+            <label class="mt-3 block">Publication revision UUID<input
+              name="publication_revision_id"
+              required
+              class="input input-bordered mt-1 w-full"
+            /></label>
+            <label class="mt-3 block">What changed?<textarea
+              name="note"
+              required
+              maxlength="2000"
+              class="textarea textarea-bordered mt-1 w-full"
+            ></textarea></label>
+            <button type="submit" class="btn btn-sm mt-3">Mark addressed</button>
+          </form>
+          <form
+            :if={@suggestion_approval_available and @suggestion.subject_type != :agenda_item}
             method="post"
             action={"/review/cases/#{@review_case.id}/suggestion/approve"}
             class="border border-base-300 p-4"
@@ -196,7 +220,10 @@ defmodule BrusselsWtfWeb.ReviewCasePage do
             </label>
             <button type="submit" class="btn btn-sm mt-3">Approve reference</button>
           </form>
-          <p :if={!@suggestion_approval_available} class="border border-base-300 p-4">
+          <p
+            :if={!@suggestion_approval_available and @suggestion.subject_type != :agenda_item}
+            class="border border-base-300 p-4"
+          >
             Approval is unavailable because no trusted verifier supports this fact kind.
           </p>
         </div>
@@ -205,6 +232,9 @@ defmodule BrusselsWtfWeb.ReviewCasePage do
         <ol class="mt-2 space-y-2">
           <li :for={decision <- @suggestion.decisions}>
             {humanize(decision.action)} by {decision.actor_id} · {decision.reason_code}
+            <p :if={decision.publication_revision_id}>
+              Publication revision: <code>{decision.publication_revision_id}</code>
+            </p>
             <p>{decision.note || "Reviewer note purged"}</p>
             <time>{DateTime.to_iso8601(decision.inserted_at)}</time>
           </li>

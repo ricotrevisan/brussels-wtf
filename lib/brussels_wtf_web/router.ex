@@ -51,6 +51,8 @@ defmodule BrusselsWtfWeb.Router do
     post "/review/session", ReviewSessionController, :create
     delete "/review/session", ReviewSessionController, :delete
 
+    dstar("/coverage", PublicationInfoPage)
+    dstar("/about", PublicationInfoPage)
     dstar("/", TimelinePage)
     dstar("/meetings/:commune/:municipal_id", MeetingPage)
     dstar("/dossiers/:slug", DossierPage)
@@ -94,6 +96,7 @@ defmodule BrusselsWtfWeb.Router do
 
     post "/companies/:enterprise_number/suggestions/:kind", SuggestionController, :create
     post "/people/:id/suggestions/:kind", SuggestionController, :create
+    post "/items/:agenda_item_id/suggestions/:kind", SuggestionController, :create
   end
 
   scope "/review", BrusselsWtfWeb do
@@ -109,6 +112,7 @@ defmodule BrusselsWtfWeb.Router do
     post "/cases/:case_id/actions/:action", ReviewActionController, :create
     post "/cases/:case_id/notes", ReviewNoteController, :create
     post "/cases/:case_id/suggestion/reject", SuggestionActionController, :reject
+    post "/cases/:case_id/suggestion/address", SuggestionActionController, :address
     post "/cases/:case_id/suggestion/approve", SuggestionActionController, :approve
 
     post "/publications/:page_id/factual-corrections",

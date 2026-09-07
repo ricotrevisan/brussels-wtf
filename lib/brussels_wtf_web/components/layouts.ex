@@ -13,10 +13,11 @@ defmodule BrusselsWtfWeb.Layouts do
 
   @doc "The shared home link, with the approved wordmark for each surface theme."
   attr :href, :string, default: "/"
+  attr :rest, :global
 
   def brand_link(assigns) do
     ~H"""
-    <a href={@href} aria-label="brussels.wtf" class="brand-link shrink-0">
+    <a href={@href} aria-label="brussels.wtf" class="brand-link shrink-0" {@rest}>
       <img
         src={~p"/images/brand/logo-horizontal-light.svg"}
         class="brand-logo-light"

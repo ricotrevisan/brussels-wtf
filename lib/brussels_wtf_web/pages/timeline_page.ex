@@ -49,8 +49,11 @@ defmodule BrusselsWtfWeb.TimelinePage do
       selected_communes: selected,
       q: q,
       show: show,
-      coming: matching |> Enum.filter(&(&1.state == :proposal)) |> newest_first(),
-      previously: matching |> Enum.filter(&(&1.state in [:decision, :unknown])) |> newest_first()
+      language_path:
+        "/?" <> Plug.Conn.Query.encode(Map.take(params, ~w(q show commune communes_submitted))),
+      coming: matching |> Enum.filter(&(&1.group == :coming)) |> newest_first(),
+      awaiting: matching |> Enum.filter(&(&1.group == :awaiting)) |> newest_first(),
+      previously: matching |> Enum.filter(&(&1.group == :decided)) |> newest_first()
     )
   end
 
@@ -78,7 +81,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
     <header class="border-b border-base-300">
       <div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4">
         <Layouts.brand_link href={"/?lang=" <> @locale} />
-        <.language_nav locale={@locale} path="/" />
+        <.language_nav locale={@locale} path={@language_path} />
       </div>
     </header>
 
@@ -104,50 +107,63 @@ defmodule BrusselsWtfWeb.TimelinePage do
               {text(@locale, :search)}
               <input type="search" name="q" value={@q} class="input input-bordered mt-1 w-full" />
             </label>
-            <fieldset class="space-y-2 text-sm">
-              <legend class="font-medium">{text(@locale, :sections)}</legend>
-              <label class="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  name="show[]"
-                  value="coming"
-                  checked={"coming" in @show}
-                  class="checkbox checkbox-sm"
-                />
-                {text(@locale, :coming)} ({length(@coming)})
-              </label>
-              <label class="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  name="show[]"
-                  value="previously"
-                  checked={"previously" in @show}
-                  class="checkbox checkbox-sm"
-                />
-                {text(@locale, :previously)} ({length(@previously)})
-              </label>
-            </fieldset>
-            <fieldset class="space-y-2 text-sm">
-              <legend class="font-medium">{text(@locale, :communes)}</legend>
-              <div :for={{slug, name} <- @communes} class="flex items-center justify-between gap-2">
+            <details class="reader-filters">
+              <summary class="cursor-pointer text-sm font-medium">{text(@locale, :filters)}</summary>
+              <fieldset class="mt-3 space-y-2 text-sm">
+                <legend class="font-medium">{text(@locale, :sections)}</legend>
                 <label class="flex items-center gap-2">
                   <input
                     type="checkbox"
-                    name="commune[]"
-                    value={slug}
-                    checked={slug in @selected_communes}
+                    name="show[]"
+                    value="coming"
+                    checked={"coming" in @show}
                     class="checkbox checkbox-sm"
                   />
-                  <span>{name}</span>
+                  {text(@locale, :coming)} ({length(@coming)})
                 </label>
-                <button
-                  type="submit"
-                  form={"follow-commune-#{slug}"}
-                  class="btn btn-ghost btn-xs"
-                  data-follow-control
-                >{text(@locale, :follow)}</button>
-              </div>
-            </fieldset>
+                <label class="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    name="show[]"
+                    value="awaiting"
+                    checked={"awaiting" in @show}
+                    class="checkbox checkbox-sm"
+                  />
+                  {text(@locale, :awaiting)} ({length(@awaiting)})
+                </label>
+                <label class="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    name="show[]"
+                    value="previously"
+                    checked={"previously" in @show}
+                    class="checkbox checkbox-sm"
+                  />
+                  {text(@locale, :previously)} ({length(@previously)})
+                </label>
+              </fieldset>
+              <fieldset class="space-y-2 text-sm">
+                <legend class="font-medium">{text(@locale, :communes)}</legend>
+                <div :for={{slug, name} <- @communes} class="flex items-center justify-between gap-2">
+                  <label class="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      name="commune[]"
+                      value={slug}
+                      checked={slug in @selected_communes}
+                      class="checkbox checkbox-sm"
+                    />
+                    <span>{name}</span>
+                  </label>
+                  <button
+                    type="submit"
+                    form={"follow-commune-#{slug}"}
+                    class="btn btn-ghost btn-xs"
+                    data-follow-control
+                  >{text(@locale, :follow)}</button>
+                </div>
+              </fieldset>
+            </details>
             <button type="submit" class="btn btn-sm w-full">{text(@locale, :apply)}</button>
           </form>
         </aside>
@@ -162,6 +178,20 @@ defmodule BrusselsWtfWeb.TimelinePage do
             <p :if={@coming == []} class="mt-3 text-base-content/70">{text(@locale, :none_coming)}</p>
             <div class="mt-3">
               <.timeline_entry :for={entry <- @coming} entry={entry} locale={@locale} />
+            </div>
+          </section>
+
+          <section
+            :if={"awaiting" in @show}
+            aria-labelledby="awaiting-outcome"
+            class="mt-8 border-t border-base-300 pt-4"
+          >
+            <h2 id="awaiting-outcome" class="text-2xl font-semibold">{text(@locale, :awaiting)}</h2>
+            <p :if={@awaiting == []} class="mt-3 text-base-content/70">
+              {text(@locale, :none_awaiting)}
+            </p>
+            <div class="mt-3">
+              <.timeline_entry :for={entry <- @awaiting} entry={entry} locale={@locale} />
             </div>
           </section>
 
@@ -184,6 +214,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       <footer class="mt-12 border-t border-base-300 pt-5 text-sm text-base-content/70">
         {text(@locale, :byline)} Rico Trevisan
       </footer>
+      <BrusselsWtfWeb.PublicationComponents.footer locale={@locale} />
     </main>
     """
   end
@@ -194,7 +225,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
   defp timeline_entry(assigns) do
     ~H"""
     <article
-      class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-base-300 py-2"
+      class="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-x-4 gap-y-1 border-b border-base-300 py-3"
       data-commune={@entry.commune_slug}
     >
       <a href={@entry.href} class="min-w-0 flex-1 font-medium underline-offset-2 hover:underline">
@@ -203,6 +234,10 @@ defmodule BrusselsWtfWeb.TimelinePage do
       <p class="shrink-0 text-sm text-base-content/70">
         {@entry.commune} ·
         <time datetime={Date.to_iso8601(@entry.date)}>{format_date(@entry.date)}</time>
+        <span :if={@entry.group == :coming and @entry.date == BrusselsWtfWeb.MeetingTime.today()}> · {text(
+          @locale,
+          :today
+        )}</span>
       </p>
     </article>
     """
@@ -217,7 +252,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       <ul class="flex gap-3 text-sm">
         <li :for={{code, label} <- [{"fr", "FR"}, {"nl", "NL"}, {"en", "EN"}]}>
           <a
-            href={@path <> "?lang=" <> code}
+            href={@path <> if(String.ends_with?(@path, "?"), do: "lang=", else: "&lang=") <> code}
             lang={code}
             hreflang={code}
             aria-current={if code == @locale, do: "page"}
@@ -247,6 +282,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       summary: localized_summary(variant, state, locale),
       provenance: variant.provenance,
       state: state,
+      group: BrusselsWtfWeb.MeetingTime.group(state, page.council_meeting.scheduled_on),
       disposition: decision && decision.disposition,
       outcome: item.published_outcome || :unknown,
       evidences: BrusselsWtfWeb.PublicEvidence.for_item(item),
@@ -296,9 +332,9 @@ defmodule BrusselsWtfWeb.TimelinePage do
       params
       |> Map.get("show")
       |> List.wrap()
-      |> Enum.filter(&(&1 in ~w(coming previously)))
+      |> Enum.filter(&(&1 in ~w(coming awaiting previously)))
 
-    if selected == [], do: ~w(coming previously), else: selected
+    if selected == [], do: ~w(coming awaiting previously), else: selected
   end
 
   defp selected_communes(%{"communes_submitted" => _} = params),
@@ -350,8 +386,12 @@ defmodule BrusselsWtfWeb.TimelinePage do
       apply: "Apply selection",
       search: "Search",
       sections: "Sections",
+      today: "Scheduled today",
       coming: "Coming up",
-      previously: "Previously",
+      awaiting: "Awaiting documented outcome",
+      none_awaiting: "No past proposals awaiting a documented outcome in this selection.",
+      filters: "Filter coverage",
+      previously: "What they decided",
       unknown_heading: "Outcome not yet documented",
       decided: "What they decided",
       none_coming: "No upcoming coverage.",
@@ -385,8 +425,12 @@ defmodule BrusselsWtfWeb.TimelinePage do
       apply: "Appliquer la sélection",
       search: "Rechercher",
       sections: "Sections",
+      today: "Prévu aujourd’hui",
       coming: "À venir",
-      previously: "Auparavant",
+      awaiting: "En attente d’un résultat documenté",
+      none_awaiting: "Aucune proposition passée sans résultat documenté dans cette sélection.",
+      filters: "Filtrer les articles",
+      previously: "Ce qu’ils ont décidé",
       unknown_heading: "Résultat pas encore documenté",
       decided: "Ce qu’ils ont décidé",
       none_coming: "Aucune actualité à venir.",
@@ -419,8 +463,12 @@ defmodule BrusselsWtfWeb.TimelinePage do
       apply: "Selectie toepassen",
       search: "Zoeken",
       sections: "Onderdelen",
+      today: "Vandaag gepland",
       coming: "Binnenkort",
-      previously: "Eerder",
+      awaiting: "In afwachting van een gedocumenteerde uitkomst",
+      none_awaiting: "Geen eerdere voorstellen zonder gedocumenteerde uitkomst in deze selectie.",
+      filters: "Berichten filteren",
+      previously: "Wat ze besloten",
       unknown_heading: "Resultaat nog niet gedocumenteerd",
       decided: "Wat ze beslisten",
       none_coming: "Geen komende berichtgeving.",

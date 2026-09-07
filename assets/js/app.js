@@ -25,6 +25,7 @@ import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/brussels_wtf"
 import topbar from "../vendor/topbar"
+import {enhanceReaderNavigation} from "./reader_navigation.mjs"
 import {enhanceCommuneSelection} from "./reader_preferences.mjs"
 import {enhancePersonalFeed} from "./personal_feed.mjs"
 
@@ -88,3 +89,6 @@ if (process.env.NODE_ENV === "development") {
     window.liveReloader = reloader
   })
 }
+
+enhanceReaderNavigation(window, document)
+window.addEventListener("hashchange", () => enhanceReaderNavigation(window, document))
