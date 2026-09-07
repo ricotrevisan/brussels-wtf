@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>brussels.wtf — brand kit</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 32px; background: #f3f3f0; color: #111; font: 16px/1.5 system-ui,sans-serif; }
+  main { max-width: 1100px; margin: auto; }
+  h1 { margin-bottom: 0; } h2 { margin-top: 36px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(280px,1fr)); gap: 20px; }
+  figure { margin: 0; overflow: hidden; border: 1px solid #ddd; border-radius: 12px; background: white; }
+  .stage { min-height: 240px; display: flex; justify-content: center; align-items: center; padding: 24px; background: white; }
+  .dark { background: #111; color: white; }
+  .stage img { max-width: 100%; max-height: 240px; object-fit: contain; }
+  figcaption { padding: 14px 20px; border-top: 1px solid #ddd; }
+  a { color: inherit; } .wide { display: block; width: 100%; height: auto; }
+  .sizes { display: flex; flex-wrap: wrap; align-items: center; gap: 32px; padding: 24px; }
+  .sample { text-align: center; } .sample small { display: block; margin-top: 8px; }
+  .avatar { border-radius: 50%; }
+  .swatches { display: flex; gap: 12px; flex-wrap: wrap; }
+  .swatch { padding: 20px; border: 1px solid #ccc; border-radius: 8px; }
+  @media(max-width:600px) { body { padding: 16px; } }
+</style>
+<main>
+<h1>brussels.wtf</h1>
+<p>Brand starter kit · <a href="README.md">Usage guide</a> · <a href="PROMPTS.md">Generation prompts</a></p>
+<h2>Chosen logo and profile icon</h2>
+<div class="grid">
+  <figure><div class="stage"><img src="logo-stacked-approved.png" alt="Approved stacked brussels.wtf logo"></div><figcaption><a href="logo-stacked-approved.png">Approved stacked logo</a></figcaption></figure>
+  <figure><div class="stage dark"><img class="avatar" src="avatar-400.png" alt="brussels.wtf symbol shown with a circular avatar crop"></div><figcaption><a href="avatar-400.png">Social avatar · 400 × 400</a></figcaption></figure>
+</div>
+<h2>Horizontal logos</h2>
+<div class="grid">
+  <figure><div class="stage"><img src="logo-horizontal-light.png" alt="Horizontal brussels.wtf logo on white"></div><figcaption><a href="logo-horizontal-light.png">Light surfaces · transparent</a></figcaption></figure>
+  <figure><div class="stage dark"><img src="logo-horizontal-dark.png" alt="Horizontal brussels.wtf logo on charcoal"></div><figcaption><a href="logo-horizontal-dark.png">Dark surfaces · opaque charcoal</a></figcaption></figure>
+</div>
+<h2>Standalone symbols</h2>
+<div class="grid">
+  <figure><div class="stage"><img src="icon-light.png" alt="Yellow Vijfhoek and white pinched-fingers hand"></div><figcaption><a href="icon-light.png">Light icon · transparent</a></figcaption></figure>
+  <figure><div class="stage dark"><img src="icon-dark.png" alt="Symbol with a white outer keyline on charcoal"></div><figcaption><a href="icon-dark.png">Dark icon · opaque charcoal</a></figcaption></figure>
+</div>
+<h2>Browser and mobile exports at actual pixel sizes</h2>
+<figure><div class="sizes">
+  <div class="sample"><img src="web/favicon-16.png" width="16" height="16" alt="16 pixel favicon"><small>16 px</small></div>
+  <div class="sample"><img src="web/favicon-32.png" width="32" height="32" alt="32 pixel favicon"><small>32 px</small></div>
+  <div class="sample"><img src="web/favicon-48.png" width="48" height="48" alt="48 pixel favicon"><small>48 px</small></div>
+  <div class="sample"><img src="web/apple-touch-icon.png" width="180" height="180" alt="Apple touch icon"><small>180 px touch icon</small></div>
+</div><figcaption><a href="web/favicon.ico">ICO</a> · <a href="web/app-icon-192.png">192 px app icon</a> · <a href="web/app-icon-512.png">512 px app icon</a></figcaption></figure>
+<h2>Link-preview card</h2>
+<figure><img class="wide" src="social-card-1200x630.png" alt="brussels.wtf sharing card on white"><figcaption><a href="social-card-1200x630.png">1200 × 630 PNG</a></figcaption></figure>
+<h2>Wide banner</h2>
+<figure><img class="wide" src="banner-1500x500.png" alt="brussels.wtf wide banner on charcoal"><figcaption><a href="banner-1500x500.png">1500 × 500 PNG</a></figcaption></figure>
+<h2>Working palette</h2>
+<div class="swatches"><div class="swatch" style="background:#fc0">Yellow · #FFCC00</div><div class="swatch dark">Charcoal · #111111</div><div class="swatch" style="background:#fff">White · #FFFFFF</div></div>
+<p>PNG starter kit. An editable SVG master and print-ready artwork remain future deliverables. App integration is separate.</p>
+</main>
+</html>
