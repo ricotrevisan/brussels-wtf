@@ -343,6 +343,8 @@ defmodule BrusselsWtf.Identity.IxellesMandateDeclarationProcessor do
     end
   end
 
+  # Discovery consumes the immutable accepted artifact. The trusted verifier
+  # independently recomputes OCR in its isolated :ocr worker before publication.
   defp accepted_declaration_input(version) do
     metadata = BrusselsWtf.PDF.Processor.metadata()
 
@@ -371,22 +373,13 @@ defmodule BrusselsWtf.Identity.IxellesMandateDeclarationProcessor do
         with {:ok, raw} <- BrusselsWtf.Archive.get(version.object_key),
              true <- BrusselsWtf.Digest.sha256(raw) == version.sha256,
              true <- byte_size(raw) == version.byte_size,
-             {:ok, rerun} <-
-               BrusselsWtf.PDF.Processor.ocr(
-                 %{sha256: version.sha256, media_type: version.media_type},
-                 raw,
-                 run.inputs["pages"]
-               ),
-             true <- rerun.quality_measurements["accepted"] == true,
              {:ok, text} <- BrusselsWtf.Archive.get(artifact.object_key),
-             true <- rerun.text == text,
-             true <- rerun.quality_measurements == artifact.quality_measurements,
              true <- BrusselsWtf.Digest.sha256(text) == artifact.output_sha256,
              true <- byte_size(text) == artifact.byte_size do
           {:ok, run, artifact, text}
         else
           {:error, reason} -> {:error, reason}
-          false -> {:error, :extraction_rerun_mismatch}
+          false -> {:error, :extraction_artifact_mismatch}
         end
 
       [] ->

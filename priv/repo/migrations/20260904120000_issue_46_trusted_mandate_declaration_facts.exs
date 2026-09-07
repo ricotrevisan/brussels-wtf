@@ -160,7 +160,8 @@ defmodule BrusselsWtf.Repo.Migrations.Issue46TrustedMandateDeclarationFacts do
     LANGUAGE sql
     STABLE
     AS $fn$
-      SELECT (
+      SELECT CASE f.verified_by
+        WHEN 'ixelles_municipal_minutes_public_mandate_v1' THEN (
         -- Minutes chain (issue #30, unchanged).
         f.verification_status IN ('verified', 'superseded')
          AND f.verified_by = 'ixelles_municipal_minutes_public_mandate_v1'
@@ -253,7 +254,7 @@ defmodule BrusselsWtf.Repo.Migrations.Issue46TrustedMandateDeclarationFacts do
               AND position(f.effective_from::text in f.evidence_excerpt) > 0
               AND f.evidence_location = 'decision ' || locators.meeting_identifier
          )
-      ) OR (
+      ) WHEN 'ixelles_mandate_declaration_v1' THEN (
         -- Mandate-declaration chain (issue #46).
         f.verification_status IN ('verified', 'superseded')
          AND f.verified_by = 'ixelles_mandate_declaration_v1'
@@ -353,10 +354,15 @@ defmodule BrusselsWtf.Repo.Migrations.Issue46TrustedMandateDeclarationFacts do
                  WHERE prior.subject_id = f.subject_id
                    AND prior.object_id = f.object_id
                    AND prior.kind = 'public_mandate'
-                   AND trusted_ixelles_public_mandate_fact(prior)
+                   AND prior.id <> f.id
+                   AND CASE
+                     WHEN prior.verified_by = 'ixelles_municipal_minutes_public_mandate_v1'
+                     THEN trusted_ixelles_public_mandate_fact(prior)
+                     ELSE false
+                   END
               )
          )
-      );
+      ) ELSE false END;
     $fn$;
     """
   end

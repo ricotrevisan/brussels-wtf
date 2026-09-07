@@ -191,6 +191,7 @@ defmodule BrusselsWtf.IdentityMandateDeclarationTest do
     assert fact.effective_to == ~D[2024-12-31]
 
     assert_enqueued(
+      queue: :ocr,
       worker: BrusselsWtf.Workers.VerifyIxellesMandateDeclaration,
       args: %{fact_id: fact.id}
     )
@@ -201,29 +202,6 @@ defmodule BrusselsWtf.IdentityMandateDeclarationTest do
     verified = Identity.get_sourced_fact!(fact.id)
     assert verified.verification_status == :verified
     assert verified.verified_by == Atom.to_string(@verifier)
-
-    IO.inspect(
-      BrusselsWtf.Repo.query!(
-        "SELECT verifier_id, to_status, processing_run_id = $1::uuid, artifact_id = $2::uuid FROM sourced_fact_verification_events WHERE fact_id = $3::uuid",
-        Enum.map(
-          [
-            verified.verification_processing_run_id,
-            verified.verification_artifact_id,
-            verified.id
-          ],
-          fn value -> elem(Ecto.UUID.dump(value), 1) end
-        )
-      ).rows,
-      label: "EVENTS"
-    )
-
-    IO.inspect(
-      BrusselsWtf.Repo.query!(
-        "SELECT trusted_ixelles_public_mandate_fact(f) FROM sourced_facts f WHERE f.id = $1::text::uuid",
-        [verified.id]
-      ).rows,
-      label: "TRUSTED FN"
-    )
 
     assert BrusselsWtf.Identity.TrustedVerifier.trusted_fact?(verified)
 
@@ -255,6 +233,16 @@ defmodule BrusselsWtf.IdentityMandateDeclarationTest do
       |> Ash.read!(authorize?: false, domain: Identity)
 
     assert length(facts_after) == 1
+
+    # A declaration must never corroborate itself once its independent minutes
+    # evidence is no longer eligible. Exercise the real public projection too.
+    BrusselsWtf.Repo.query!(
+      "UPDATE source_records SET role = 'agenda' WHERE id = $1::text::uuid",
+      [minutes_version.source_record_id]
+    )
+
+    refute BrusselsWtf.Identity.TrustedVerifier.trusted_fact?(verified)
+    assert Identity.list_public_relationships!(%{subject_id: person.id}) == []
   end
 
   test "unverified minutes corroboration never makes declaration facts eligible",

@@ -2,7 +2,7 @@ defmodule BrusselsWtf.Workers.VerifyIxellesMandateDeclaration do
   @moduledoc false
 
   use Oban.Worker,
-    queue: :enrich,
+    queue: :ocr,
     max_attempts: 5,
     unique: [period: :infinity, fields: [:worker, :args], states: :incomplete]
 
