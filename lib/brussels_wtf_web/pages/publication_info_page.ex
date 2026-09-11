@@ -40,7 +40,9 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
           {text(@locale, :window)}: {Date.to_iso8601(@status.first)} – {Date.to_iso8601(@status.last)}
         </p>
         <section :for={commune <- @status.communes} class="mt-8 border-t border-base-300 pt-4">
-          <h2 class="text-xl font-semibold">{commune["name"]}</h2>
+          <h2 class="text-xl font-semibold">
+            {BrusselsWtfWeb.CommuneLabels.name(@locale, commune["slug"], commune["name"])}
+          </h2>
           <p class="mt-2 text-sm">
             {text(@locale, :checked)}: {timestamp(commune["checked_at"], @locale)}
           </p>

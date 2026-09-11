@@ -180,8 +180,8 @@ defmodule BrusselsWtfWeb.PublicationOperationsTest do
 
     assert meeting["published"] == false
 
-    for locale <- ~w(fr nl en) do
-      assert conn |> get("/coverage?lang=#{locale}") |> html_response(200) =~ "Ixelles"
+    for {locale, commune_name} <- [{"fr", "Ixelles"}, {"nl", "Elsene"}, {"en", "Ixelles"}] do
+      assert conn |> get("/coverage?lang=#{locale}") |> html_response(200) =~ commune_name
     end
   end
 
