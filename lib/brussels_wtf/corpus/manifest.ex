@@ -1,15 +1,23 @@
 defmodule BrusselsWtf.Corpus.Manifest do
   @moduledoc "Hash-pinned, recorded contract for the bounded real-meeting corpus."
 
-  def load! do
-    manifest_path()
-    |> File.read!()
-    |> Jason.decode!()
-    |> validate!()
+  @contract_ids ~w(issue-33 current-20260911)
+
+  def load!(id \\ "issue-33") do
+    manifest = id |> manifest_path() |> File.read!() |> Jason.decode!()
+
+    case id do
+      "issue-33" -> validate!(manifest)
+      "current-20260911" -> validate_current!(manifest)
+    end
   end
 
-  def digest do
-    manifest_path() |> File.read!() |> BrusselsWtf.Digest.sha256()
+  def digest(id \\ "issue-33") do
+    id |> manifest_path() |> File.read!() |> BrusselsWtf.Digest.sha256()
+  end
+
+  def all_meetings do
+    Enum.flat_map(@contract_ids, &load!(&1)["meetings"])
   end
 
   def bundle_path!(source) do
@@ -23,12 +31,12 @@ defmodule BrusselsWtf.Corpus.Manifest do
   end
 
   def meeting!(key) do
-    Enum.find(load!()["meetings"], &(&1["key"] == key)) ||
+    Enum.find(all_meetings(), &(&1["key"] == key)) ||
       raise ArgumentError, "unknown real-corpus meeting #{inspect(key)}"
   end
 
   def meeting_by_identity(commune, municipal_identifier) do
-    Enum.find(load!()["meetings"], fn meeting ->
+    Enum.find(all_meetings(), fn meeting ->
       meeting["commune"] == commune and
         meeting["municipal_identifier"] == municipal_identifier
     end)
@@ -56,7 +64,7 @@ defmodule BrusselsWtf.Corpus.Manifest do
   end
 
   def source_by_sha256(sha256) do
-    Enum.find_value(load!()["meetings"], fn meeting ->
+    Enum.find_value(all_meetings(), fn meeting ->
       case Enum.find(meeting["sources"], &(&1["sha256"] == sha256)) do
         nil -> nil
         source -> {meeting, source}
@@ -91,7 +99,8 @@ defmodule BrusselsWtf.Corpus.Manifest do
   def recorded_translation(canonical, locale) when locale in ["nl", "en"] do
     with %{} = meeting <-
            meeting_by_identity(canonical["commune_slug"], canonical["meeting_identifier"]),
-         true <- MapSet.new(Map.keys(canonical["items"] || %{})) == item_keys(meeting) do
+         true <- MapSet.new(Map.keys(canonical["items"] || %{})) == item_keys(meeting),
+         true <- current_canonical_matches?(canonical, meeting) do
       {:ok, translated_bundle(canonical, meeting, locale)}
     else
       _other -> {:error, :recorded_translation_not_available}
@@ -159,6 +168,157 @@ defmodule BrusselsWtf.Corpus.Manifest do
       do: raise("invalid issue-33 meeting #{inspect(meeting["key"])}")
   end
 
+  # This is a second sealed contract, not a generic manifest-upload API.
+  @current_meetings %{
+    "ixelles-269" => %{
+      "commune" => "ixelles",
+      "municipal_identifier" => "269",
+      "scheduled_on" => "2026-09-17",
+      "item_numbers" => ["38", "39"],
+      "item_keys" => ["38", "39"],
+      "source_url" => "https://www.ixelles.be/uploads/conseil/odj/269.pdf",
+      "parent_index_url" =>
+        "https://www.ixelles.be/site/11-Ordres-du-jour-et-proces-verbaux?langue=fr",
+      "role" => "agenda"
+    },
+    "forest-2026-09-01" => %{
+      "commune" => "forest",
+      "municipal_identifier" => "2026-09-01",
+      "scheduled_on" => "2026-09-01",
+      "item_numbers" => ["13", "45"],
+      "item_keys" => ["forest-2026-09-01-13", "forest-2026-09-01-45"],
+      "source_url" =>
+        "https://forest.brussels/sites/default/files/publications/notes/2026-08/CC%20-%2001092026%20-%20Notes%20explicatives%20publiques%20compl%C3%A9mentaires.pdf",
+      "parent_index_url" => "https://forest.brussels/fr/publications/conseil-communal-1",
+      "role" => "complementary_explanatory_note"
+    },
+    "uccle-2026-09-10" => %{
+      "commune" => "uccle",
+      "municipal_identifier" => "2026-09-10",
+      "scheduled_on" => "2026-09-10",
+      "item_numbers" => ["12", "38"],
+      "item_keys" => ["12", "38"],
+      "source_url" =>
+        "https://www.uccle.be/sites/default/files/filemanager/Legal/CC-GR/CC-2026-09-10-NEC-U1180_fr_nl.pdf",
+      "parent_index_url" => "https://www.uccle.be/fr/ma-commune/le-conseil-communal",
+      "role" => "complementary_explanatory_note"
+    },
+    "city-2026-09-07" => %{
+      "commune" => "city-of-brussels",
+      "municipal_identifier" => "2026-09-07",
+      "scheduled_on" => "2026-09-07",
+      "item_numbers" => ["30", "31"],
+      "item_keys" => ["2722248", "2728690"],
+      "source_url" => "https://www.brussels.be/sites/default/files/OJ20260907.pdf",
+      "parent_index_url" =>
+        "https://www.brussels.be/agenda-reports-and-motions-city-council?field_date_document_value=2026",
+      "role" => "agenda"
+    }
+  }
+
+  defp validate_current!(%{"version" => 1, "meetings" => meetings, "dossiers" => []} = manifest)
+       when is_list(meetings) do
+    keys = Enum.map(meetings, & &1["key"])
+
+    unless length(meetings) == 4 and Enum.sort(keys) == Enum.sort(Map.keys(@current_meetings)) and
+             Enum.sum(Enum.map(meetings, &length(&1["items"]))) == 8 and
+             manifest["provenance"]["canonical_method"] == "AI-generated" and
+             manifest["provenance"]["translation_method"] == "machine-translated" and
+             manifest["provenance"]["human_reviewed"] == false do
+      raise "invalid current-20260911 corpus bounds or provenance"
+    end
+
+    Enum.each(meetings, &validate_current_meeting!/1)
+    manifest
+  end
+
+  defp validate_current!(_manifest), do: raise("invalid current-20260911 corpus manifest")
+
+  defp validate_current_meeting!(meeting) do
+    expected = Map.fetch!(@current_meetings, meeting["key"])
+    sources = meeting["sources"]
+    items = meeting["items"]
+
+    valid_identity? =
+      Map.take(meeting, ~w(commune municipal_identifier scheduled_on)) ==
+        Map.take(expected, ~w(commune municipal_identifier scheduled_on))
+
+    valid_sources? =
+      length(sources) == 1 and
+        Enum.all?(sources, fn source ->
+          source["url"] == expected["source_url"] and
+            source["parent_index_url"] == expected["parent_index_url"] and
+            official_url?(source["url"], meeting["commune"]) and
+            official_url?(source["parent_index_url"], meeting["commune"]) and
+            source["role"] == expected["role"] and
+            source["role"] in ~w(agenda complementary_explanatory_note) and
+            source["acquisition"] == "official_fetch" and not Map.has_key?(source, "bundle_path") and
+            is_binary(source["sha256"]) and Regex.match?(~r/\A[0-9a-f]{64}\z/, source["sha256"]) and
+            is_integer(source["byte_size"]) and source["byte_size"] > 0 and
+            source["byte_size"] <= 2_000_000 and source["media_type"] == "application/pdf" and
+            is_integer(source["page_count"]) and source["page_count"] > 0 and
+            source["language"] in ~w(fr bilingual) and
+            valid_datetime?(source["captured_at"]) and
+            String.starts_with?(source["captured_at"], "2026-09-11T") and
+            nonempty?(source["name"]) and nonempty_strings?(source["markers"])
+        end)
+
+    valid_items? =
+      length(items) == 2 and Enum.map(items, & &1["item_number"]) == expected["item_numbers"] and
+        Enum.map(items, & &1["key"]) == expected["item_keys"] and
+        Enum.all?(items, fn item ->
+          source = Enum.find(sources, &(&1["name"] == item["source"]))
+
+          item["state"] == "proposal" and item["outcome"] == "unknown" and
+            not Map.has_key?(item, "decision") and nonempty?(item["source_wording"]) and
+            nonempty?(item["identity_marker"]) and is_map(source) and
+            valid_pages?(item["evidence_pages"], source["page_count"]) and
+            is_list(item["evidence_markers"]) and
+            Enum.all?(item["evidence_markers"], &nonempty?/1) and
+            is_map(item["proposal"]) and
+            Enum.all?(~w(text excerpt location), &nonempty?(item["proposal"][&1])) and
+            valid_coverage?(item["coverage"])
+        end)
+
+    unless valid_identity? and valid_sources? and valid_items? and
+             valid_coverage?(meeting["coverage"]),
+           do: raise("invalid current-20260911 meeting #{inspect(meeting["key"])}")
+  end
+
+  defp official_url?(url, commune) do
+    host =
+      %{
+        "ixelles" => "www.ixelles.be",
+        "uccle" => "www.uccle.be",
+        "forest" => "forest.brussels",
+        "city-of-brussels" => "www.brussels.be"
+      }[commune]
+
+    case URI.parse(url) do
+      %URI{scheme: "https", host: ^host, userinfo: nil, port: 443} -> true
+      _other -> false
+    end
+  end
+
+  defp valid_pages?([first, last], count),
+    do: is_integer(first) and is_integer(last) and first > 0 and first <= last and last <= count
+
+  defp valid_pages?(_pages, _count), do: false
+
+  defp valid_coverage?(coverage) when is_map(coverage) do
+    Enum.sort(Map.keys(coverage)) == ~w(en fr nl) and
+      Enum.all?(coverage, fn {_locale, variant} ->
+        is_map(variant) and nonempty?(variant["title"]) and nonempty?(variant["summary"])
+      end)
+  end
+
+  defp valid_coverage?(_coverage), do: false
+
+  defp nonempty?(value), do: is_binary(value) and String.trim(value) != ""
+
+  defp nonempty_strings?(values),
+    do: is_list(values) and values != [] and Enum.all?(values, &nonempty?/1)
+
   defp valid_datetime?(value) when is_binary(value),
     do: match?({:ok, _datetime, 0}, DateTime.from_iso8601(value))
 
@@ -178,7 +338,10 @@ defmodule BrusselsWtf.Corpus.Manifest do
         scope = String.replace(scope, ~r/\s+/u, " ")
         claim = item[item["state"]]
 
-        [item["identity_marker"], claim["excerpt"] | item["evidence_markers"]]
+        wording =
+          if source["acquisition"] == "official_fetch", do: [item["source_wording"]], else: []
+
+        (wording ++ [item["identity_marker"], claim["excerpt"] | item["evidence_markers"]])
         |> Enum.reject(&String.contains?(scope, &1))
         |> Enum.map(&"#{item["key"]} pages #{first}-#{last}: #{&1}")
       end)
@@ -297,6 +460,15 @@ defmodule BrusselsWtf.Corpus.Manifest do
     }
   end
 
+  defp current_canonical_matches?(canonical, meeting) do
+    if Map.has_key?(@current_meetings, meeting["key"]) do
+      expected = meeting |> expected_publication_contract() |> bundle(meeting, "fr")
+      canonical == expected
+    else
+      true
+    end
+  end
+
   defp expected_publication_item(item, source) do
     claim = if item["state"] == "proposal", do: item["proposal"], else: item["decision"]
     kind = item["state"]
@@ -379,9 +551,11 @@ defmodule BrusselsWtf.Corpus.Manifest do
 
   defp item_keys(meeting), do: meeting["items"] |> Enum.map(& &1["key"]) |> MapSet.new()
 
-  defp manifest_path do
-    Application.app_dir(:brussels_wtf, "priv/corpus/issue-33/manifest.json")
+  defp manifest_path(id) when id in @contract_ids do
+    Application.app_dir(:brussels_wtf, "priv/corpus/#{id}/manifest.json")
   end
+
+  defp manifest_path(id), do: raise(ArgumentError, "unknown real-corpus contract #{inspect(id)}")
 
   defp item_in?(item, keys) do
     MapSet.member?(keys, item.authoritative_identifier || item.continuity_key)

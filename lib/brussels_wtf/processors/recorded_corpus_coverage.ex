@@ -1,5 +1,5 @@
 defmodule BrusselsWtf.Processors.RecordedCorpusCoverage do
-  @moduledoc "Zero-network recorded coverage for the bounded issue-33 real corpus."
+  @moduledoc "Zero-network recorded coverage for the fixed historic and current selections."
   @behaviour BrusselsWtf.Processors.Coverage
 
   @impl true
@@ -14,10 +14,16 @@ defmodule BrusselsWtf.Processors.RecordedCorpusCoverage do
 
   @impl true
   def metadata do
+    config_hash =
+      {BrusselsWtf.Corpus.Manifest.digest(),
+       BrusselsWtf.Corpus.Manifest.digest("current-20260911")}
+      |> :erlang.term_to_binary([:deterministic])
+      |> BrusselsWtf.Digest.sha256()
+
     %{
       processor_name: "recorded-real-corpus-coverage",
-      processor_version: "2026-09-07",
-      config_hash: "sha256:" <> BrusselsWtf.Corpus.Manifest.digest(),
+      processor_version: "2026-09-11",
+      config_hash: "sha256:" <> config_hash,
       provider_category: "recorded_agent_assisted_editorial",
       billing_mode: :recorded,
       network_access: :none,

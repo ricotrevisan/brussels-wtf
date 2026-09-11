@@ -19,7 +19,8 @@ defmodule BrusselsWtf.Processors do
 
     contract =
       {processor, processor.module_info(:md5), BrusselsWtf.Corpus.Manifest.module_info(:md5),
-       BrusselsWtf.Corpus.Manifest.digest()}
+       BrusselsWtf.Corpus.Manifest.digest(),
+       BrusselsWtf.Corpus.Manifest.digest("current-20260911")}
 
     contract |> :erlang.term_to_binary([:deterministic]) |> BrusselsWtf.Digest.sha256()
   end
