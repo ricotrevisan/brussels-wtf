@@ -232,14 +232,10 @@ defmodule BrusselsWtfWeb.MeetingPage do
             {proposal_copy(@coverage_variant, @display_state, @locale, @past)}
           </p>
           <details :if={@source_proposals != []} class="mt-3 text-sm">
-            <summary class="cursor-pointer">{text(@locale, :original_excerpt)}</summary>
-            <blockquote
-              :for={proposal <- @source_proposals}
-              lang={source_language(proposal)}
-              class="mt-3 border-l-2 border-base-300 pl-3 text-sm"
-            >
+            <summary class="cursor-pointer">{text(@locale, :proposal_interpretation)}</summary>
+            <p :for={proposal <- @source_proposals} lang="und" class="mt-3 text-sm leading-6">
               {proposal.text}
-            </blockquote>
+            </p>
           </details>
           <p
             :if={@source_proposals != [] and (@item.published_outcome || :unknown) == :unknown}
@@ -379,17 +375,6 @@ defmodule BrusselsWtfWeb.MeetingPage do
        else: copy
   end
 
-  defp source_language(proposal) do
-    case proposal do
-      %{source_version: %{source_record: %{original_language: language}}}
-      when language in [:fr, :nl, :en] ->
-        to_string(language)
-
-      _ ->
-        "und"
-    end
-  end
-
   defp evidence_title(evidence, locale) do
     case evidence.source_title do
       "Authoritative municipal source" ->
@@ -519,7 +504,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
         "The meeting date has passed. Its final outcome is not yet documented here.",
       past_proposal:
         "The agenda records this proposal. No authoritative final outcome is attached.",
-      original_excerpt: "Original-language source excerpt",
+      proposal_interpretation: "Source-backed proposal interpretation",
       source_details: "Source verification details",
       unavailable_title: "Coverage unavailable in English",
       item_unavailable: "Agenda-item coverage unavailable in English",
@@ -563,7 +548,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
         "La date de la réunion est passée. Son résultat final n’est pas encore documenté ici.",
       past_proposal:
         "L’ordre du jour présente cette proposition. Aucun résultat final officiel n’est joint.",
-      original_excerpt: "Extrait dans la langue de la source",
+      proposal_interpretation: "Interprétation de la proposition fondée sur les sources",
       source_details: "Détails de vérification de la source",
       unavailable_title: "Contenu indisponible en français",
       item_unavailable: "Contenu du point indisponible en français",
@@ -609,7 +594,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
         "De vergaderdatum is verstreken. De definitieve uitkomst is hier nog niet gedocumenteerd.",
       past_proposal:
         "De agenda vermeldt dit voorstel. Er is geen officiële definitieve uitkomst toegevoegd.",
-      original_excerpt: "Bronfragment in de oorspronkelijke taal",
+      proposal_interpretation: "Brononderbouwde interpretatie van het voorstel",
       source_details: "Details voor bronverificatie",
       unavailable_title: "Inhoud niet beschikbaar in het Nederlands",
       item_unavailable: "Inhoud van het agendapunt niet beschikbaar in het Nederlands",
