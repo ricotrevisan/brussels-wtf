@@ -71,6 +71,10 @@ Also check identity routes with known public, private-only, retired, malformed,
 and unknown identifiers. Private fields and suggestion content must never occur
 in public HTML, logs, flashes, or health responses.
 
+Readiness is not proof of a fresh OCR artifact. For the separate one-source
+acceptance step, follow [bounded real-source OCR verification](pdf-processing.md#bounded-real-source-ocr-verification).
+Do not claim fresh production OCR until its audited, checksum-verified receipt exists.
+
 ## Rollback
 
 Do not run migration `down` functions as an incident response. App startup runs
