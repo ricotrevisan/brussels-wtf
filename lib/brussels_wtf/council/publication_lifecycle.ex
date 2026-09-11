@@ -191,6 +191,20 @@ defmodule BrusselsWtf.Council.PublicationLifecycle do
         BrusselsWtf.Repo.rollback({:publication_gate, gate_result.failures})
       end
 
+      # Only a gated factual revision may advance public normalized state.
+      # The old decision pointers remain visible until this transaction commits.
+      item_state_notifications =
+        if kind == :factual_correction do
+          Enum.flat_map(meeting.agenda_items, fn item ->
+            {_item, notifications} =
+              Council.publish_agenda_item_state!(item, return_notifications?: true)
+
+            notifications
+          end)
+        else
+          []
+        end
+
       metadata = PublicationMetadata.build(input, runs, gate_result)
 
       {revision, revision_notifications} =
@@ -228,6 +242,7 @@ defmodule BrusselsWtf.Council.PublicationLifecycle do
        stage_notifications ++
          run_notifications ++
          variant_notifications ++
+         item_state_notifications ++
          revision_notifications ++ page_notifications ++ event_notifications}
     end)
   end

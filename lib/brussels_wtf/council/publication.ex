@@ -9,6 +9,7 @@ defmodule BrusselsWtf.Council.Publication do
   alias BrusselsWtf.Council.PublicationScope
   alias BrusselsWtf.Council.Provenance
   alias BrusselsWtf.Processors.Coverage
+  require Ash.Query
 
   @locales ["fr", "nl", "en"]
 
@@ -43,6 +44,138 @@ defmodule BrusselsWtf.Council.Publication do
     end
   end
 
+  @doc """
+  Publishes one recorded factual correction for an expected published revision.
+
+  The reviewer authorizes the operation, not human-review provenance. All copy
+  and processor metadata come from the configured zero-network recorded processor.
+  The exact same correction can be retried without adding runs or revisions.
+  """
+  def recorded_factual_correction!(page_id, expected_revision_id, notes, actor) do
+    actor_id = correction_actor!(actor)
+    validate_correction_notes!(notes)
+    metadata = recorded_correction_metadata!()
+
+    case Ash.transact(
+           Council.MeetingPage,
+           fn ->
+             page = lock_page!(page_id)
+             meeting = load_meeting(page.council_meeting_id)
+             page = meeting.meeting_page
+
+             unless page.publication_status == :published and page.current_revision_id do
+               raise ArgumentError, "recorded correction requires a published revision"
+             end
+
+             previous = Ash.load!(page.current_revision, [:canonical_run, :nl_run, :en_run])
+             {meeting, input} = PublicationScope.restore!(meeting, previous.canonical_run.input)
+
+             cond do
+               matching_correction?(
+                 previous,
+                 expected_revision_id,
+                 input,
+                 notes,
+                 metadata,
+                 actor_id
+               ) ->
+                 {previous, []}
+
+               previous.id != expected_revision_id ->
+                 raise ArgumentError, "stale publication revision"
+
+               true ->
+                 correction = %{
+                   expected_revision_id: expected_revision_id,
+                   notes: notes,
+                   actor_id: actor_id
+                 }
+
+                 case generate_revision(meeting, input, metadata, :automatic, 1, correction) do
+                   {:ok, notifications} ->
+                     revision =
+                       page.id
+                       |> Council.get_meeting_page!()
+                       |> Ash.load!(:current_revision)
+                       |> Map.fetch!(:current_revision)
+
+                     {revision, notifications}
+
+                   {:error, {:publication_gate, failures}} ->
+                     raise ArgumentError, "publication gate failed: #{inspect(failures)}"
+
+                   _failure ->
+                     raise ArgumentError, "recorded factual correction failed"
+                 end
+             end
+           end,
+           return_notifications?: true
+         ) do
+      {:ok, {revision, publication_notifications}, run_notifications} ->
+        Ash.Notifier.notify(run_notifications ++ publication_notifications)
+        BrusselsWtf.Review.resolve_publication_case!(page_id, revision.publication_input_hash)
+        revision
+
+      {:error, _reason} ->
+        raise ArgumentError, "recorded factual correction failed"
+    end
+  end
+
+  defp correction_actor!(%{id: id, role: :reviewer}) when is_binary(id), do: id
+
+  defp correction_actor!(_actor),
+    do: raise(ArgumentError, "recorded correction requires a reviewer")
+
+  defp validate_correction_notes!(notes) do
+    unless is_map(notes) and Enum.sort(Map.keys(notes)) == ~w(en fr nl) and
+             Enum.all?(notes, fn {_locale, note} ->
+               is_binary(note) and String.trim(note) != ""
+             end) do
+      raise ArgumentError, "correction notes must contain fr, nl, and en"
+    end
+  end
+
+  defp recorded_correction_metadata! do
+    metadata = Coverage.metadata()
+
+    carried =
+      Map.get(metadata, :canonical_carried_provenance, []) ++
+        Map.get(metadata, :translation_carried_provenance, [])
+
+    unless Council.GenerationControl.mode() == :recorded and
+             metadata[:billing_mode] == :recorded and metadata[:network_access] == :none and
+             metadata[:canonical_method] in [:ai_generation, :deterministic] and
+             metadata[:translation_method] in [:machine_translation, :deterministic] and
+             is_nil(metadata[:content_review]) and :human_reviewed not in carried do
+      raise ArgumentError, "correction requires unreviewed zero-network recorded generation"
+    end
+
+    metadata
+  end
+
+  defp matching_correction?(revision, expected_id, input, notes, metadata, actor_id) do
+    revision.revision_kind == :factual_correction and
+      revision.previous_revision_id == expected_id and revision.actor_id == actor_id and
+      revision.correction_notes == notes and
+      revision.publication_input_hash == PublicationInput.hash(input) and
+      Enum.all?([revision.canonical_run, revision.nl_run, revision.en_run], fn run ->
+        run.processor_name == metadata.processor_name and
+          run.processor_version == metadata.processor_version and
+          run.config_hash == metadata.config_hash
+      end)
+  end
+
+  defp lock_page!(page_id) do
+    Council.MeetingPage
+    |> Ash.Query.filter(id == ^page_id)
+    |> Ash.Query.lock(:for_update)
+    |> Ash.read_one!(domain: Council)
+    |> case do
+      nil -> raise ArgumentError, "meeting page does not exist"
+      page -> page
+    end
+  end
+
   defp execute_generation(
          meeting_id,
          metadata,
@@ -54,47 +187,50 @@ defmodule BrusselsWtf.Council.Publication do
     {meeting, input} =
       meeting_id |> load_meeting() |> PublicationScope.for_batch!(coverage_batch_id)
 
+    result = generate_revision(meeting, input, metadata, generation_kind, attempt, nil)
+    handle_result(result, meeting, input, metadata, attempt, max_attempts)
+  end
+
+  defp generate_revision(meeting, input, metadata, generation_kind, attempt, correction) do
     page = meeting.meeting_page
 
-    result =
-      with :ok <- PublicationInput.validate(input),
-           {:ok, canonical, canonical_run} <-
-             CoverageExecution.canonical(page, input, metadata, generation_kind, attempt),
-           :ok <- GenerationContract.validate_bundle(input, canonical, "fr"),
-           {:ok, nl, nl_run} <-
-             CoverageExecution.translation(
-               page,
-               canonical_run,
-               canonical,
-               "nl",
-               metadata,
-               generation_kind,
-               attempt
-             ),
-           :ok <- GenerationContract.validate_bundle(input, nl, "nl"),
-           {:ok, en, en_run} <-
-             CoverageExecution.translation(
-               page,
-               canonical_run,
-               canonical,
-               "en",
-               metadata,
-               generation_kind,
-               attempt
-             ),
-           :ok <- GenerationContract.validate_bundle(input, en, "en") do
-        output = GenerationContract.combine(canonical, nl, en)
+    with :ok <- PublicationInput.validate(input),
+         {:ok, canonical, canonical_run} <-
+           CoverageExecution.canonical(page, input, metadata, generation_kind, attempt),
+         :ok <- GenerationContract.validate_bundle(input, canonical, "fr"),
+         {:ok, nl, nl_run} <-
+           CoverageExecution.translation(
+             page,
+             canonical_run,
+             canonical,
+             "nl",
+             metadata,
+             generation_kind,
+             attempt
+           ),
+         :ok <- GenerationContract.validate_bundle(input, nl, "nl"),
+         {:ok, en, en_run} <-
+           CoverageExecution.translation(
+             page,
+             canonical_run,
+             canonical,
+             "en",
+             metadata,
+             generation_kind,
+             attempt
+           ),
+         :ok <- GenerationContract.validate_bundle(input, en, "en") do
+      output = GenerationContract.combine(canonical, nl, en)
 
-        publish_revision(
-          meeting,
-          input,
-          output,
-          %{"fr" => canonical_run, "nl" => nl_run, "en" => en_run},
-          metadata[:content_review]
-        )
-      end
-
-    handle_result(result, meeting, input, metadata, attempt, max_attempts)
+      publish_revision(
+        meeting,
+        input,
+        output,
+        %{"fr" => canonical_run, "nl" => nl_run, "en" => en_run},
+        metadata[:content_review],
+        correction
+      )
+    end
   end
 
   defp attach_content_review(metadata, nil), do: metadata
@@ -141,12 +277,19 @@ defmodule BrusselsWtf.Council.Publication do
 
   def generation_input(meeting), do: PublicationInput.build(meeting)
 
-  defp publish_revision(meeting, input, output, runs, content_review) do
+  defp publish_revision(meeting, input, output, runs, content_review, correction) do
     input_hash = PublicationInput.hash(input)
 
     transaction =
       BrusselsWtf.Repo.transaction(fn ->
+        lock_page!(meeting.meeting_page.id)
         full_meeting = load_meeting(meeting.id)
+
+        if correction &&
+             full_meeting.meeting_page.current_revision_id != correction.expected_revision_id do
+          BrusselsWtf.Repo.rollback(:stale_publication_revision)
+        end
+
         {fresh_meeting, fresh_input} = PublicationScope.restore!(full_meeting, input)
 
         if PublicationInput.hash(fresh_input) != input_hash do
@@ -200,9 +343,13 @@ defmodule BrusselsWtf.Council.Publication do
                   en_run_id: runs["en"].id,
                   content: output,
                   previous_revision_id: fresh_meeting.meeting_page.current_revision_id,
-                  revision_kind: :publication,
-                  correction_notes: %{},
-                  actor_id: content_review && content_review.actor_id,
+                  revision_kind: if(correction, do: :factual_correction, else: :publication),
+                  correction_notes: if(correction, do: correction.notes, else: %{}),
+                  actor_id:
+                    if(correction,
+                      do: correction.actor_id,
+                      else: content_review && content_review.actor_id
+                    ),
                   publication_metadata: metadata
                 },
                 return_notifications?: true
@@ -213,7 +360,8 @@ defmodule BrusselsWtf.Council.Publication do
                 %{
                   meeting_page_id: fresh_meeting.meeting_page.id,
                   publication_revision_id: revision.id,
-                  event_type: :published,
+                  event_type: if(correction, do: :factual_correction, else: :published),
+                  actor_id: correction && correction.actor_id,
                   occurred_at: now,
                   publication_metadata: metadata,
                   details: %{
@@ -251,9 +399,13 @@ defmodule BrusselsWtf.Council.Publication do
 
     case transaction do
       {:ok, notifications} ->
-        Ash.Notifier.notify(notifications)
-        BrusselsWtf.Review.resolve_publication_case!(meeting.meeting_page.id, input_hash)
-        :ok
+        if correction do
+          {:ok, notifications}
+        else
+          Ash.Notifier.notify(notifications)
+          BrusselsWtf.Review.resolve_publication_case!(meeting.meeting_page.id, input_hash)
+          :ok
+        end
 
       {:error, :stale_publication_input} ->
         {:error, :stale_publication_input}
