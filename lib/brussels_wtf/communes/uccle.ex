@@ -1,13 +1,17 @@
 defmodule BrusselsWtf.Communes.Uccle do
   @moduledoc """
-  Discovers Uccle council sources from the archive's year and meeting tables.
+  Discovers Uccle council sources from the current page and archive tables.
 
-  Meeting context comes from the table structure. Filenames are retained as
-  observations and are never used to construct or correct source URLs.
+  Archive years are explicit headings. The audited current page uses an
+  explicitly dated public calendar and day/month table captions. Its supported
+  year is bounded until the publisher supplies new authoritative year context.
+  Filenames never construct or correct source URLs or meeting dates.
   """
 
   @behaviour BrusselsWtf.Communes.Adapter
 
+  @audited_current_year "2026"
+  @current_section ~r/<h3\b[^>]*>\s*Agenda des séances publiques du Conseil communal\s*<\/h3>\s*<ul\b[^>]*>(.*?)<\/ul>(.*?)(?=<h[1-3]\b|\z)/is
   @year_section ~r/<h2\b[^>]*>\s*(\d{4})\s*<\/h2>(.*?)(?=<h2\b|\z)/is
   @table ~r/<table\b[^>]*>(.*?)<\/table>/is
   @caption ~r/<caption\b[^>]*>(.*?)<\/caption>/is
@@ -34,11 +38,11 @@ defmodule BrusselsWtf.Communes.Uccle do
 
   @impl true
   def discover(html, index_url) when is_binary(html) and is_binary(index_url) do
-    case Regex.scan(@year_section, html) do
-      [] ->
-        {:error, {:invalid_index, :missing_meeting_tables}}
+    case sections(html) do
+      {:error, reason} ->
+        {:error, {:invalid_index, reason}}
 
-      sections ->
+      {:ok, sections, next_session} ->
         case parse_sections(sections, index_url) do
           {:ok, 0, _locators} ->
             {:error, {:invalid_index, :missing_meeting_tables}}
@@ -47,11 +51,61 @@ defmodule BrusselsWtf.Communes.Uccle do
             {:error, {:invalid_index, :no_authoritative_locators}}
 
           {:ok, _table_count, locators} ->
-            {:ok, locators}
+            if is_nil(next_session) or
+                 Enum.all?(locators, &(Date.compare(&1.scheduled_on, next_session) == :lt)) do
+              {:ok, locators}
+            else
+              {:error, {:invalid_index, :ambiguous_current_year}}
+            end
 
           {:error, reason} ->
             {:error, {:invalid_index, reason}}
         end
+    end
+  end
+
+  defp sections(html) do
+    case {Regex.scan(@year_section, html), Regex.match?(@current_section, html)} do
+      {[], _} -> current_section(html)
+      {sections, false} -> {:ok, sections, nil}
+      {_sections, true} -> {:error, :ambiguous_current_year}
+    end
+  end
+
+  defp current_section(html) do
+    case Regex.scan(@current_section, html) do
+      [[_, calendar, tables]] ->
+        with {:ok, next_session} <- next_calendar_session(calendar) do
+          {:ok, [[nil, @audited_current_year, tables]], next_session}
+        end
+
+      [] ->
+        {:error, :missing_meeting_tables}
+
+      _ ->
+        {:error, :ambiguous_current_year}
+    end
+  end
+
+  defp next_calendar_session(calendar) do
+    dates =
+      ~r/<li\b[^>]*>(.*?)<\/li>/is
+      |> Regex.scan(calendar)
+      |> Enum.map(fn [_, item] ->
+        with [_, caption, @audited_current_year] <-
+               Regex.run(~r/^Jeudi (\d{1,2}(?:\s*er)?\s+[\p{L}]+) (\d{4})$/u, text(item)),
+             {:ok, date} <- scheduled_on(caption, @audited_current_year),
+             true <- Date.day_of_week(date) == 4 do
+          date
+        else
+          _ -> :ambiguous
+        end
+      end)
+
+    if dates != [] and Enum.all?(dates, &match?(%Date{}, &1)) do
+      {:ok, Enum.min(dates, Date)}
+    else
+      {:error, :ambiguous_current_year}
     end
   end
 
@@ -206,7 +260,7 @@ defmodule BrusselsWtf.Communes.Uccle do
   end
 
   defp scheduled_on(caption, year) do
-    with [_, day, month_name] <- Regex.run(~r/(\d{1,2})(?:\s*er)?\s+([\p{L}]+)/u, caption),
+    with [_, day, month_name] <- Regex.run(~r/^(\d{1,2})(?:\s*er)?\s+([\p{L}]+)$/u, caption),
          {:ok, month} <- Map.fetch(@months, normalize(month_name)),
          {:ok, date} <- Date.new(String.to_integer(year), month, String.to_integer(day)) do
       {:ok, date}

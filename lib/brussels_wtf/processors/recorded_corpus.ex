@@ -1,5 +1,5 @@
 defmodule BrusselsWtf.Processors.RecordedCorpus do
-  @moduledoc "Hash-pinned normalizer for the bounded issue-33 real corpus."
+  @moduledoc "Hash-pinned normalizer for the fixed historic and current selections."
   @behaviour BrusselsWtf.Processors
 
   @impl true

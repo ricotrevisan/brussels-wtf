@@ -38,6 +38,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
   def discover_and_enqueue(commune_id, poll_run_id, check_key, attempt \\ 1) do
     commune = Ingestion.get_commune!(commune_id)
     poll_run = Ingestion.get_poll_run!(poll_run_id)
+    commune = %{commune | index_url: BrusselsWtf.Communes.poll_index_url(commune, poll_run.scope)}
     now = BrusselsWtf.Clock.utc_now()
 
     index_locator =
@@ -1076,7 +1077,10 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
 
     locators =
       if is_nil(discovered) do
-        index_url = Ingestion.get_commune!(commune_id).index_url
+        index_url =
+          commune_id
+          |> Ingestion.get_commune!()
+          |> BrusselsWtf.Communes.poll_index_url(poll_run.scope)
 
         locators
         |> Enum.filter(&(&1.parent_index_url == index_url))

@@ -355,12 +355,8 @@ defmodule BrusselsWtfWeb.TimelinePage do
   defp loaded_or_nil(%Ash.NotLoaded{}), do: nil
   defp loaded_or_nil(value), do: value
 
-  defp commune_name("fr", "city-of-brussels", _name), do: "Ville de Bruxelles"
-  defp commune_name("nl", "city-of-brussels", _name), do: "Stad Brussel"
-  defp commune_name("nl", "ixelles", _name), do: "Elsene"
-  defp commune_name("nl", "uccle", _name), do: "Ukkel"
-  defp commune_name("nl", "forest", _name), do: "Vorst"
-  defp commune_name(_locale, _slug, name), do: name
+  defp commune_name(locale, slug, name),
+    do: BrusselsWtfWeb.CommuneLabels.name(locale, slug, name)
 
   defp format_date(date), do: Date.to_iso8601(date)
 

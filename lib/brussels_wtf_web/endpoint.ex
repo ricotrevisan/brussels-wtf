@@ -27,6 +27,8 @@ defmodule BrusselsWtfWeb.Endpoint do
     from: :brussels_wtf,
     gzip: not code_reloading?,
     only: BrusselsWtfWeb.static_paths(),
+    # Root-level digests do not match the literal favicon.ico allowlist entry.
+    only_matching: ~w(favicon-),
     raise_on_missing_only: code_reloading?
 
   if Code.ensure_loaded?(Tidewave) do

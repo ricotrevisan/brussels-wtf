@@ -1,0 +1,467 @@
+{
+  "version": 1,
+  "name": "current-20260911-selected-proposals",
+  "provenance": {
+    "canonical_method": "AI-generated",
+    "translation_method": "machine-translated",
+    "human_reviewed": false,
+    "recorded_on": "2026-09-11",
+    "source_publication_times": "unknown; captured_at is retrieval time, not publication time"
+  },
+  "meetings": [
+    {
+      "key": "ixelles-269",
+      "commune": "ixelles",
+      "municipal_identifier": "269",
+      "scheduled_on": "2026-09-17",
+      "sources": [
+        {
+          "name": "ixelles-269-agenda",
+          "url": "https://www.ixelles.be/uploads/conseil/odj/269.pdf",
+          "role": "agenda",
+          "language": "bilingual",
+          "sha256": "eefafbaf225c2d00e501e1d826ddcde084bef7dfbf3c9b2a034803da39a11670",
+          "byte_size": 211045,
+          "media_type": "application/pdf",
+          "markers": [
+            "CONSEIL COMMUNAL DU 17 SEPTEMBRE 2026"
+          ],
+          "acquisition": "official_fetch",
+          "parent_index_url": "https://www.ixelles.be/site/11-Ordres-du-jour-et-proces-verbaux?langue=fr",
+          "captured_at": "2026-09-11T10:44:07.817134Z",
+          "page_count": 24,
+          "document_date_note": "2026-09-09 (dated council invitation printed on p1; not upload time)",
+          "publication_time": null
+        }
+      ],
+      "items": [
+        {
+          "key": "38",
+          "item_number": "38",
+          "source_wording": "Enseignement pour adultes – Institut Fernand Cocq: Approbation de la convention entre la Commune d’Ixelles et l’Institut Royal pour Sourds et Aveugles relative à l’organisation d’ateliers de conversation en langue des signes (niveau intermédiaire) durant l’année scolaire 2026-2027.",
+          "state": "proposal",
+          "outcome": "unknown",
+          "proposal": {
+            "text": "Le point propose une convention avec l’Institut Royal pour Sourds et Aveugles pour des ateliers de conversation en langue des signes de niveau intermédiaire à l’Institut Fernand Cocq pendant l’année scolaire 2026-2027.",
+            "excerpt": "Enseignement pour adultes – Institut Fernand Cocq: Approbation de la convention entre la Commune d’Ixelles et l’Institut Royal pour Sourds et Aveugles relative à l’organisation d’ateliers de conversation en langue des signes (niveau intermédiaire) durant l’année scolaire 2026-2027.",
+            "location": "Document préparatoire officiel, point 38, pages 7-7/24"
+          },
+          "source": "ixelles-269-agenda",
+          "coverage": {
+            "fr": {
+              "title": "Ateliers de conversation en langue des signes à l’Institut Fernand Cocq",
+              "summary": "Le point propose d’approuver une convention entre la commune et l’Institut Royal pour Sourds et Aveugles pour organiser des ateliers de conversation en langue des signes de niveau intermédiaire à l’Institut Fernand Cocq pendant l’année scolaire 2026-2027. L’ordre du jour ne précise ni le coût ni les horaires. L’issue du point reste inconnue."
+            },
+            "nl": {
+              "title": "Conversatieworkshops in gebarentaal bij Institut Fernand Cocq",
+              "summary": "Het punt stelt voor een overeenkomst tussen de gemeente en het Koninklijk Instituut voor Doven en Blinden goed te keuren voor conversatieworkshops in gebarentaal op intermediair niveau bij het Instituut Fernand Cocq in het schooljaar 2026-2027. De agenda vermeldt geen kostprijs of uurrooster. De uitkomst van het punt is onbekend."
+            },
+            "en": {
+              "title": "Sign-language conversation workshops at Institut Fernand Cocq",
+              "summary": "The item proposes an agreement between the municipality and the Institut Royal pour Sourds et Aveugles for intermediate sign-language conversation workshops at Institut Fernand Cocq during the 2026–2027 school year. The agenda does not give a cost or timetable. The item's outcome is unknown."
+            }
+          },
+          "evidence_pages": [
+            7,
+            7
+          ],
+          "identity_marker": "38 Enseignement pour adultes",
+          "evidence_markers": []
+        },
+        {
+          "key": "39",
+          "item_number": "39",
+          "source_wording": "Marché public de fournitures n°2023-1011 à passer en recourant aux services de la centrale d’achat CREAT. Acquisition de mobilier scolaire. Code CPV : 39160000-1 « mobilier scolaire ». Marché à bordereau de prix. Article 234 §1 de la NLC. Conditions du marché de la centrale d’achat CREAT (réf CREAT : Schoolmeubilair – octobre 2023). Inscriptions budgétaires pour les exercices budgétaires 2026, 2027 et 2028. Dépense supplémentaire : 143.000,00 EUR TVAC (taux TVA : 21 %), révision des prix et révision des quantités présumées comprises. Approbation.",
+          "state": "proposal",
+          "outcome": "unknown",
+          "proposal": {
+            "text": "Le point propose une dépense supplémentaire de 143 000 euros TVAC pour du mobilier scolaire via CREAT, dans le marché 2023-1011. Ce montant comprend les révisions de prix et de quantités présumées. Les inscriptions budgétaires concernent 2026, 2027 et 2028.",
+            "excerpt": "Marché public de fournitures n°2023-1011 à passer en recourant aux services de la centrale d’achat CREAT. Acquisition de mobilier scolaire. Code CPV : 39160000-1 « mobilier scolaire ». Marché à bordereau de prix. Article 234 §1 de la NLC. Conditions du marché de la centrale d’achat CREAT (réf CREAT : Schoolmeubilair – octobre 2023). Inscriptions budgétaires pour les exercices budgétaires 2026, 2027 et 2028. Dépense supplémentaire : 143.000,00 EUR TVAC (taux TVA : 21 %), révision des prix et révision des quantités présumées comprises. Approbation.",
+            "location": "Document préparatoire officiel, point 39, pages 7-7/24"
+          },
+          "source": "ixelles-269-agenda",
+          "coverage": {
+            "fr": {
+              "title": "143 000 euros supplémentaires proposés pour du mobilier scolaire",
+              "summary": "Le point propose une dépense supplémentaire de 143 000 euros TVAC pour l’acquisition de mobilier scolaire via CREAT, dans le marché 2023-1011. Ce montant comprend les révisions de prix et de quantités présumées. Les inscriptions budgétaires concernent 2026, 2027 et 2028. Il ne s’agit pas du coût total du marché. L’issue du point reste inconnue."
+            },
+            "nl": {
+              "title": "143.000 euro extra voorgesteld voor schoolmeubilair",
+              "summary": "Het punt stelt een bijkomende uitgave van 143.000 euro inclusief btw voor schoolmeubilair via aankoopcentrale CREAT voor, binnen opdracht 2023-1011. Dat bedrag omvat de herziening van prijzen en vermoedelijke hoeveelheden. De begrotingsboekingen betreffen 2026, 2027 en 2028. Dit is niet de totale kostprijs van de opdracht. De uitkomst van het punt is onbekend."
+            },
+            "en": {
+              "title": "An extra €143,000 proposed for school furniture",
+              "summary": "The item proposes an extra €143,000 including VAT for school furniture to be purchased through CREAT under contract 2023-1011. The amount includes revisions to prices and estimated quantities. The budget entries cover 2026, 2027 and 2028. This is not the total contract cost. The item's outcome is unknown."
+            }
+          },
+          "evidence_pages": [
+            7,
+            7
+          ],
+          "identity_marker": "39 Marché public de fournitures n°2023-1011",
+          "evidence_markers": [],
+          "authoritative_additional_identifiers": {
+            "procurement_reference": "2023-1011"
+          }
+        }
+      ],
+      "coverage": {
+        "fr": {
+          "title": "Ixelles — 2026-09-17 : sélection de deux propositions",
+          "summary": "Sélection de deux propositions, et non de tout l’ordre du jour. Les deux issues restent inconnues : aucun résultat final n’est établi par cette source préparatoire."
+        },
+        "nl": {
+          "title": "Elsene — 2026-09-17: selectie van twee voorstellen",
+          "summary": "Selectie van twee voorstellen, niet van de volledige agenda. Beide uitkomsten zijn onbekend: deze voorbereidende bron stelt geen definitief resultaat vast."
+        },
+        "en": {
+          "title": "Ixelles — 2026-09-17: two selected proposals",
+          "summary": "Two selected proposals, not the full agenda. Both outcomes remain unknown: this preparatory source does not establish a final result."
+        }
+      }
+    },
+    {
+      "key": "forest-2026-09-01",
+      "commune": "forest",
+      "municipal_identifier": "2026-09-01",
+      "scheduled_on": "2026-09-01",
+      "sources": [
+        {
+          "name": "forest-20260901-notes",
+          "url": "https://forest.brussels/sites/default/files/publications/notes/2026-08/CC%20-%2001092026%20-%20Notes%20explicatives%20publiques%20compl%C3%A9mentaires.pdf",
+          "role": "complementary_explanatory_note",
+          "language": "bilingual",
+          "sha256": "b643a7c4829fa1fa6df343d59a04baf7ab6ad0a4c3d20192f83a7dfe626df8cd",
+          "byte_size": 807490,
+          "media_type": "application/pdf",
+          "markers": [
+            "Conseil communal - 01.09.2026 - Notes explicatives complémentaires publiques"
+          ],
+          "acquisition": "official_fetch",
+          "parent_index_url": "https://forest.brussels/fr/publications/conseil-communal-1",
+          "captured_at": "2026-09-11T10:43:33.198664Z",
+          "page_count": 123,
+          "document_date_note": "No separately printed issue date established; document identifies council 2026-09-01",
+          "publication_time": null
+        }
+      ],
+      "items": [
+        {
+          "key": "forest-2026-09-01-13",
+          "item_number": "13",
+          "source_wording": "Développement Durable – Youth Climate Action Fund – Bloomberg Philanthropies – Approbation de la convention de subvention.",
+          "state": "proposal",
+          "outcome": "unknown",
+          "proposal": {
+            "text": "Le point propose une convention de subvention de 50 000 dollars américains avec Bloomberg Philanthropies pour des projets climatiques de jeunes de 15 à 24 ans à Forest. Le Collège désignerait les lauréats après avis du comité de sélection et signerait les conventions avec les porteurs de projets.",
+            "excerpt": "Considérant que la convention de subvention ci-annexée permet à la commune de bénéficier d’un subside de 50 000 USD (soit environ 42 580 euros au taux du 27 avril 2026) destiné à soutenir des projets portés par des jeunes de 15 à 24 ans en matière de lutte contre les changements climatiques sur le territoire forestois ;",
+            "location": "Document préparatoire officiel, point 13, pages 25-26/123"
+          },
+          "source": "forest-20260901-notes",
+          "coverage": {
+            "fr": {
+              "title": "Convention de 50 000 dollars pour des projets climatiques de jeunes",
+              "summary": "Le point propose d’approuver une convention de subvention de 50 000 dollars américains avec Bloomberg Philanthropies pour des projets climatiques portés à Forest par des jeunes de 15 à 24 ans. Le Collège désignerait les lauréats après avis du comité de sélection et signerait les conventions avec les porteurs de projets. Ces notes préparatoires ne prouvent pas l’adoption de la convention ni le versement des fonds. L’issue du point reste inconnue."
+            },
+            "nl": {
+              "title": "Overeenkomst van 50.000 Amerikaanse dollar voor klimaatprojecten van jongeren",
+              "summary": "Het punt stelt voor een subsidieovereenkomst van 50.000 Amerikaanse dollar met Bloomberg Philanthropies goed te keuren voor klimaatprojecten in Vorst van jongeren van 15 tot 24 jaar. Het college zou de laureaten aanwijzen na advies van het selectiecomité en de overeenkomsten met de projectdragers ondertekenen. Deze voorbereidende nota bewijst niet dat de overeenkomst is goedgekeurd of het geld is uitbetaald. De uitkomst van het punt is onbekend."
+            },
+            "en": {
+              "title": "US$50,000 agreement for youth climate projects",
+              "summary": "The item proposes a US$50,000 grant agreement with Bloomberg Philanthropies for climate projects in Forest led by people aged 15 to 24. The municipal executive would select the successful projects after advice from the selection committee and sign agreements with the project leaders. These preparatory notes do not establish approval or payment. The item's outcome is unknown."
+            }
+          },
+          "evidence_pages": [
+            25,
+            26
+          ],
+          "identity_marker": "13 Développement Durable – Youth Climate Action Fund",
+          "evidence_markers": [
+            "D’adopter la convention de subvention jointe au dossier, conclue entre la commune et Bloomberg Philanthropies ; De charger le Bourgmestre ou son délégué, assisté de la Secrétaire communale ou de son délégué, aux fins de représenter valablement la commune lors de la signature de cette convention ; De donner pouvoir au Collège des Bourgmestre et Echevins de désigner les lauréats de l’appel à projets Youth Climate Action Fund sur base de l’avis remis par le comité de sélection ; De donner pouvoir au Collège des Bourgmestre et Echevins pour signer les conventions de subventionnement avec les porteurs de projets désignés suite au processus de sélection des lauréats."
+          ]
+        },
+        {
+          "key": "forest-2026-09-01-45",
+          "item_number": "45",
+          "source_wording": "Affaires sociales – Chèques taxi – Convention avec la Région – Approbation.",
+          "state": "proposal",
+          "outcome": "unknown",
+          "proposal": {
+            "text": "Le point propose une convention régionale de 9 410 euros pour financer partiellement les chèques-taxi. Les notes indiquent un budget communal 2026 de 18 500 euros pour leur achat et visent les personnes à mobilité réduite ou à faible revenu remplissant les conditions de la convention.",
+            "excerpt": "D'approuver la convention entre la Commune de Forest et la Région de Bruxelles-Capitale, représentée par le Directeur général de Bruxelles Mobilité du Service public régional de Bruxelles, Monsieur Christophe Vanoerbeek, relative à l'octroi d'une subvention de 9.410 euros dans le cadre du dispositif des chèques-taxi destiné à soutenir la mobilité des personnes à mobilité réduite ou à faible revenu ;",
+            "location": "Document préparatoire officiel, point 45, pages 110-111/123"
+          },
+          "source": "forest-20260901-notes",
+          "coverage": {
+            "fr": {
+              "title": "Convention régionale pour financer une partie des chèques-taxi",
+              "summary": "Le point propose d’approuver une convention régionale de 9 410 euros pour contribuer au financement des chèques-taxi. Les notes indiquent un budget communal 2026 de 18 500 euros pour leur achat. Le dispositif vise les personnes à mobilité réduite ou à faible revenu qui remplissent les conditions de la convention. Les 9 410 euros constituent une aide partielle, pas le budget total. L’issue du point reste inconnue."
+            },
+            "nl": {
+              "title": "Gewestelijke overeenkomst om taxicheques deels te financieren",
+              "summary": "Het punt stelt voor een gewestelijke overeenkomst van 9.410 euro goed te keuren als bijdrage aan de financiering van taxicheques. De nota vermeldt 18.500 euro op de gemeentebegroting 2026 voor de aankoop ervan. Het stelsel richt zich op mensen met beperkte mobiliteit of een laag inkomen die aan de voorwaarden van de overeenkomst voldoen. De 9.410 euro is een gedeeltelijke bijdrage, niet het totale budget. De uitkomst van het punt is onbekend."
+            },
+            "en": {
+              "title": "Regional agreement to help fund taxi vouchers",
+              "summary": "The item proposes a €9,410 regional agreement to help fund taxi vouchers. The notes state that the municipality's 2026 budget includes €18,500 to buy them. The scheme is for people with reduced mobility or low income who meet the agreement's conditions. The €9,410 is partial support, not the total budget. The item's outcome is unknown."
+            }
+          },
+          "evidence_pages": [
+            110,
+            111
+          ],
+          "identity_marker": "45 Affaires sociales – Chèques taxi",
+          "evidence_markers": [
+            "Considérant que cette convention fixe les modalités de mise à disposition, de liquidation, de contrôle et de justification d'une subvention régionale destinée à couvrir partiellement les frais liés à la distribution de chèques taxi à valeur universelle ; Considérant que les chèques-taxi sont destinés aux personnes à mobilité réduite ou à faible revenu qui répondent aux conditions fixées par la convention ; Considérant que cette convention s'inscrit dans le cadre des politiques communales de soutien à la mobilité et à l'inclusion sociale ;",
+            "Considérant qu'un montant de 18.500 euros est inscrit au budget 2026 pour l'achat des chèques-taxi"
+          ]
+        }
+      ],
+      "coverage": {
+        "fr": {
+          "title": "Forest — 2026-09-01 : sélection de deux propositions",
+          "summary": "Sélection de deux propositions, et non de tout l’ordre du jour. Les deux issues restent inconnues : aucun résultat final n’est établi par cette source préparatoire."
+        },
+        "nl": {
+          "title": "Vorst — 2026-09-01: selectie van twee voorstellen",
+          "summary": "Selectie van twee voorstellen, niet van de volledige agenda. Beide uitkomsten zijn onbekend: deze voorbereidende bron stelt geen definitief resultaat vast."
+        },
+        "en": {
+          "title": "Forest — 2026-09-01: two selected proposals",
+          "summary": "Two selected proposals, not the full agenda. Both outcomes remain unknown: this preparatory source does not establish a final result."
+        }
+      }
+    },
+    {
+      "key": "uccle-2026-09-10",
+      "commune": "uccle",
+      "municipal_identifier": "2026-09-10",
+      "scheduled_on": "2026-09-10",
+      "sources": [
+        {
+          "name": "uccle-20260910-notes",
+          "url": "https://www.uccle.be/sites/default/files/filemanager/Legal/CC-GR/CC-2026-09-10-NEC-U1180_fr_nl.pdf",
+          "role": "complementary_explanatory_note",
+          "language": "bilingual",
+          "sha256": "d3c771f1cd494d8ac96bb8216505ce393e98efb392004a07fe3059a8f73eb46c",
+          "byte_size": 1613845,
+          "media_type": "application/pdf",
+          "markers": [
+            "Conseil communal - 10.09.2026 - Notes explicatives complémentaires publiques"
+          ],
+          "acquisition": "official_fetch",
+          "parent_index_url": "https://www.uccle.be/fr/ma-commune/le-conseil-communal",
+          "captured_at": "2026-09-11T10:43:33.209345Z",
+          "page_count": 77,
+          "document_date_note": "2026-09-02 (dated council invitation printed on p1; not upload time)",
+          "publication_time": null
+        }
+      ],
+      "items": [
+        {
+          "key": "12",
+          "item_number": "12",
+          "source_wording": "Réfection de voiries en pavés - exercice 2026 - Approbation de la dépense, des documents du marché et de la procédure de passation du marché.",
+          "state": "proposal",
+          "outcome": "unknown",
+          "proposal": {
+            "text": "Le point propose de refaire le pavage de l’avenue des Cytises et de l’avenue de Boetendael entre les avenues de Floréal et Brugmann. Les notes présentent une estimation de 466 733,12 euros comme incluant la TVA et une révision de 15 %. Le cahier des charges 82/2026-008 et une procédure négociée directe avec publication préalable sont soumis au Conseil.",
+            "excerpt": "Considérant que l’estimation de la dépense de ces travaux s’élève à 350.663,50 €, hors TVA, soit 466.733,12 € révision 15 % et TVA incluse et que cette dépense sera engagée à l'article 421/731- 60/82-2026103 du budget extraordinaire 2026 ;",
+            "location": "Document préparatoire officiel, point 12, pages 11-12/77"
+          },
+          "source": "uccle-20260910-notes",
+          "coverage": {
+            "fr": {
+              "title": "Réfection proposée du pavage des avenues des Cytises et de Boetendael",
+              "summary": "Le point propose de refaire le pavage de l’avenue des Cytises et de l’avenue de Boetendael entre les avenues de Floréal et Brugmann. Les notes présentent l’estimation de 466 733,12 euros comme incluant la TVA et une révision de 15 %. Le Conseil est appelé à approuver le cahier des charges 82/2026-008 et une procédure négociée directe avec publication préalable. Ce n’est pas une attribution à une entreprise. L’issue du point reste inconnue."
+            },
+            "nl": {
+              "title": "Voorgesteld herstel van de bestrating op de Goudenregenlaan en de Boetendaellaan",
+              "summary": "Het punt stelt voor de bestrating van de Goudenregenlaan en van de Boetendaellaan tussen de Floréallaan en de Brugmannlaan te herstellen. De nota beschrijft de raming van 466.733,12 euro als inclusief btw en een herziening van 15%. De raad wordt gevraagd bestek 82/2026-008 en een vereenvoudigde onderhandelingsprocedure met voorafgaande bekendmaking goed te keuren. Dit is geen gunning aan een onderneming. De uitkomst van het punt is onbekend."
+            },
+            "en": {
+              "title": "Proposed paving repairs on avenue des Cytises and avenue de Boetendael",
+              "summary": "The item proposes repairs to the paving on avenue des Cytises and on avenue de Boetendael between avenue de Floréal and avenue Brugmann. The notes describe the €466,733.12 estimate as including VAT and a 15% adjustment. The council is asked to approve specifications 82/2026-008 and a negotiated procurement procedure with prior publication. This is not an award to a company. The item's outcome is unknown."
+            }
+          },
+          "evidence_pages": [
+            11,
+            12
+          ],
+          "identity_marker": "12 Réfection de voiries en pavés",
+          "evidence_markers": [
+            "Considérant que le Collège propose la réfection du pavage de l'avenue des Cytises et de l'avenue de Boetendael entre l'avenue de Floréal et l'avenue Brugmann ; Vu le cahier des charges N° 82/2026-008 relatif au marché “réfection de voiries ” établi par le Service Voirie - Travaux et Gestion de l'Espace Public ;",
+            "Considérant que la procédure de passation du marché sera la procédure négociée directe avec publication préalable ; Décide : 1. d'approuver l'estimation d'un montant de 466.733,12 € TVA comprise; 2. d’approuver le cahier spécial des charges devant régir les travaux du présent dossier; 3. d’approuver la procédure de passation du marché, qui sera la procédure négociée directe avec publication préalable et fixer les renseignements concernant les capacités techniques des entrepreneurs, à savoir que le soumissionnaire doit satisfaire aux conditions de l’agréation d’entrepreneur de travaux, catégorie C, classe 2; 4. d'approuver l'avis de marché."
+          ],
+          "authoritative_additional_identifiers": {
+            "procurement_reference": "82/2026-008"
+          }
+        },
+        {
+          "key": "38",
+          "item_number": "38",
+          "source_wording": "Gemeentelijke Openbare Bibliotheek. - plateforme de livres numériques. - Convention entre Cultuurconnect et la Commune",
+          "state": "proposal",
+          "outcome": "unknown",
+          "proposal": {
+            "text": "Le point propose une nouvelle convention avec Cultuurconnect pour le prêt de livres numériques sur Cantook, pour un coût communal annuel estimé à 5 500 euros. La période proposée va du 17 septembre 2026 au 31 décembre 2029, avec possibilité de prolongation annuelle.",
+            "excerpt": "Considérant que, à la suite d'un nouveau marché public, Cultuurconnect met en place une nouvelle plateforme de livres numériques (Cantook) et propose dès lors une nouvelle convention destinée à remplacer la précédente, et que ce nouveau système sera moins onéreux; Considérant qu'il y a lieu d'adhérer au nouveau service de prêt de livres numériques afin de permettre au public d'emprunter et de lire des ouvrages numériques ; Considérant que la convention entre en vigueur le 17 septembre 2026 et est conclue jusqu'au 31 décembre 2029, avec possibilité de reconduction tacite d'année en année à son échéance ; Considérant que le coût annuel estimé du service de livres numériques pour la commune d'Uccle s'élèverait à 5.500 € , sur la base d'une redevance fixe et d'une redevance variable calculée en fonction du nombre d'habitants (règle de la Brusselnorm des 30 %), Décide : -d'approuver et de signer la convention, annexée à la présente délibération, relative au service de prêt de livres numériques entre la commune d'Uccle et l'ASBL Cultuurconnect, afin d'assurer la continuité de l'offre de livres numériques proposée aux usagers de la bibliothèque.",
+            "location": "Document préparatoire officiel, point 38, pages 56-56/77"
+          },
+          "source": "uccle-20260910-notes",
+          "coverage": {
+            "fr": {
+              "title": "Nouvelle convention proposée pour le prêt de livres numériques",
+              "summary": "Le point propose une nouvelle convention avec Cultuurconnect pour maintenir le prêt de livres numériques de la bibliothèque néerlandophone sur la plateforme Cantook. Le coût annuel pour la commune est estimé à 5 500 euros. La convention proposée prévoit une période du 17 septembre 2026 au 31 décembre 2029, avec possibilité de prolongation annuelle. Ces dates ne prouvent pas que la convention a été adoptée. L’issue du point reste inconnue."
+            },
+            "nl": {
+              "title": "Nieuwe overeenkomst voorgesteld voor het uitlenen van e-boeken",
+              "summary": "Het punt stelt een nieuwe overeenkomst met Cultuurconnect voor om het uitlenen van e-boeken door de Nederlandstalige bibliotheek voort te zetten via het platform Cantook. De jaarlijkse kostprijs voor de gemeente wordt geraamd op 5.500 euro. De voorgestelde overeenkomst loopt van 17 september 2026 tot en met 31 december 2029 en kan daarna telkens met een jaar worden verlengd. Deze datums bewijzen niet dat de overeenkomst is goedgekeurd. De uitkomst van het punt is onbekend."
+            },
+            "en": {
+              "title": "New agreement proposed for e-book lending",
+              "summary": "The item proposes a new agreement with Cultuurconnect to continue the Dutch-language library's e-book lending service on the Cantook platform. The estimated annual cost to the municipality is €5,500. The proposed term runs from 17 September 2026 to 31 December 2029, with possible yearly extensions. These dates do not establish that the agreement was approved. The item's outcome is unknown."
+            }
+          },
+          "evidence_pages": [
+            56,
+            56
+          ],
+          "identity_marker": "38 Gemeentelijke Openbare Bibliotheek. - plateforme",
+          "evidence_markers": []
+        }
+      ],
+      "coverage": {
+        "fr": {
+          "title": "Uccle — 2026-09-10 : sélection de deux propositions",
+          "summary": "Sélection de deux propositions, et non de tout l’ordre du jour. Les deux issues restent inconnues : aucun résultat final n’est établi par cette source préparatoire."
+        },
+        "nl": {
+          "title": "Ukkel — 2026-09-10: selectie van twee voorstellen",
+          "summary": "Selectie van twee voorstellen, niet van de volledige agenda. Beide uitkomsten zijn onbekend: deze voorbereidende bron stelt geen definitief resultaat vast."
+        },
+        "en": {
+          "title": "Uccle — 2026-09-10: two selected proposals",
+          "summary": "Two selected proposals, not the full agenda. Both outcomes remain unknown: this preparatory source does not establish a final result."
+        }
+      }
+    },
+    {
+      "key": "city-2026-09-07",
+      "commune": "city-of-brussels",
+      "municipal_identifier": "2026-09-07",
+      "scheduled_on": "2026-09-07",
+      "sources": [
+        {
+          "name": "city-20260907-agenda",
+          "url": "https://www.brussels.be/sites/default/files/OJ20260907.pdf",
+          "role": "agenda",
+          "language": "fr",
+          "sha256": "adae1cffbbdd56a8715882285e952d49c41efe2b22ec96fe177cc85b75a138fa",
+          "byte_size": 502227,
+          "media_type": "application/pdf",
+          "markers": [
+            "Séance du lundi 7 septembre 2026 à 18 heures"
+          ],
+          "acquisition": "official_fetch",
+          "parent_index_url": "https://www.brussels.be/agenda-reports-and-motions-city-council?field_date_document_value=2026",
+          "captured_at": "2026-09-11T10:43:33.229714Z",
+          "page_count": 21,
+          "document_date_note": "No separately printed issue date established; document identifies council 2026-09-07",
+          "publication_time": null
+        }
+      ],
+      "items": [
+        {
+          "key": "2722248",
+          "item_number": "30",
+          "source_wording": "Parc Royal.- Convention avec la Fondation Roi Baudouin relative au lancement de la récolte de dons pour la restauration des statues.",
+          "state": "proposal",
+          "outcome": "unknown",
+          "proposal": {
+            "text": "Le point propose une convention entre la Ville et la Fondation Roi Baudouin pour lancer une collecte de dons destinée à la restauration des statues du Parc Royal.",
+            "excerpt": "Convention entre la Fondation Roi Baudouin et la Ville de Bruxelles, relative au lancement de la récolte de dons pour la restauration des statues du Parc Royal.",
+            "location": "Document préparatoire officiel, point 30, pages 5-5/21"
+          },
+          "source": "city-20260907-agenda",
+          "coverage": {
+            "fr": {
+              "title": "Convention proposée pour une collecte de dons en faveur des statues du Parc Royal",
+              "summary": "Le point propose une convention entre la Ville et la Fondation Roi Baudouin pour lancer une collecte de dons destinée à la restauration des statues du Parc Royal. L’ordre du jour n’indique ni objectif financier ni calendrier des travaux. Il ne prouve pas que des dons ont été reçus. L’issue du point reste inconnue."
+            },
+            "nl": {
+              "title": "Voorgestelde overeenkomst voor een inzameling voor de beelden in het Parc Royal",
+              "summary": "Het punt stelt een overeenkomst tussen de Stad en de Fondation Roi Baudouin voor om een inzameling van giften te starten voor de restauratie van de beelden in het Parc Royal. De agenda vermeldt geen financieel doel of planning van de werken. Ze bewijst niet dat er giften zijn ontvangen. De uitkomst van het punt is onbekend."
+            },
+            "en": {
+              "title": "Proposed fundraising agreement for the statues in Parc Royal",
+              "summary": "The item proposes an agreement between the City and the Fondation Roi Baudouin to launch a donation campaign for restoring the statues in Parc Royal. The agenda gives no fundraising target or works timetable. It does not establish that donations have been received. The item's outcome is unknown."
+            }
+          },
+          "evidence_pages": [
+            5,
+            5
+          ],
+          "identity_marker": "[30] Patrimoine public - - Direction administration - 2722248",
+          "evidence_markers": [],
+          "authoritative_additional_identifiers": {
+            "workflow_identifier": "2722248"
+          }
+        },
+        {
+          "key": "2728690",
+          "item_number": "31",
+          "source_wording": "Dossier n° OPP/2026/119.- Marché public de travaux ayant pour objet la fourniture, le placement et le raccordement de trois ascenseurs dans les bâtiments suivants du Département Culture, Jeunesse et Sports : Espace Vanderborght, sis rue de l'Ecuyer 50 et La Bellone, sis rue de Flandre 46 à 1000 Bruxelles.- Principe.",
+          "state": "proposal",
+          "outcome": "unknown",
+          "proposal": {
+            "text": "Le point propose le principe d’un marché pour fournir, installer et raccorder trois ascenseurs à l’Espace Vanderborght et à La Bellone. Le dossier OPP/2026/119 prévoit 484 950 euros TVA comprise, financés par emprunt, et une procédure négociée directe avec publication préalable.",
+            "excerpt": "Dossier n° OPP/2026/119.- Marché public de travaux ayant pour objet la fourniture, le placement et le raccordement de trois ascenseurs dans les bâtiments suivants du Département Culture, Jeunesse et Sports : Espace Vanderborght, sis rue de l'Ecuyer 50 et La Bellone, sis rue de Flandre 46 à 1000 Bruxelles.- Principe. Procédure négociée directe avec publication préalable en application des articles 35, 6° et 41 de la loi du 17/06/2016.- Cahier spécial des charges n° OPP/2026/119.- Dépense de 484.950,00 EUR TVA comprise.- Article 76210/72460 du budget extraordinaire de 2026.- Projets d'investissement n°s PC10-4-2025 et HF10-233-2009.- Emprunt.",
+            "location": "Document préparatoire officiel, point 31, pages 5-5/21"
+          },
+          "source": "city-20260907-agenda",
+          "coverage": {
+            "fr": {
+              "title": "Marché proposé pour trois ascenseurs à l’Espace Vanderborght et à La Bellone",
+              "summary": "Le point propose le principe d’un marché pour fournir, installer et raccorder trois ascenseurs dans les bâtiments de l’Espace Vanderborght et de La Bellone. Le dossier OPP/2026/119 prévoit une dépense de 484 950 euros TVA comprise, financée par emprunt, et une procédure négociée directe avec publication préalable. L’ordre du jour ne désigne pas d’entreprise attributaire. L’issue du point reste inconnue."
+            },
+            "nl": {
+              "title": "Voorgestelde opdracht voor drie liften in Espace Vanderborght en La Bellone",
+              "summary": "Het punt stelt het principe voor van een opdracht voor de levering, plaatsing en aansluiting van drie liften in de gebouwen Espace Vanderborght en La Bellone. Dossier OPP/2026/119 voorziet in een uitgave van 484.950 euro inclusief btw, gefinancierd met een lening, en een vereenvoudigde onderhandelingsprocedure met voorafgaande bekendmaking. De agenda duidt geen opdrachtnemer aan. De uitkomst van het punt is onbekend."
+            },
+            "en": {
+              "title": "Proposed contract for three lifts at Espace Vanderborght and La Bellone",
+              "summary": "The item proposes a contract in principle to supply, install and connect three lifts in the Espace Vanderborght and La Bellone buildings. File OPP/2026/119 provides for €484,950 including VAT, financed by borrowing, and a negotiated procurement procedure with prior publication. The agenda does not name a winning contractor. The item's outcome is unknown."
+            }
+          },
+          "evidence_pages": [
+            5,
+            5
+          ],
+          "identity_marker": "[31] Patrimoine public - - Direction administration - 2728690",
+          "evidence_markers": [],
+          "authoritative_additional_identifiers": {
+            "workflow_identifier": "2728690",
+            "dossier_identifier": "OPP/2026/119"
+          }
+        }
+      ],
+      "coverage": {
+        "fr": {
+          "title": "Ville de Bruxelles — 2026-09-07 : sélection de deux propositions",
+          "summary": "Sélection de deux propositions, et non de tout l’ordre du jour. Les deux issues restent inconnues : aucun résultat final n’est établi par cette source préparatoire."
+        },
+        "nl": {
+          "title": "Stad Brussel — 2026-09-07: selectie van twee voorstellen",
+          "summary": "Selectie van twee voorstellen, niet van de volledige agenda. Beide uitkomsten zijn onbekend: deze voorbereidende bron stelt geen definitief resultaat vast."
+        },
+        "en": {
+          "title": "City of Brussels — 2026-09-07: two selected proposals",
+          "summary": "Two selected proposals, not the full agenda. Both outcomes remain unknown: this preparatory source does not establish a final result."
+        }
+      }
+    }
+  ],
+  "dossiers": []
+}

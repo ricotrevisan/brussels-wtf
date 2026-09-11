@@ -64,7 +64,7 @@ defmodule BrusselsWtf.HTTP.Req do
   end
 
   defp request(url, request) do
-    Req.get(url,
+    Req.get(transport_url(url),
       redirect: false,
       retry: false,
       decode_body: false,
@@ -72,6 +72,20 @@ defmodule BrusselsWtf.HTTP.Req do
       receive_timeout: request.receive_timeout,
       into: bounded_body(request.max_body_bytes)
     )
+  end
+
+  defp transport_url(url) do
+    uri = URI.parse(url)
+    # Keep source and redirect URLs unchanged; only the HTTP request target is encoded.
+    %{uri | path: encode_target_component(uri.path), query: encode_target_component(uri.query)}
+  end
+
+  defp encode_target_component(nil), do: nil
+
+  defp encode_target_component(value) do
+    value
+    |> String.replace(~r/%(?![0-9A-Fa-f]{2})/, "%25")
+    |> URI.encode(&(URI.char_unescaped?(&1) or &1 == ?%))
   end
 
   defp bounded_body(max_body_bytes) do

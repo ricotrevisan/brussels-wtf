@@ -72,6 +72,22 @@ defmodule BrusselsWtf.Ingestion.RetryPolicyTest do
     refute delay == 600
   end
 
+  test "invalid request targets become review work without consuming transient retries" do
+    error = %Req.HTTPError{
+      protocol: :http1,
+      reason:
+        {:invalid_request_target, "/show_documents/07-09-2026/07 09 2026 OJ point_punt (109)"}
+    }
+
+    for attempt <- [1, 7] do
+      assert RetryPolicy.decision({:transport, error}, attempt, now: @now) ==
+               {:review, :invalid_content}
+    end
+
+    assert RetryPolicy.decision({:transport, %Req.TransportError{reason: :timeout}}, 1, now: @now) ==
+             {:retry, 30}
+  end
+
   test "deterministic HTTP adapter limits do not consume transport retries" do
     assert RetryPolicy.decision({:transport, {:body_too_large, 1_024}}, 1, now: @now) ==
              {:review, :invalid_content}

@@ -27,6 +27,33 @@ defmodule BrusselsWtf.HTTP.ReqTest do
       end
     end
 
+    get "/transport-redirect" do
+      conn
+      |> put_resp_header("location", "relative déjà%20vu?title=conseil é#page 2")
+      |> send_resp(302, "relative redirect")
+    end
+
+    get "/relative déjà vu" do
+      location =
+        "http://#{conn.host}:#{conn.port}/transport/pièce %2f.pdf" <>
+          "?title=conseil é&encoded=%C3%A9%2f%26&next=/item?num=109&plus=a+b&literal=%2520&empty=#page 3"
+
+      conn
+      |> put_resp_header("location", location)
+      |> send_resp(307, "absolute redirect")
+    end
+
+    get "/transport/*path" do
+      target =
+        conn.request_path <> if(conn.query_string == "", do: "", else: "?" <> conn.query_string)
+
+      send_resp(conn, 200, target)
+    end
+
+    get "/show_documents/:date/:listing" do
+      send_resp(conn, 200, conn.request_path)
+    end
+
     get "/retry" do
       Agent.update(@retry_counter, &(&1 + 1))
 
@@ -76,6 +103,67 @@ defmodule BrusselsWtf.HTTP.ReqTest do
 
     assert unchanged.status == 304
     assert unchanged.headers["etag"] == ["fixture-etag"]
+  end
+
+  test "fetches a City item listing with raw spaces without changing its source URL", %{
+    base_url: base_url
+  } do
+    url = base_url <> "/show_documents/07-09-2026/07 09 2026 OJ point_punt (109)"
+
+    assert {:ok, response} = BrusselsWtf.HTTP.Req.get(url, [])
+    assert response.status == 200
+
+    assert response.body ==
+             "/show_documents/07-09-2026/07%2009%202026%20OJ%20point_punt%20(109)"
+
+    assert response.final_url == url
+    assert response.redirect_chain == []
+  end
+
+  test "encodes UTF-8 path bytes without re-encoding existing escapes", %{base_url: base_url} do
+    url = base_url <> "/transport/déjà %C3%A9%2f%2F%20rapport%.pdf"
+
+    assert {:ok, response} = BrusselsWtf.HTTP.Req.get(url, [])
+    assert response.status == 200
+    assert response.body == "/transport/d%C3%A9j%C3%A0%20%C3%A9%2f%2F%20rapport%25.pdf"
+    assert response.final_url == url
+  end
+
+  test "encodes queries and relative or absolute redirects only on the wire", %{
+    base_url: base_url
+  } do
+    url = base_url <> "/transport-redirect?start=réunion %20#note 1"
+    relative_location = "relative déjà%20vu?title=conseil é#page 2"
+    intermediate_url = base_url <> "/" <> relative_location
+
+    final_url =
+      base_url <>
+        "/transport/pièce %2f.pdf" <>
+        "?title=conseil é&encoded=%C3%A9%2f%26&next=/item?num=109&plus=a+b&literal=%2520&empty=#page 3"
+
+    assert {:ok, response} = BrusselsWtf.HTTP.Req.get(url, [])
+    assert response.status == 200
+
+    assert response.body ==
+             "/transport/pi%C3%A8ce%20%2f.pdf" <>
+               "?title=conseil%20%C3%A9&encoded=%C3%A9%2f%26&next=/item?num=109&plus=a+b&literal=%2520&empty="
+
+    assert response.final_url == final_url
+
+    assert [
+             %{
+               "status" => 302,
+               "url" => ^url,
+               "location" => ^intermediate_url,
+               "headers" => %{"location" => [^relative_location]}
+             },
+             %{
+               "status" => 307,
+               "url" => ^intermediate_url,
+               "location" => ^final_url,
+               "headers" => %{"location" => [^final_url]}
+             }
+           ] = response.redirect_chain
   end
 
   test "exposes Retry-After without hidden Req retries", %{base_url: base_url} do

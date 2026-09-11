@@ -8,12 +8,20 @@ defmodule BrusselsWtfWeb.PublicationReaderTest do
   end
 
   test "coverage reports gaps without claiming archival replay is a fresh check", %{conn: conn} do
-    for locale <- ~w(en fr nl) do
+    for {locale, commune_names} <- [
+          {"fr", ["Ville de Bruxelles", "Forest", "Ixelles", "Uccle"]},
+          {"nl", ["Stad Brussel", "Vorst", "Elsene", "Ukkel"]},
+          {"en", ["City of Brussels", "Forest", "Ixelles", "Uccle"]}
+        ] do
       html = conn |> get("/coverage?lang=#{locale}") |> html_response(200)
-      assert html =~ "Ixelles"
-      assert html =~ "Uccle"
-      assert html =~ "Forest"
-      assert html =~ "City of Brussels"
+      document = LazyHTML.from_document(html)
+      headings = Enum.map(document["main section h2"], &(LazyHTML.text(&1) |> String.trim()))
+      assert headings == commune_names
+
+      timeline = conn |> get("/?lang=#{locale}") |> html_response(200) |> LazyHTML.from_document()
+      filter_labels = timeline["[data-reader-communes] label"] |> LazyHTML.text()
+      assert Enum.all?(commune_names, &String.contains?(filter_labels, &1))
+
       refute html =~ "review_case"
       assert conn |> get("/about?lang=#{locale}") |> html_response(200) =~ "Rico Trevisan"
     end

@@ -5,7 +5,11 @@ defmodule BrusselsWtfWeb.UcclePrincipalSeamTest do
     conn: conn
   } do
     scenario = BrusselsWtf.Test.Harness.load("uccle/end-to-end")
-    assert :ok = BrusselsWtf.Ingestion.poll_now("uccle")
+
+    BrusselsWtf.Ingestion.request_backfill!(%{type: :commune, id: scenario.commune.id},
+      actor: %BrusselsWtf.Review.Actor{id: "rico", role: :reviewer}
+    )
+
     assert :ok = BrusselsWtf.Test.Harness.drain_pipeline()
 
     locators = BrusselsWtf.Ingestion.list_document_locators!(scenario.commune.id)
@@ -56,6 +60,22 @@ defmodule BrusselsWtfWeb.UcclePrincipalSeamTest do
         assert roles == [:native_extraction]
       end
     end
+
+    # Historical acquisition does not authorize publication. Queue this one
+    # fixture meeting explicitly through the ordinary coverage-batch boundary.
+    generation = Application.fetch_env!(:brussels_wtf, :coverage_generation)
+    on_exit(fn -> Application.put_env(:brussels_wtf, :coverage_generation, generation) end)
+
+    Application.put_env(:brussels_wtf, :coverage_generation, %{
+      generation
+      | backfill_enabled: true
+    })
+
+    BrusselsWtf.Council.request_coverage_batch!([meeting.id],
+      actor: %BrusselsWtf.Review.Actor{id: "rico", role: :reviewer}
+    )
+
+    assert :ok = BrusselsWtf.Test.Harness.drain_pipeline()
 
     html = conn |> get("/?lang=en") |> html_response(200)
     assert html =~ "Uccle"

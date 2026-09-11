@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+
+cd -P -- "$(dirname -- "$0")"
+# RPC reads the existing node. Never use eval/validation here: that could pass
+# before the worker exists, redo storage writes, or halt the serving release.
+# Bound both the remote check (one second) and the small RPC client (three).
+# A high host nofile limit must not allocate a huge port table in this client.
+ready=$(ERL_FLAGS="+S 1:1 +A 1 +Q 1024" timeout --kill-after=1s 3s ./brussels_wtf rpc \
+  'if BrusselsWtf.ProcessRole.ocr_ready?(), do: IO.puts("ready")' 2>/dev/null) || exit 1
+[ "$ready" = "ready" ]
