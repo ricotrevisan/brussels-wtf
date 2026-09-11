@@ -23,7 +23,24 @@ The same release image has two mutually exclusive roles:
 - `PROCESS_ROLE=app`: web, polling, fetching, sealed corpus import, native extraction, normalization, private enrichment, and publication; it cannot consume OCR jobs.
 - `PROCESS_ROLE=ocr`: no Phoenix server or cron plugins, and only the `ocr` queue at concurrency 1.
 
-Run `/app/bin/ocr_worker` in the OCR service. Migrations remain owned by the app role. The production image pins Debian Bookworm and contains Poppler 22.12, OCRmyPDF 14.0, Tesseract 5.3, and the `fra`, `nld`, and `osd` data packages. Release validation fails closed when the toolchain or bilingual language data is missing. Automatic transcription is explicitly disabled.
+The image startup command validates dependencies before it runs
+`/app/bin/ocr_worker`. Use the same image digest as the healthy app; do not
+independently rebuild OCR. For the Coolify Compose application, set
+`connect_to_docker_network=true` so the worker joins the existing private
+PostgreSQL/rustFS destination network. OCR has no public ports; the public app
+uses `https://brussels.wtf`.
+
+`/app/bin/ocr_ready` is the image and Compose health probe. It uses a bounded RPC
+into the running release and reads the expiring dependency cache plus the actual
+local Oban consumer. Only runtime role `ocr` with a fresh successful dependency
+check and an unpaused `ocr` queue at limit 1 is ready. Validation still in
+progress, dependency failure/staleness, a missing/crashed consumer, or an
+unresponsive release fails closed. The probe does not run extraction, enqueue
+work, write validation objects, or change queue state. See
+[deployment diagnostics](deployment.md#ocr-readiness-and-read-only-diagnostics)
+for read-only health, network, image-parity, and queue commands.
+
+Migrations remain owned by the app role. The production image pins Debian Bookworm and contains Poppler 22.12, OCRmyPDF 14.0, Tesseract 5.3, and the `fra`, `nld`, and `osd` data packages. Release validation fails closed when the toolchain or bilingual language data is missing. Automatic transcription is explicitly disabled.
 
 The calibrated defaults are 25 MiB input, 500 pages, 120 seconds wall time, 90 CPU seconds, 1 GiB address space, and one OCRmyPDF job. A 2026-08-19 run of the partial-scan contract in the release image, capped at one CPU and 1 GiB, completed in 8.4 seconds and peaked at about 180 MiB. The defaults provide headroom for representative documents while the separate role, queue concurrency, cgroup limits, `timeout`, and `prlimit` protect the app/database/archive processes. Configure the Coolify OCR container with one CPU and 1 GiB hard memory. Runtime overrides are `PDF_MAX_INPUT_BYTES`, `PDF_MAX_PAGES`, `PDF_OCR_WALL_TIME_MS`, `PDF_OCR_CPU_SECONDS`, and `PDF_OCR_MEMORY_BYTES`.
 
@@ -37,5 +54,5 @@ Run the image contract with:
 
 ```sh
 docker build --target runner -t brussels-wtf:pdf-contract .
-PRODUCTION_IMAGE=brussels-wtf:pdf-contract mix test --include external test/contracts/production_image_pdf_test.exs
+PRODUCTION_IMAGE=brussels-wtf:pdf-contract mix test --include external test/contracts/production_image_pdf_test.exs test/contracts/production_image_ocr_readiness_test.exs
 ```
