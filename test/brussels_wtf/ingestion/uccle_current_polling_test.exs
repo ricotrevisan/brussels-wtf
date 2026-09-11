@@ -180,6 +180,42 @@ defmodule BrusselsWtf.Ingestion.UccleCurrentPollingTest do
     end
   end
 
+  test "the native commune configuration upsert preserves identity, locator parents, and index history",
+       %{
+         commune: commune
+       } do
+    Ingestion.request_scheduled_poll!("uccle", :previous_year)
+    Ingestion.request_scheduled_poll!("uccle")
+    assert %{success: 2, failure: 0} = Oban.drain_queue(queue: :poll)
+
+    locators = Ingestion.list_locators!(commune.id)
+    current_history = Ingestion.source_history!(commune.id, @current_url)
+    archive_history = Ingestion.source_history!(commune.id, @archive_url)
+    approved = Ingestion.get_commune_by_slug!("uccle")
+    assert approved.id == commune.id
+    assert approved.index_url == @archive_url
+
+    updated =
+      Ingestion.create_commune!(%{
+        slug: approved.slug,
+        name: approved.name,
+        index_url: BrusselsWtf.Communes.configuration!("uccle").index_url
+      })
+
+    assert updated.id == commune.id
+    assert updated.name == approved.name
+    assert updated.index_url == @current_url
+    assert Ingestion.list_locators!(commune.id) == locators
+    assert Ingestion.source_history!(commune.id, @current_url) == current_history
+    assert Ingestion.source_history!(commune.id, @archive_url) == archive_history
+
+    public_commune =
+      BrusselsWtf.CoverageStatus.snapshot(~D[2026-09-11]).communes
+      |> Enum.find(&(&1["slug"] == "uccle"))
+
+    assert public_commune["index_url"] == @current_url
+  end
+
   defp assert_fetch_scope(commune, poll_run, year, parent_url) do
     ids =
       all_enqueued(worker: BrusselsWtf.Workers.FetchLocator)

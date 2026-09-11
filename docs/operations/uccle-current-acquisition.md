@@ -58,8 +58,53 @@ commune configuration rows are not migrated by this repair. Acquisition still
 selects the correct root, but a public view of the stored `commune.index_url`
 may continue to link to the archive. An authorized operator may update only
 that commune configuration through the existing `Ingestion.create_commune!`
-upsert, preserving its slug/identity and name. Inspect the existing row first;
-do not modify source locators or perform bulk URL replacements.
+upsert, preserving its slug/identity and name. No schema change, raw SQL, new
+resource action, or source-history migration is needed.
+
+### One-time operator configuration refresh
+
+Run only after the reviewed release is deployed and the operator has explicit
+authorization for this configuration-only write:
+
+1. Read Uccle through `Ingestion.get_commune_by_slug!("uccle")`. Record its
+   existing ID, name, and URL in the private operation audit. Record the old
+   locator parents and both index histories for the post-write comparison.
+2. Set `approved_id` below to the ID independently approved from that read.
+   The guard must require both that exact ID and the exact official legacy
+   archive URL. A custom root, missing record, or already-current URL must
+   **stop** the operation; do not overwrite it or automatically broaden scope.
+3. Use the existing domain upsert exactly once, retaining the existing name:
+
+   ```elixir
+   alias BrusselsWtf.Ingestion
+   approved_id = "ID_FROM_APPROVED_READ"
+   commune = Ingestion.get_commune_by_slug!("uccle")
+   configuration = BrusselsWtf.Communes.configuration!("uccle")
+
+   unless commune.id == approved_id and
+            commune.index_url == configuration.archive_index_url do
+     raise "Uccle configuration differs from the approved legacy record; stop"
+   end
+
+   updated = Ingestion.create_commune!(%{
+     slug: commune.slug,
+     name: commune.name,
+     index_url: configuration.index_url
+   })
+
+   unless updated.id == approved_id and updated.name == commune.name and
+            updated.index_url == configuration.index_url do
+     raise "Uccle configuration verification failed; inspect before continuing"
+   end
+   ```
+
+4. Re-read the commune and public coverage index link. Compare the pre-write
+   locator parents, source-version IDs/hashes, and observations. They must be
+   unchanged. Record the configuration change and verification result in the
+   private operation audit. Do not edit evidence to repair a failed check.
+
+The acquisition routing remains correct before and after this refresh.
+Never modify source locators or perform bulk URL replacements.
 
 ## Audited source proof
 
