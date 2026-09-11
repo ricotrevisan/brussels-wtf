@@ -85,7 +85,7 @@ Deploy the fixed release first. Do not edit a completed corpus import batch or r
 
 **Provenance guard:** `PublicationLifecycle.factual_correction!/4` remains the human editorial action and adds `human-reviewed`. Do not use it for this agent-only correction. The new `Publication.recorded_factual_correction!/4` records the actual configured AI/translation methods. Its actor records authorization, not human review. It rejects disabled/paid modes, network-backed processors, human-edit methods, and supplied human-review metadata. It does not carry human-reviewed labels from an earlier revision into the changed content.
 
-The same expected-parent/input/notes/processor-config request returns its existing revision without new runs. A different parent, input, note, or processor config fails as stale. The operation checks the expected revision before generation. The shared final publication transaction locks and checks it again before changing public state.
+The same expected-parent/input/notes/processor-config request returns its existing revision without new runs. A different parent, input, note, or processor config fails as stale. The operation checks the expected revision and published/non-withdrawn state before generation. The shared final publication transaction locks and checks all three conditions again before changing public state. Withdrawal can keep the same revision ID, so that ID alone is not permission to republish.
 
 Every executed recorded processor call remains an immutable coverage run, including failed translations and successful calls whose output later fails a gate or becomes stale. Generation runs outside the public-state transaction. Failed gates keep typed page diagnostics and a deduplicated publication review case. A failed processor call retains its locale, classification, timing, hashes, canonical parent, and usage; this one-shot operator action records its terminal review case. Public variants, decision pointers, and publication revisions still roll back together on failure. A revision published by another operation during generation is never overwritten; already executed stale attempts remain auditable. Ordinary automatic generation uses the same pipeline and keeps its existing failure behavior.
 
@@ -122,7 +122,7 @@ Both defect regressions failed before their fixes: the real-corpus outcome was `
 
 Final checks on the isolated worktree:
 
-- 48 focused tests passed across corpus acceptance/import/manifest, publication generation/input/lifecycle, public reader/operations, and Forest principal-seam tests, including the standards-review follow-up.
+- 49 focused tests passed across corpus acceptance/import/manifest, publication generation/input/lifecycle, public reader/operations, and Forest principal-seam tests, including the retained-run and interleaved-withdrawal follow-ups.
 - The recorded Forest test executes the release operator script in read-only and apply modes against the isolated test database. It checks incomplete NL output, blocked evidence, stale/repeated requests, changed notes/config, disabled/paid modes, authorization, and truthful provenance.
 - `mix format --check-formatted` and `mix compile --warnings-as-errors` passed.
 - Environment: `ERL_FLAGS='+S 4:4'`, `MIX_TEST_PARTITION='_content_0911'`, `MIX_ENV=test`; build output isolated under `/tmp/brussels-incident-20260911/content-review-build`.

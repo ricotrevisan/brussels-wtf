@@ -294,6 +294,65 @@ defmodule BrusselsWtf.Council.PublicationLifecycleTest do
              "Newer editorial revision"
   end
 
+  test "withdrawal during recorded generation is not erased by the correction", %{
+    conn: conn,
+    actor: actor,
+    page: page
+  } do
+    [original] = Council.list_publication_revisions!(page.id)
+    variants_before = Council.list_locale_variants!(page.id)
+    previous_processor = Application.fetch_env!(:brussels_wtf, :coverage_processor)
+    on_exit(fn -> Application.put_env(:brussels_wtf, :coverage_processor, previous_processor) end)
+    Application.put_env(:brussels_wtf, :coverage_processor, InterleavedRecordedCoverage)
+
+    reasons = %{
+      "fr" => "Retiré pendant la vérification des sources.",
+      "nl" => "Ingetrokken tijdens de bronnencontrole.",
+      "en" => "Withdrawn while the sources are checked."
+    }
+
+    withdrawn_at = BrusselsWtf.Clock.utc_now()
+
+    Process.put({InterleavedRecordedCoverage, :before_en}, fn ->
+      PublicationLifecycle.withdraw!(page.id, reasons, actor)
+    end)
+
+    notes = %{"fr" => "Correction", "nl" => "Correctie", "en" => "Correction"}
+
+    assert_raise ArgumentError, "stale publication revision", fn ->
+      Publication.recorded_factual_correction!(page.id, original.id, notes, actor)
+    end
+
+    withdrawn = Council.get_meeting_page!(page.id)
+    assert withdrawn.publication_status == :draft
+    assert DateTime.compare(withdrawn.withdrawn_at, withdrawn_at) == :eq
+    assert withdrawn.withdrawal_reasons == reasons
+    assert withdrawn.current_revision_id == original.id
+    assert Council.list_locale_variants!(page.id) == variants_before
+    assert Enum.map(Council.list_publication_revisions!(page.id), & &1.id) == [original.id]
+
+    assert Enum.map(Council.list_publication_events!(page.id), & &1.event_type) == [
+             :published,
+             :withdrawn
+           ]
+
+    attempts =
+      Council.list_coverage_runs!(page.id)
+      |> Enum.filter(&(&1.processor_name == "interleaved-recorded-coverage"))
+
+    assert length(attempts) == 3
+    assert Enum.sort(Enum.map(attempts, & &1.locale)) == ~w(en fr nl)
+    assert Enum.all?(attempts, &(&1.status == :succeeded and &1.output != %{}))
+
+    for locale <- ~w(fr nl en) do
+      html =
+        conn |> recycle() |> get("/meetings/ixelles/268?lang=#{locale}") |> html_response(200)
+
+      assert html =~ reasons[locale]
+      refute html =~ get_in(original.content, ["items", "4", "variants", locale, "title"])
+    end
+  end
+
   defp bundles_from_content(content) do
     Map.new(["fr", "nl", "en"], &{&1, bundle_from_content(content, &1)})
   end

@@ -60,7 +60,8 @@ defmodule BrusselsWtf.Council.Publication do
     meeting = load_meeting(page.council_meeting_id)
     page = meeting.meeting_page
 
-    unless page.publication_status == :published and page.current_revision_id do
+    unless page.publication_status == :published and is_nil(page.withdrawn_at) and
+             page.current_revision_id do
       raise ArgumentError, "recorded correction requires a published revision"
     end
 
@@ -278,7 +279,9 @@ defmodule BrusselsWtf.Council.Publication do
         full_meeting = load_meeting(meeting.id)
 
         if correction &&
-             full_meeting.meeting_page.current_revision_id != correction.expected_revision_id do
+             (full_meeting.meeting_page.publication_status != :published or
+                not is_nil(full_meeting.meeting_page.withdrawn_at) or
+                full_meeting.meeting_page.current_revision_id != correction.expected_revision_id) do
           BrusselsWtf.Repo.rollback(:stale_publication_revision)
         end
 
