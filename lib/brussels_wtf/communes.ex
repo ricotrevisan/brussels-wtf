@@ -10,7 +10,8 @@ defmodule BrusselsWtf.Communes do
     },
     "uccle" => %{
       name: "Uccle",
-      index_url:
+      index_url: "https://www.uccle.be/fr/ma-commune/le-conseil-communal",
+      archive_index_url:
         "https://www.uccle.be/fr/ma-commune/le-conseil-communal/archives-du-Conseil-communal"
     },
     "forest" => %{
@@ -24,6 +25,21 @@ defmodule BrusselsWtf.Communes do
   }
 
   def configuration!(slug), do: Map.fetch!(@municipalities, slug)
+
+  @doc "Selects the explicit index root for a poll without changing stored locator history."
+  def poll_index_url(%{slug: "uccle", index_url: index_url}, scope) do
+    configuration = configuration!("uccle")
+
+    if index_url in [configuration.index_url, configuration.archive_index_url] do
+      if scope in [:previous_year, :backfill],
+        do: configuration.archive_index_url,
+        else: configuration.index_url
+    else
+      index_url
+    end
+  end
+
+  def poll_index_url(%{index_url: index_url}, _scope), do: index_url
 
   @spec adapter(String.t()) :: {:ok, module()} | {:error, :adapter_not_implemented}
   def adapter("ixelles"), do: {:ok, BrusselsWtf.Communes.Ixelles}
