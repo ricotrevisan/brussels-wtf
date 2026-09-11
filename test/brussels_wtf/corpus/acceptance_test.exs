@@ -374,6 +374,25 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
     assert dossier_html =~ "2026-06-29"
     assert dossier_html =~ "OPP/2026/185"
 
+    dossier_document = LazyHTML.from_document(dossier_html)
+    dossier_hrefs = LazyHTML.attribute(dossier_document["ol li h2 a"], "href")
+    assert length(dossier_hrefs) == 2
+
+    for page <- Enum.filter(pages, &(&1.council_meeting.commune.slug == "city-of-brussels")) do
+      path =
+        "/meetings/city-of-brussels/#{page.council_meeting.municipal_identifier}?lang=en"
+
+      anchors =
+        for item <- page.council_meeting.agenda_items,
+            item.published?,
+            do: item.stable_anchor
+
+      assert Enum.any?(dossier_hrefs, fn href ->
+               String.starts_with?(href, path <> "#") and
+                 String.trim_leading(href, path <> "#") in anchors
+             end)
+    end
+
     for meeting <- contract["meetings"], source <- meeting["sources"] do
       assert BrusselsWtf.HTTP.Stub.requests(source["url"]) == []
     end
