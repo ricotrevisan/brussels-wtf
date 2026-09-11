@@ -133,6 +133,8 @@ defmodule BrusselsWtf.Ingestion.UccleCurrentPollingTest do
         ""
       )
 
+    # These are separate observations; tied retrieval times have no chronological order.
+    BrusselsWtf.Clock.Controlled.set(~U[2026-09-11 12:00:01Z])
     BrusselsWtf.HTTP.Stub.put(@current_url, %{status: 200, body: changed})
     Ingestion.request_scheduled_poll!("uccle")
     assert %{success: 1, failure: 0} = Oban.drain_queue(queue: :poll)
@@ -142,6 +144,13 @@ defmodule BrusselsWtf.Ingestion.UccleCurrentPollingTest do
     assert Ingestion.get_locator!(removed.id).parent_index_url == @current_url
 
     history = Ingestion.source_history!(commune.id, @current_url)
+    [original_version, changed_version] = history.versions
+
+    assert DateTime.compare(
+             original_version.first_retrieved_at,
+             changed_version.first_retrieved_at
+           ) ==
+             :lt
 
     assert Enum.map(history.versions, & &1.sha256) ==
              Enum.map([current, changed], &BrusselsWtf.Digest.sha256/1)
