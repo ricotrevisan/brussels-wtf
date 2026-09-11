@@ -172,8 +172,10 @@ defmodule BrusselsWtf.Contracts.ProductionImagePdfTest do
       |> maybe_put("PDF_CONTRACT_PAGES", pages)
       |> Map.merge(extra_env)
 
+    # Bound the disposable VM's port table even when the Docker host advertises
+    # a billion file descriptors. This keeps the existing 1-GiB OCR cap intact.
     args =
-      ["run", "--rm"] ++
+      ["run", "--rm", "--ulimit", "nofile=65536:65536"] ++
         docker_options ++
         ["-v", "#{root}:/fixtures:ro"] ++
         Enum.flat_map(environment, fn {key, value} -> ["-e", "#{key}=#{value}"] end) ++
