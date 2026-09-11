@@ -6,6 +6,31 @@ defmodule BrusselsWtf.Council.PublicationLifecycleTest do
   alias BrusselsWtf.Council.PublicationLifecycle
   alias BrusselsWtf.Review.Actor
 
+  defmodule InterleavedRecordedCoverage do
+    @behaviour BrusselsWtf.Processors.Coverage
+
+    @impl true
+    defdelegate generate_fr(input), to: BrusselsWtf.Processors.Stub
+
+    @impl true
+    def translate(canonical, locale) do
+      if locale == "en", do: Process.get({__MODULE__, :before_en}).()
+      BrusselsWtf.Processors.Stub.translate(canonical, locale)
+    end
+
+    @impl true
+    def maximum_cost(_operation, _input), do: {:ok, 0}
+
+    @impl true
+    def metadata do
+      BrusselsWtf.Processors.Stub.metadata()
+      |> Map.merge(%{
+        processor_name: "interleaved-recorded-coverage",
+        config_hash: "sha256:interleaved-recorded-coverage"
+      })
+    end
+  end
+
   setup do
     scenario = BrusselsWtf.Test.Harness.load("ixelles/proposal")
     assert :ok = BrusselsWtf.Ingestion.poll_now("ixelles")
@@ -220,6 +245,53 @@ defmodule BrusselsWtf.Council.PublicationLifecycleTest do
                  end
 
     assert Council.get_meeting_page!(page.id).publication_status == :draft
+  end
+
+  test "a newer revision survives an interleaved recorded correction and its attempted runs remain",
+       %{
+         conn: conn,
+         actor: actor,
+         page: page
+       } do
+    [original] = Council.list_publication_revisions!(page.id)
+    previous_processor = Application.fetch_env!(:brussels_wtf, :coverage_processor)
+    on_exit(fn -> Application.put_env(:brussels_wtf, :coverage_processor, previous_processor) end)
+    Application.put_env(:brussels_wtf, :coverage_processor, InterleavedRecordedCoverage)
+
+    newer_bundle =
+      original.content
+      |> bundle_from_content("en")
+      |> put_in(["page", "title"], "Newer editorial revision")
+
+    # Interleave another real domain publication at the external processor seam.
+    # The first expected-revision check has passed, but final publication has not.
+    Process.put({InterleavedRecordedCoverage, :before_en}, fn ->
+      newer = PublicationLifecycle.typography_correction!(page.id, "en", newer_bundle, actor)
+      Process.put(:newer_revision_id, newer.id)
+    end)
+
+    notes = %{"fr" => "Correction", "nl" => "Correctie", "en" => "Correction"}
+
+    assert_raise ArgumentError, "stale publication revision", fn ->
+      Publication.recorded_factual_correction!(page.id, original.id, notes, actor)
+    end
+
+    assert Council.get_meeting_page!(page.id).current_revision_id ==
+             Process.get(:newer_revision_id)
+
+    assert Enum.map(Council.list_publication_revisions!(page.id), & &1.id) ==
+             [original.id, Process.get(:newer_revision_id)]
+
+    attempts =
+      Council.list_coverage_runs!(page.id)
+      |> Enum.filter(&(&1.processor_name == "interleaved-recorded-coverage"))
+
+    assert length(attempts) == 3
+    assert Enum.sort(Enum.map(attempts, & &1.locale)) == ~w(en fr nl)
+    assert Enum.all?(attempts, &(&1.status == :succeeded and &1.output != %{}))
+
+    assert conn |> get("/meetings/ixelles/268?lang=en") |> html_response(200) =~
+             "Newer editorial revision"
   end
 
   defp bundles_from_content(content) do

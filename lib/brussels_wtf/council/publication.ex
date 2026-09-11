@@ -56,68 +56,60 @@ defmodule BrusselsWtf.Council.Publication do
     validate_correction_notes!(notes)
     metadata = recorded_correction_metadata!()
 
-    case Ash.transact(
-           Council.MeetingPage,
-           fn ->
-             page = lock_page!(page_id)
-             meeting = load_meeting(page.council_meeting_id)
-             page = meeting.meeting_page
+    page = Council.get_meeting_page!(page_id)
+    meeting = load_meeting(page.council_meeting_id)
+    page = meeting.meeting_page
 
-             unless page.publication_status == :published and page.current_revision_id do
-               raise ArgumentError, "recorded correction requires a published revision"
-             end
+    unless page.publication_status == :published and page.current_revision_id do
+      raise ArgumentError, "recorded correction requires a published revision"
+    end
 
-             previous = Ash.load!(page.current_revision, [:canonical_run, :nl_run, :en_run])
-             {meeting, input} = PublicationScope.restore!(meeting, previous.canonical_run.input)
+    previous = Ash.load!(page.current_revision, [:canonical_run, :nl_run, :en_run])
+    {meeting, input} = PublicationScope.restore!(meeting, previous.canonical_run.input)
 
-             cond do
-               matching_correction?(
-                 previous,
-                 expected_revision_id,
-                 input,
-                 notes,
-                 metadata,
-                 actor_id
-               ) ->
-                 {previous, []}
+    cond do
+      matching_correction?(previous, expected_revision_id, input, notes, metadata, actor_id) ->
+        previous
 
-               previous.id != expected_revision_id ->
-                 raise ArgumentError, "stale publication revision"
+      previous.id != expected_revision_id ->
+        raise ArgumentError, "stale publication revision"
 
-               true ->
-                 correction = %{
-                   expected_revision_id: expected_revision_id,
-                   notes: notes,
-                   actor_id: actor_id
-                 }
+      true ->
+        correction = %{
+          expected_revision_id: expected_revision_id,
+          notes: notes,
+          actor_id: actor_id
+        }
 
-                 case generate_revision(meeting, input, metadata, :automatic, 1, correction) do
-                   {:ok, notifications} ->
-                     revision =
-                       page.id
-                       |> Council.get_meeting_page!()
-                       |> Ash.load!(:current_revision)
-                       |> Map.fetch!(:current_revision)
+        # Processor executions are immutable history, even if a later locale or
+        # publication gate fails. Only public variants/pointers/revisions belong
+        # inside the rollback boundary in publish_revision/6, which locks and
+        # rechecks this expected revision before it makes any visible change.
+        case generate_revision(meeting, input, metadata, :automatic, 1, correction) do
+          {:ok, revision, notifications} ->
+            Ash.Notifier.notify(notifications)
+            BrusselsWtf.Review.resolve_publication_case!(page_id, revision.publication_input_hash)
+            revision
 
-                     {revision, notifications}
+          {:error, {:publication_gate, failures}} ->
+            report_gate_failure(meeting, input, failures)
+            raise ArgumentError, "publication gate failed: #{inspect(failures)}"
 
-                   {:error, {:publication_gate, failures}} ->
-                     raise ArgumentError, "publication gate failed: #{inspect(failures)}"
+          {:error, {:coverage_processor_failure, failure}} ->
+            report_processor_failure(meeting, input, metadata, failure, 1)
 
-                   _failure ->
-                     raise ArgumentError, "recorded factual correction failed"
-                 end
-             end
-           end,
-           return_notifications?: true
-         ) do
-      {:ok, {revision, publication_notifications}, run_notifications} ->
-        Ash.Notifier.notify(run_notifications ++ publication_notifications)
-        BrusselsWtf.Review.resolve_publication_case!(page_id, revision.publication_input_hash)
-        revision
+            raise ArgumentError,
+                  "recorded factual correction failed: #{failure.classification} (#{failure.locale})"
 
-      {:error, _reason} ->
-        raise ArgumentError, "recorded factual correction failed"
+          {:error, :stale_publication_revision} ->
+            raise ArgumentError, "stale publication revision"
+
+          {:error, :stale_publication_input} ->
+            raise ArgumentError, "stale publication input"
+
+          _failure ->
+            raise ArgumentError, "recorded factual correction failed"
+        end
     end
   end
 
@@ -385,12 +377,15 @@ defmodule BrusselsWtf.Council.Publication do
                 return_notifications?: true
               )
 
-            stage_notifications ++
-              variant_notifications ++
-              item_state_notifications ++
-              excluded_item_notifications ++
-              revision_notifications ++
-              publish_notifications ++ event_notifications
+            notifications =
+              stage_notifications ++
+                variant_notifications ++
+                item_state_notifications ++
+                excluded_item_notifications ++
+                revision_notifications ++
+                publish_notifications ++ event_notifications
+
+            {revision, notifications}
 
           %{ready?: false, failures: failures} ->
             BrusselsWtf.Repo.rollback({:publication_gate, failures})
@@ -398,17 +393,17 @@ defmodule BrusselsWtf.Council.Publication do
       end)
 
     case transaction do
-      {:ok, notifications} ->
+      {:ok, {revision, notifications}} ->
         if correction do
-          {:ok, notifications}
+          {:ok, revision, notifications}
         else
           Ash.Notifier.notify(notifications)
           BrusselsWtf.Review.resolve_publication_case!(meeting.meeting_page.id, input_hash)
           :ok
         end
 
-      {:error, :stale_publication_input} ->
-        {:error, :stale_publication_input}
+      {:error, reason} when reason in [:stale_publication_input, :stale_publication_revision] ->
+        {:error, reason}
 
       {:error, {:publication_gate, failures}} ->
         {:error, {:publication_gate, failures}}

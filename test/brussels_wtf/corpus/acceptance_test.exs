@@ -6,6 +6,31 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
   alias BrusselsWtf.Corpus.{Import, Manifest}
   alias BrusselsWtf.Review.Actor
 
+  defmodule FailingRecordedNl do
+    @behaviour BrusselsWtf.Processors.Coverage
+
+    @impl true
+    defdelegate generate_fr(input), to: BrusselsWtf.Processors.RecordedCorpusCoverage
+
+    @impl true
+    def translate(_canonical, "nl"),
+      do: {:error, {:translation_unavailable, %{stage: :translation, retryable: false}}}
+
+    def translate(_canonical, "en"), do: {:error, :should_not_run}
+
+    @impl true
+    def maximum_cost(_operation, _input), do: {:ok, 0}
+
+    @impl true
+    def metadata do
+      BrusselsWtf.Processors.RecordedCorpusCoverage.metadata()
+      |> Map.merge(%{
+        processor_name: "recorded-forest-nl-failure",
+        config_hash: "sha256:recorded-forest-nl-failure"
+      })
+    end
+  end
+
   setup do
     previous_processors = Application.fetch_env!(:brussels_wtf, :processors)
     previous_coverage = Application.fetch_env!(:brussels_wtf, :coverage_processor)
@@ -623,8 +648,41 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
       assert_raise ArgumentError, ~r/publication gate failed/, correct
 
       assert Council.get_meeting_page!(page.id).current_revision_id == legacy_revision.id
-      assert Council.list_coverage_runs!(page.id) == runs_before
       assert length(Council.list_publication_revisions!(page.id)) == 2
+
+      runs_before =
+        if correction_kind == :recorded do
+          retained = Council.list_coverage_runs!(page.id)
+          attempts = retained -- runs_before
+          assert length(attempts) == 3
+          assert Enum.sort(Enum.map(attempts, & &1.locale)) == ~w(en fr nl)
+
+          assert Enum.all?(
+                   attempts,
+                   &(&1.status == :succeeded and &1.output != %{} and &1.duration_ms >= 0)
+                 )
+
+          failed_page = Council.get_meeting_page!(page.id)
+
+          assert Enum.any?(
+                   failed_page.last_gate_failures,
+                   &(&1["code"] == "blocking_review_case")
+                 )
+
+          gate_case =
+            BrusselsWtf.Review.list_review_cases!(%{kind: :publication}, actor: actor)
+            |> List.last()
+
+          assert Enum.any?(
+                   gate_case.diagnostics["failures"],
+                   &(&1["code"] == "blocking_review_case")
+                 )
+
+          retained
+        else
+          assert Council.list_coverage_runs!(page.id) == runs_before
+          runs_before
+        end
 
       for legacy <- legacy_decisions do
         item = Council.get_agenda_item!(legacy.agenda_item_id)
@@ -645,27 +703,101 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
         actor: actor
       )
 
-      if correction_kind == :recorded do
-        malformed =
-          update_in(
-            initial.content,
-            ["items", "forest-2026-03-24-15", "variants"],
-            &Map.delete(&1, "nl")
+      runs_before =
+        if correction_kind == :recorded do
+          malformed =
+            update_in(
+              initial.content,
+              ["items", "forest-2026-03-24-15", "variants"],
+              &Map.delete(&1, "nl")
+            )
+
+          BrusselsWtf.Processors.Stub.put_locales("2026-03-24", malformed)
+          Application.put_env(:brussels_wtf, :coverage_processor, BrusselsWtf.Processors.Stub)
+
+          assert_raise ArgumentError,
+                       ~r/publication gate failed.*missing_coverage_variant/,
+                       correct
+
+          assert Council.get_meeting_page!(page.id).current_revision_id == legacy_revision.id
+          retained = Council.list_coverage_runs!(page.id)
+          attempts = retained -- runs_before
+          assert length(attempts) == 2
+          assert Enum.sort(Enum.map(attempts, & &1.locale)) == ~w(fr nl)
+          assert Enum.all?(attempts, &(&1.status == :succeeded and &1.output != %{}))
+
+          assert Enum.any?(
+                   Council.get_meeting_page!(page.id).last_gate_failures,
+                   &(&1["code"] == "missing_coverage_variant" and &1["locale"] == "nl")
+                 )
+
+          Application.put_env(
+            :brussels_wtf,
+            :coverage_processor,
+            BrusselsWtf.Processors.RecordedCorpusCoverage
           )
 
-        BrusselsWtf.Processors.Stub.put_locales("2026-03-24", malformed)
-        Application.put_env(:brussels_wtf, :coverage_processor, BrusselsWtf.Processors.Stub)
+          retained
+        else
+          runs_before
+        end
 
-        assert_raise ArgumentError, ~r/publication gate failed.*missing_coverage_variant/, correct
-        assert Council.get_meeting_page!(page.id).current_revision_id == legacy_revision.id
-        assert Council.list_coverage_runs!(page.id) == runs_before
+      runs_before =
+        if correction_kind == :recorded do
+          variants_before = Council.list_locale_variants!(page.id)
+          Application.put_env(:brussels_wtf, :coverage_processor, FailingRecordedNl)
 
-        Application.put_env(
-          :brussels_wtf,
-          :coverage_processor,
-          BrusselsWtf.Processors.RecordedCorpusCoverage
-        )
-      end
+          assert_raise ArgumentError, ~r/translation_unavailable \(nl\)/, correct
+
+          retained = Council.list_coverage_runs!(page.id)
+          attempts = retained -- runs_before
+          assert length(attempts) == 2
+          canonical = Enum.find(attempts, &(&1.locale == "fr"))
+          failed = Enum.find(attempts, &(&1.locale == "nl"))
+          assert canonical.status == :succeeded
+          assert canonical.output != %{}
+          assert failed.status == :failed
+          assert failed.parent_run_id == canonical.id
+          assert failed.input["canonical_output_hash"] == canonical.output_hash
+
+          assert failed.failure_details == %{
+                   "classification" => "translation_unavailable",
+                   "stage" => "translation",
+                   "retryable" => false
+                 }
+
+          assert failed.duration_ms >= 0
+          assert failed.usage["network_calls"] == 0
+          assert failed.input_hash != ""
+          assert failed.output_hash != ""
+          assert Council.get_meeting_page!(page.id).current_revision_id == legacy_revision.id
+          assert Council.list_locale_variants!(page.id) == variants_before
+          assert length(Council.list_publication_revisions!(page.id)) == 2
+
+          for legacy <- legacy_decisions do
+            item = Council.get_agenda_item!(legacy.agenda_item_id)
+            assert item.published_decision_id == legacy.id
+            assert item.published_outcome == :approved
+          end
+
+          failure_case =
+            BrusselsWtf.Review.list_review_cases!(%{kind: :publication}, actor: actor)
+            |> Enum.find(&(&1.diagnostics["classification"] == "translation_unavailable"))
+
+          assert failure_case.diagnostics["coverage_run_id"] == failed.id
+          assert failure_case.diagnostics["locale"] == "nl"
+          assert failure_case.diagnostics["attempt"] == 1
+
+          Application.put_env(
+            :brussels_wtf,
+            :coverage_processor,
+            BrusselsWtf.Processors.RecordedCorpusCoverage
+          )
+
+          retained
+        else
+          runs_before
+        end
 
       BrusselsWtf.Clock.Controlled.set(~U[2026-09-11 10:00:00Z])
 

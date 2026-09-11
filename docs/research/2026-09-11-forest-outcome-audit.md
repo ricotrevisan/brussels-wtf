@@ -68,7 +68,7 @@ Acceptance coverage uses the real sealed Forest PDF and the public meeting route
 - Both operative acknowledgement and 32-vote approval text survive normalization.
 - Current FR/NL/EN badges are `other`; genuine item 20 approval remains approved.
 - Re-normalization alone leaves the previous public badge and revision unchanged.
-- A blocking evidence case rolls back the attempted factual correction, including variants/runs/revision/public pointers.
+- A blocking evidence case rolls back public variants, revision, and decision pointers. Recorded processor runs remain as immutable attempts, with typed publication-gate diagnostics.
 - A successful factual correction moves all locale badges together and preserves the previous `approved` interpretation and its immutable publication input.
 - No municipal HTTP call, source replacement, or paid generation is needed.
 
@@ -85,7 +85,9 @@ Deploy the fixed release first. Do not edit a completed corpus import batch or r
 
 **Provenance guard:** `PublicationLifecycle.factual_correction!/4` remains the human editorial action and adds `human-reviewed`. Do not use it for this agent-only correction. The new `Publication.recorded_factual_correction!/4` records the actual configured AI/translation methods. Its actor records authorization, not human review. It rejects disabled/paid modes, network-backed processors, human-edit methods, and supplied human-review metadata. It does not carry human-reviewed labels from an earlier revision into the changed content.
 
-The same expected-parent/input/notes/processor-config request returns its existing revision without new runs. A different parent, input, note, or processor config fails as stale. Both the outer correction operation and the shared final publication transaction lock/check the page. Failed gates or incomplete translations leave public variants, pointers, and history unchanged. This recorded-only operation rolls back its attempted runs on failure; ordinary automatic generation retains its existing behavior.
+The same expected-parent/input/notes/processor-config request returns its existing revision without new runs. A different parent, input, note, or processor config fails as stale. The operation checks the expected revision before generation. The shared final publication transaction locks and checks it again before changing public state.
+
+Every executed recorded processor call remains an immutable coverage run, including failed translations and successful calls whose output later fails a gate or becomes stale. Generation runs outside the public-state transaction. Failed gates keep typed page diagnostics and a deduplicated publication review case. A failed processor call retains its locale, classification, timing, hashes, canonical parent, and usage; this one-shot operator action records its terminal review case. Public variants, decision pointers, and publication revisions still roll back together on failure. A revision published by another operation during generation is never overwritten; already executed stale attempts remain auditable. Ordinary automatic generation uses the same pipeline and keeps its existing failure behavior.
 
 ### Release operator invocation
 
@@ -120,9 +122,15 @@ Both defect regressions failed before their fixes: the real-corpus outcome was `
 
 Final checks on the isolated worktree:
 
-- 47 focused tests passed across corpus acceptance/import/manifest, publication generation/input/lifecycle, public reader/operations, and Forest principal-seam tests.
+- 48 focused tests passed across corpus acceptance/import/manifest, publication generation/input/lifecycle, public reader/operations, and Forest principal-seam tests, including the standards-review follow-up.
 - The recorded Forest test executes the release operator script in read-only and apply modes against the isolated test database. It checks incomplete NL output, blocked evidence, stale/repeated requests, changed notes/config, disabled/paid modes, authorization, and truthful provenance.
 - `mix format --check-formatted` and `mix compile --warnings-as-errors` passed.
 - Environment: `ERL_FLAGS='+S 4:4'`, `MIX_TEST_PARTITION='_content_0911'`, `MIX_ENV=test`; build output isolated under `/tmp/brussels-incident-20260911/content-review-build`.
 
 The full repository suite and production release/application checks are not claimed by this child audit.
+
+### Standards-review follow-up
+
+The initial implementation incorrectly wrapped recorded execution in the same transaction as publication. Its failure path erased executed runs. This contradicted the existing every-execution rule in [publication operations](../operations/publication.md). The follow-up removes that outer rollback boundary, not the final public-state transaction. No source interpretation, manual-editor behavior, generation policy, or public provenance rule changes in this follow-up.
+
+A red acceptance assertion reproduced zero retained runs where three recorded calls had already executed. The regression now checks retained gate-failed attempts, malformed Dutch output, a failed Dutch processor call with its successful French parent and terminal review case, and a deterministic interleaving that publishes a newer editorial revision before the correction's final lock/check.
