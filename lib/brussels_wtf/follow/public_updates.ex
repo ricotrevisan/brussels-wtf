@@ -153,8 +153,20 @@ defmodule BrusselsWtf.Follow.PublicUpdates do
     _ -> false
   end
 
-  # No legal-entity fact kind has a current evidence/privacy public projection.
-  defp public_fact?(:legal_entity, _enterprise_number, _fact_id, _event), do: false
+  defp public_fact?(:legal_entity, enterprise_number, fact_id, event) do
+    case BrusselsWtf.Identity.get_public_company_profile(enterprise_number) do
+      {:ok, profile} ->
+        Enum.any?(profile.relationships, fn projection ->
+          projection.fact_id == fact_id and fact_event(projection.kind) == event
+        end)
+
+      _ ->
+        false
+    end
+  rescue
+    _ -> false
+  end
+
   defp public_fact?(_, _, _, _), do: false
 
   defp fact_event(:public_mandate), do: :verified_public_mandate
@@ -208,8 +220,23 @@ defmodule BrusselsWtf.Follow.PublicUpdates do
       _ -> []
     end
 
-    # Issue #49 remains fail-closed: legal-entity facts have no complete public projection.
-    def list(%Target{type: :legal_entity}, _, _), do: []
+    def list(%Target{type: :legal_entity, identifier: number} = target, locale, imported_at) do
+      case BrusselsWtf.Identity.get_public_company_profile(number) do
+        {:ok, profile} ->
+          profile.relationships
+          |> Enum.filter(fn rel ->
+            rel.kind == :management and match?(%DateTime{}, rel.verified_at) and
+              DateTime.after?(rel.verified_at, imported_at)
+          end)
+          |> Enum.map(&fact_update(&1, target, locale))
+
+        _ ->
+          []
+      end
+    rescue
+      _ -> []
+    end
+
     def list(_, _, _), do: []
 
     defp fact_update(fact, target, locale) do
@@ -225,11 +252,17 @@ defmodule BrusselsWtf.Follow.PublicUpdates do
         eventType: kind,
         publicEventId: fact.fact_id,
         factId: fact.fact_id,
-        url: "/people/#{target.identifier}?lang=#{locale}#fact-#{fact.fact_id}",
+        url: fact_url(target, locale, fact.fact_id),
         title: "#{fact.subject_name} — #{fact.object_name}",
         occurredAt: DateTime.to_iso8601(fact.verified_at)
       }
     end
+
+    defp fact_url(%Target{type: :person, identifier: id}, locale, fact_id),
+      do: "/people/#{id}?lang=#{locale}#fact-#{fact_id}"
+
+    defp fact_url(%Target{type: :legal_entity, identifier: id}, locale, fact_id),
+      do: "/companies/#{id}?lang=#{locale}#fact-#{fact_id}"
 
     defp page_updates(
            page,
