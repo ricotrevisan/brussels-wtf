@@ -92,11 +92,54 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
     evidence: :minutes_decision
   }
 
+  @gazette_index_url "https://www.ejustice.just.fgov.be/tsv/tsvf2.htm"
+
+  @gazette_config_inputs %{
+    "ruleset" => "belgian-official-gazette-management-v1",
+    "publisher" => "belgian-official-gazette",
+    "host" => "www.ejustice.just.fgov.be",
+    "index_url" => @gazette_index_url,
+    "roles" => ["administrateur", "bestuurder", "directeur", "gérant", "zaakvoerder"]
+  }
+
+  @gazette_config_hash "sha256:" <>
+                         BrusselsWtf.Digest.sha256(
+                           :erlang.term_to_binary(@gazette_config_inputs, [:deterministic])
+                         )
+
+  @gazette_management %{
+    id: :belgian_official_gazette_management_v1,
+    verifier_id: "belgian_official_gazette_management_v1",
+    processor_name: "belgian-official-gazette-management",
+    processor_version: "1.0.0",
+    config_hash: @gazette_config_hash,
+    ruleset_version: "belgian-official-gazette-management-v1",
+    artifact_kind: "relationship-claim-json",
+    kind: :management,
+    source: %{
+      label: "gazette annex",
+      source_authority: :belgian_official_gazette,
+      evidence_kind: :official_act,
+      evidence_location_regex: ~r/\Apublication [0-9]{4}-[0-9]{10}-(appointment|cessation)\z/,
+      record_role: :gazette_annex,
+      locator_role: :gazette_annex,
+      parent_index_url: @gazette_index_url,
+      parent_index_source: :literal,
+      origin_path_regex: ~r/\A\/tsv\/fr\/[0-9]{4}-[0-9]{10}-(appointment|cessation)\z/,
+      text_input: :native,
+      evidence: :gazette_act,
+      publisher_slug: "belgian-official-gazette",
+      publisher_name: "Belgian Official Gazette",
+      publisher_host: "www.ejustice.just.fgov.be"
+    }
+  }
+
   @ixelles_mandate Map.put(@ixelles_mandate, :source, @ixelles_minutes_source)
 
   @registry %{
     @ixelles_mandate.id => @ixelles_mandate,
-    @ixelles_declaration.id => @ixelles_declaration
+    @ixelles_declaration.id => @ixelles_declaration,
+    @gazette_management.id => @gazette_management
   }
 
   @doc false
@@ -105,10 +148,43 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
   @doc false
   def declaration_contract, do: @ixelles_declaration
 
+  @doc false
+  def gazette_contract, do: @gazette_management
+
   def available?, do: map_size(@registry) > 0
 
   def available_for?(kind) when is_atom(kind) do
     Enum.any?(@registry, fn {_id, verifier} -> verifier.kind == kind end)
+  end
+
+  def trusted_fact?(fact)
+      when fact.verification_status in [:verified, :superseded] and
+             fact.kind == :management do
+    result =
+      Repo.query!(
+        """
+        SELECT 1
+          FROM sourced_facts
+          JOIN sourced_fact_verification_events AS events
+            ON events.fact_id = sourced_facts.id
+           AND events.to_status = 'verified'
+           AND events.verifier_id = sourced_facts.verified_by
+           AND events.processing_run_id = sourced_facts.verification_processing_run_id
+           AND events.artifact_id = sourced_facts.verification_artifact_id
+           AND events.processor_version = sourced_facts.verification_processor_version
+           AND events.ruleset_version = sourced_facts.verification_ruleset_version
+           AND events.config_sha256 = sourced_facts.verification_config_sha256
+           AND events.generation = sourced_facts.verification_generation
+         WHERE sourced_facts.id = $1::text::uuid
+           AND trusted_gazette_management_fact(sourced_facts)
+         LIMIT 1
+        """,
+        [fact.id]
+      )
+
+    result.num_rows == 1
+  rescue
+    _ -> false
   end
 
   def trusted_fact?(fact)
@@ -151,6 +227,11 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
   @doc false
   def declaration_semantic_payload(fact, person, commune, version) do
     semantic_payload(fact, person, commune, version, @ixelles_declaration)
+  end
+
+  @doc false
+  def gazette_semantic_payload(fact, person, commune, version) do
+    semantic_payload(fact, person, commune, version, @gazette_management)
   end
 
   def verify!(fact_id, verifier_id, processing_run_id) do
@@ -266,6 +347,14 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
   end
 
   defp validate_candidate!(fact, person, commune, policy) do
+    if policy.evidence == :gazette_act do
+      validate_gazette_candidate!(fact, person)
+    else
+      validate_mandate_candidate!(fact, person, commune, policy)
+    end
+  end
+
+  defp validate_mandate_candidate!(fact, person, commune, policy) do
     unless fact.verification_status == :unreviewed do
       raise ArgumentError, "only an unreviewed sourced fact can be verified"
     end
@@ -288,7 +377,64 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
     end
   end
 
+  defp validate_gazette_candidate!(fact, person) do
+    entity = Identity.get_legal_entity!(fact.object_id)
+    corroborator = person.corroborating_facts["enterprise_number"]
+    allowlisted_role? = fact.object_label in @gazette_config_inputs["roles"]
+
+    unless fact.verification_status == :unreviewed do
+      raise ArgumentError, "only an unreviewed sourced fact can be verified"
+    end
+
+    unless fact.subject_type == :person and fact.subject_id == person.id and
+             person.status == :active and
+             person.resolution_basis == :corroborated_name and
+             is_binary(corroborator) and corroborator == entity.enterprise_number do
+      raise ArgumentError, "verification requires a corroborated person and matching CBE number"
+    end
+
+    unless fact.object_type == :legal_entity and fact.object_id == entity.id and
+             entity.status == :active and
+             fact.kind == :management and
+             fact.source_authority == :belgian_official_gazette and
+             fact.evidence_kind == :official_act and
+             allowlisted_role? and
+             is_binary(fact.evidence_location) and
+             Regex.match?(
+               @gazette_management.source.evidence_location_regex,
+               fact.evidence_location
+             ) and match?(%Date{}, fact.effective_from) do
+      raise ArgumentError, "unsupported Gazette management semantics"
+    end
+  end
+
+  defp validate_gazette_source!(fact, version, record, commune, policy) do
+    uri = URI.parse(record.origin_url)
+
+    valid_path? =
+      uri.scheme == "https" and uri.port == 443 and uri.host == policy.publisher_host and
+        Regex.match?(policy.origin_path_regex, uri.path || "") and
+        is_nil(uri.userinfo) and uri.query in [nil, ""] and uri.fragment in [nil, ""]
+
+    unless commune.slug == policy.publisher_slug and commune.name == policy.publisher_name and
+             commune.index_url == policy.parent_index_url and record.commune_id == commune.id and
+             record.role == policy.record_role and fact.source_version_id == version.id and
+             fact.authoritative_url == record.origin_url and valid_path? do
+      raise ArgumentError, "verification requires an official discovered Gazette annex source"
+    end
+
+    validate_public_url!(record.origin_url)
+  end
+
   defp validate_official_source!(fact, version, record, commune, policy) do
+    if policy.evidence == :gazette_act do
+      validate_gazette_source!(fact, version, record, commune, policy)
+    else
+      validate_ixelles_source!(fact, version, record, commune, policy)
+    end
+  end
+
+  defp validate_ixelles_source!(fact, version, record, commune, policy) do
     configured = BrusselsWtf.Communes.configuration!("ixelles")
     uri = URI.parse(record.origin_url)
 
@@ -568,6 +714,87 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
     direct_declaration_evidence?(text, fact, person)
   end
 
+  defp direct_evidence?(:gazette_act, text, fact, person, _commune, locator) do
+    direct_gazette_evidence?(text, fact, person, locator)
+  end
+
+  def direct_gazette_evidence?(text, fact, person, locator) when is_binary(text) do
+    entity = Identity.get_legal_entity!(fact.object_id)
+    corroborator = person.corroborating_facts["enterprise_number"]
+
+    valid_identity? =
+      person.resolution_basis == :corroborated_name and
+        is_binary(corroborator) and corroborator == entity.enterprise_number and
+        String.contains?(digits(fact.evidence_excerpt), entity.enterprise_number)
+
+    location_ok? = fact.evidence_location == "publication #{locator.meeting_identifier}"
+
+    bounded? =
+      bounded_gazette_construction?(
+        fact.evidence_excerpt,
+        person.legal_name,
+        fact.object_label,
+        entity.registered_name,
+        entity.enterprise_number,
+        fact.effective_from,
+        locator.meeting_identifier
+      )
+
+    valid_identity? and location_ok? and bounded? and
+      String.contains?(text, fact.evidence_excerpt) and
+      unique_active_name?(person)
+  end
+
+  defp bounded_gazette_construction?(
+         excerpt,
+         legal_name,
+         role,
+         company_name,
+         enterprise_number,
+         effective_from,
+         meeting_identifier
+       ) do
+    date = Regex.escape(Date.to_iso8601(effective_from))
+    name = Regex.escape(legal_name)
+    role = Regex.escape(role)
+    company = Regex.escape(company_name)
+    number = Regex.escape(enterprise_number)
+    act = meeting_identifier |> String.split("-") |> List.last()
+
+    verb =
+      case act do
+        "appointment" ->
+          "(?:est\\s+nomm(?:é|ée)|wordt\\s+benoemd|is\\s+appointed)"
+
+        "cessation" ->
+          "(?:n['’]est\\s+plus|is\\s+niet\\s+langer|is\\s+no\\s+longer)"
+
+        _ ->
+          nil
+      end
+
+    is_binary(verb) and
+      Regex.match?(
+        Regex.compile!(
+          "#{date}\\s+#{name}\\s+#{verb}\\s+#{role}\\s+de\\s+#{company}\\s+\\(#{number}\\)",
+          "isu"
+        ),
+        excerpt
+      )
+  end
+
+  defp digits(value) when is_binary(value), do: String.replace(value, ~r/[^0-9]/, "")
+
+  defp unique_active_name?(person) do
+    name_count =
+      Repo.query!(
+        "SELECT count(*) FROM people WHERE status = 'active' AND legal_name = $1",
+        [person.legal_name]
+      )
+
+    name_count.rows == [[1]]
+  end
+
   @doc false
   def direct_declaration_evidence?(text, fact, person) when is_binary(text) do
     version = Ingestion.get_source_version!(fact.source_version_id)
@@ -664,12 +891,7 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
         "legal_name" => person.legal_name,
         "resolution_basis" => Atom.to_string(person.resolution_basis)
       },
-      "object" => %{
-        "type" => "commune",
-        "id" => commune.id,
-        "slug" => commune.slug,
-        "name" => commune.name
-      },
+      "object" => semantic_object(fact, commune),
       "relationship" => %{
         "kind" => Atom.to_string(fact.kind),
         "effective_from" => Date.to_iso8601(fact.effective_from),
@@ -686,9 +908,34 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
       }
     }
 
-    if verifier.id == :ixelles_mandate_declaration_v2,
-      do: Map.put(payload, "mandate_declaration", fact.mandate_declaration),
+    payload =
+      if verifier.id == :ixelles_mandate_declaration_v2,
+        do: Map.put(payload, "mandate_declaration", fact.mandate_declaration),
+        else: payload
+
+    if verifier.id == :belgian_official_gazette_management_v1,
+      do: put_in(payload, ["relationship", "role"], fact.object_label),
       else: payload
+  end
+
+  defp semantic_object(%{object_type: :legal_entity} = fact, _commune) do
+    entity = Identity.get_legal_entity!(fact.object_id)
+
+    %{
+      "type" => "legal_entity",
+      "id" => entity.id,
+      "enterprise_number" => entity.enterprise_number,
+      "registered_name" => entity.registered_name
+    }
+  end
+
+  defp semantic_object(_fact, commune) do
+    %{
+      "type" => "commune",
+      "id" => commune.id,
+      "slug" => commune.slug,
+      "name" => commune.name
+    }
   end
 
   defp relationship_artifact!(run_id) do

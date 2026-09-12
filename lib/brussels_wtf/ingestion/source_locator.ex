@@ -93,6 +93,7 @@ defmodule BrusselsWtf.Ingestion.SourceLocator do
                     :item_listing,
                     :supporting_document,
                     :mandate_declaration,
+                    :gazette_annex,
                     :recording
                   ]
     end

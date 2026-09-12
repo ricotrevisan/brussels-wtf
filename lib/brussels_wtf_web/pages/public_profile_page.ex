@@ -306,6 +306,9 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
   defp status_label(_locale, :active), do: "Active"
   defp status_label(_locale, :inactive), do: "Inactive"
 
+  defp role_label(locale, %{role_labels: labels}) when is_map(labels),
+    do: Map.fetch!(labels, locale)
+
   defp role_label(locale, %{mandate_declaration: %{"role_labels" => labels}}),
     do: Map.fetch!(labels, locale)
 
@@ -360,6 +363,15 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
   defp source_label("fr", :municipal_decision), do: "Décision communale officielle"
   defp source_label("nl", :municipal_decision), do: "Officieel gemeentelijk besluit"
   defp source_label(_locale, :municipal_decision), do: "Official municipal decision"
+
+  defp source_label("fr", :belgian_official_gazette),
+    do: "Moniteur belge — annexes personnes morales"
+
+  defp source_label("nl", :belgian_official_gazette),
+    do: "Belgisch Staatsblad — bijlagen rechtspersonen"
+
+  defp source_label(_locale, :belgian_official_gazette),
+    do: "Belgian Official Gazette — legal-person annexes"
 
   defp suggestion_heading("fr", :ownership), do: "Suggérer une information sur la propriété"
   defp suggestion_heading("nl", :ownership), do: "Eigendomsinformatie voorstellen"

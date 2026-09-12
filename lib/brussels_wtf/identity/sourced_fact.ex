@@ -84,7 +84,7 @@ defmodule BrusselsWtf.Identity.SourcedFact do
 
     attribute :source_authority, :atom do
       public? true
-      constraints one_of: [:municipal_decision, :municipal_declaration]
+      constraints one_of: [:municipal_decision, :municipal_declaration, :belgian_official_gazette]
     end
 
     attribute :evidence_kind, :atom, allow_nil?: false, public?: true

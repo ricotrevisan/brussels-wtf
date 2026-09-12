@@ -70,6 +70,7 @@ defmodule BrusselsWtf.Ingestion.SourceRecord do
                     :item_listing,
                     :supporting_document,
                     :mandate_declaration,
+                    :gazette_annex,
                     :recording
                   ]
     end
