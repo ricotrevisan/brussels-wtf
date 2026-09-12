@@ -217,6 +217,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
       |> assign(:proposals, BrusselsWtfWeb.PublicEvidence.proposals(assigns.item))
       |> assign(:source_proposals, BrusselsWtfWeb.PublicEvidence.source_proposals(assigns.item))
       |> assign(:evidences, BrusselsWtfWeb.PublicEvidence.for_item(assigns.item))
+      |> assign(:fact_paths, BrusselsWtf.Identity.PublicFactPaths.for_item(assigns.item))
 
     ~H"""
     <article id={@item.stable_anchor} class="scroll-mt-4 py-7" tabindex="-1">
@@ -328,6 +329,35 @@ defmodule BrusselsWtfWeb.MeetingPage do
             {text(@locale, :source)}
           </a>
         </p>
+      </section>
+      <section
+        :if={@fact_paths != []}
+        class="mt-5"
+        aria-labelledby={"fact-paths-" <> @item.stable_anchor}
+      >
+        <h3 id={"fact-paths-" <> @item.stable_anchor} class="font-semibold">
+          {text(@locale, :fact_paths)}
+        </h3>
+        <ol class="mt-3 space-y-4">
+          <li :for={path <- @fact_paths} class="border-l-2 border-base-300 pl-4">
+            <ol class="space-y-3">
+              <li :for={edge <- path.edges}>
+                <p class="font-semibold">{Map.fetch!(edge.labels, @locale)}</p>
+                <p class="mt-1">{edge.subject_name} — {edge.object_name}</p>
+                <p :if={edge.effective_from} class="mt-1 text-sm text-base-content/70">
+                  <time datetime={Date.to_iso8601(edge.effective_from)}>
+                    {Date.to_iso8601(edge.effective_from)}
+                  </time>
+                </p>
+                <p class="mt-1 text-sm">
+                  <a href={edge.citation_url} rel="external" class="underline underline-offset-2">
+                    {text(@locale, :source)}
+                  </a>
+                </p>
+              </li>
+            </ol>
+          </li>
+        </ol>
       </section>
       <BrusselsWtfWeb.PublicationComponents.correction_form locale={@locale} item_id={@item.id} />
     </article>
@@ -499,6 +529,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
   defp en_text do
     %{
       skip: "Skip to content",
+      fact_paths: "Fact paths",
       today: "Scheduled today",
       past_explanation:
         "The meeting date has passed. Its final outcome is not yet documented here.",
@@ -543,6 +574,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
   defp fr_text do
     %{
       skip: "Aller au contenu",
+      fact_paths: "Chemins de faits",
       today: "Prévu aujourd’hui",
       past_explanation:
         "La date de la réunion est passée. Son résultat final n’est pas encore documenté ici.",
@@ -589,6 +621,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
   defp nl_text do
     %{
       skip: "Naar inhoud",
+      fact_paths: "Feitenpaden",
       today: "Vandaag gepland",
       past_explanation:
         "De vergaderdatum is verstreken. De definitieve uitkomst is hier nog niet gedocumenteerd.",
