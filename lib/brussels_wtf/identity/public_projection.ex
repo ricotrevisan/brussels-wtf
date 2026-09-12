@@ -28,7 +28,11 @@ defmodule BrusselsWtf.Identity.PublicProjection do
 
     SourcedFact
     |> Ash.Query.filter(
-      verification_status == :superseded and verified_by == "ixelles_mandate_declaration_v2"
+      verification_status == :superseded and
+        verified_by in [
+          "ixelles_mandate_declaration_v2",
+          "belgian_official_gazette_management_v1"
+        ]
     )
     |> maybe_filter(:subject_type, filter)
     |> maybe_filter(:subject_id, filter)
@@ -46,6 +50,43 @@ defmodule BrusselsWtf.Identity.PublicProjection do
     )
     |> Ash.read!(authorize?: false, domain: Identity)
     |> Enum.any?(&historically_safe_person_fact?(&1, person_id))
+  end
+
+  defp project(%{verified_by: "belgian_official_gazette_management_v1"} = fact) do
+    fact = Ash.load!(fact, source_version: [source_record: [:commune]])
+    version = fact.source_version
+    record = version.source_record
+    commune = record.commune
+
+    with true <- safe_gazette_fact?(fact, record, commune),
+         {:ok, person} <- Identity.get_person(fact.subject_id),
+         {:ok, entity} <- Identity.get_legal_entity(fact.object_id),
+         true <- person.status == :active and entity.status == :active do
+      [
+        %PublicRelationship{
+          fact_id: fact.id,
+          subject_type: :person,
+          subject_id: person.id,
+          subject_name: person.legal_name,
+          object_type: :legal_entity,
+          object_id: entity.id,
+          object_name: entity.registered_name,
+          kind: :management,
+          effective_from: fact.effective_from,
+          effective_to: fact.effective_to,
+          source_authority: fact.source_authority,
+          authoritative_url: record.origin_url,
+          evidence_location: fact.evidence_location,
+          source_retrieved_at: version.first_retrieved_at,
+          verified_at: fact.verified_at,
+          mandate_declaration: nil,
+          state: fact_state(fact),
+          role_labels: gazette_role_labels(fact.object_label)
+        }
+      ]
+    else
+      _ -> []
+    end
   end
 
   defp project(fact) do
@@ -120,13 +161,56 @@ defmodule BrusselsWtf.Identity.PublicProjection do
            Ash.load!(fact, source_version: [source_record: [:commune]]),
          %{source_record: record} when not is_nil(record) <- version,
          %{commune: commune} when not is_nil(commune) <- record do
-      fact.subject_id == person_id and safe_verified_fact?(fact, record, commune) and
-        safe_declaration?(fact, Identity.get_person!(person_id), version)
+      fact.subject_id == person_id and
+        (safe_gazette_fact?(fact, record, commune) or
+           (safe_verified_fact?(fact, record, commune) and
+              safe_declaration?(fact, Identity.get_person!(person_id), version)))
     else
       _ -> false
     end
   rescue
     Ash.Error.Invalid -> false
+  end
+
+  defp gazette_role_labels("administrateur"),
+    do: %{"en" => "director of", "fr" => "administrateur de", "nl" => "bestuurder van"}
+
+  defp gazette_role_labels("directeur"),
+    do: %{"en" => "director of", "fr" => "directeur de", "nl" => "directeur van"}
+
+  defp gazette_role_labels("bestuurder"),
+    do: %{"en" => "director of", "fr" => "administrateur de", "nl" => "bestuurder van"}
+
+  defp gazette_role_labels("gérant"),
+    do: %{"en" => "manager of", "fr" => "gérant de", "nl" => "zaakvoerder van"}
+
+  defp gazette_role_labels("zaakvoerder"),
+    do: %{"en" => "manager of", "fr" => "gérant de", "nl" => "zaakvoerder van"}
+
+  defp gazette_role_labels(_role), do: nil
+
+  defp safe_gazette_fact?(fact, record, commune) do
+    policy = BrusselsWtf.Identity.TrustedVerifier.gazette_contract().source
+    uri = URI.parse(record.origin_url)
+
+    trusted_current_or_prior_fact?(fact) and fact.subject_type == :person and
+      fact.object_type == :legal_entity and
+      fact.kind == :management and
+      fact.source_authority == :belgian_official_gazette and
+      fact.evidence_kind == :official_act and
+      is_map(gazette_role_labels(fact.object_label)) and
+      is_binary(fact.evidence_location) and
+      Regex.match?(policy.evidence_location_regex, fact.evidence_location) and
+      match?(%Date{}, fact.effective_from) and
+      match?(%DateTime{}, fact.verified_at) and
+      not is_nil(fact.verification_processing_run_id) and
+      not is_nil(fact.verification_artifact_id) and
+      record.origin_url == fact.authoritative_url and
+      commune.slug == policy.publisher_slug and
+      commune.name == policy.publisher_name and
+      commune.index_url == policy.parent_index_url and
+      record.role == :gazette_annex and
+      uri.scheme == "https" and uri.host == policy.publisher_host
   end
 
   defp safe_verified_fact?(fact, record, commune) do

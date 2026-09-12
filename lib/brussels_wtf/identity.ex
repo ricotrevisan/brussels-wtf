@@ -217,6 +217,8 @@ defmodule BrusselsWtf.Identity do
 
       BrusselsWtf.Identity.IxellesMandateDeclarationProcessor.enqueue_if_eligible!(fact)
 
+      BrusselsWtf.Identity.GazetteManagementProcessor.enqueue_if_eligible!(fact)
+
       {fact, notifications}
     end)
   end
@@ -325,7 +327,8 @@ defmodule BrusselsWtf.Identity do
     object = list_public_relationships!(%{object_type: type, object_id: id})
 
     history =
-      BrusselsWtf.Identity.PublicProjection.history!(%{subject_type: type, subject_id: id})
+      BrusselsWtf.Identity.PublicProjection.history!(%{subject_type: type, subject_id: id}) ++
+        BrusselsWtf.Identity.PublicProjection.history!(%{object_type: type, object_id: id})
 
     (subject ++ object ++ history)
     |> Enum.uniq_by(& &1.fact_id)
@@ -509,7 +512,14 @@ defmodule BrusselsWtf.Identity do
     from = optional_date_value(attrs, :effective_from)
     to = optional_date_value(attrs, :effective_to)
 
-    if kind in [:public_mandate, :office_holding, "public_mandate", "office_holding"] and
+    if kind in [
+         :public_mandate,
+         :office_holding,
+         :management,
+         "public_mandate",
+         "office_holding",
+         "management"
+       ] and
          is_nil(from) do
       raise ArgumentError, "a public mandate or office-holding fact requires its applicable date"
     end

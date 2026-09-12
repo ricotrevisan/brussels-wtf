@@ -1,6 +1,8 @@
 defmodule BrusselsWtf.Ingestion.Commune do
   @moduledoc """
-  One of the four MVP municipal authorities.
+  A source-record owner: one of the four MVP municipal authorities, or the
+  isolated Belgian Official Gazette publisher used only as lineage for annex
+  fixtures (not a commune in the public product).
   """
 
   use Ash.Resource,
