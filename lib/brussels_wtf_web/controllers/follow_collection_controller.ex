@@ -74,6 +74,16 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
       {:ok, citizen} ->
         {:ok, updates} = Follow.registered_feed(citizen)
         retention_notice = retention_notice(citizen, locale)
+        follows = Follow.citizen_follows(citizen)
+
+        controls =
+          Enum.map_join(follows, "", fn follow ->
+            label = "#{copy(locale, {:type, follow.target_type})} — #{follow.target_identifier}"
+            ~s(<li>#{escape(label)} #{BrusselsWtfWeb.FollowControl.html(follow, locale)}</li>)
+          end)
+
+        following =
+          ~s(<section><h2>#{BrusselsWtfWeb.FollowControl.text(locale, :following)}</h2><p>#{BrusselsWtfWeb.FollowControl.text(locale, :history)}</p><ul data-registered-follows>#{controls}</ul></section>)
 
         items =
           Enum.map_join(updates, "", fn update ->
@@ -89,8 +99,8 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
           end)
 
         html(
-          conn,
-          ~s(<!doctype html><html lang="#{locale}"><head><title>#{copy(locale, :feed)}</title></head><body><main><h1>#{copy(locale, :feed)}</h1><p>#{copy(locale, :synced)}</p>#{retention_notice}<ul data-registered-feed>#{items}</ul></main></body></html>)
+          private_headers(conn),
+          ~s(<!doctype html><html lang="#{locale}"><head><title>#{copy(locale, :feed)}</title></head><body><main><h1>#{copy(locale, :feed)}</h1><p>#{copy(locale, :synced)}</p>#{retention_notice}#{following}<ul data-registered-feed>#{items}</ul></main></body></html>)
         )
 
       _ ->
@@ -109,6 +119,16 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
       redirect(conn, to: "/feed?lang=#{conn.assigns.locale}")
     else
       _ -> send_resp(conn, 422, "")
+    end
+  end
+
+  def unfollow(conn, %{"id" => id}) do
+    with {:ok, citizen} <-
+           BrusselsWtf.Accounts.authenticate_session(get_session(conn, :citizen_session_id)),
+         :ok <- Follow.unfollow(citizen, id) do
+      conn |> private_headers() |> redirect(to: "/feed?lang=#{conn.assigns.locale}")
+    else
+      _ -> conn |> private_headers() |> send_resp(404, "")
     end
   end
 

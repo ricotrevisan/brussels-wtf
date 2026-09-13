@@ -39,7 +39,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
         needle == "" or String.contains?(String.downcase(entry.search_text), needle)
       end)
 
-    assign(conn,
+    assign(BrusselsWtfWeb.FollowControl.load(conn),
       page_title: "brussels.wtf",
       html_lang: locale,
       resource_path: "/",
@@ -94,12 +94,15 @@ defmodule BrusselsWtfWeb.TimelinePage do
             :for={{slug, _name} <- @communes}
             id={"follow-commune-#{slug}"}
             method="post"
-            action="/citizen/feed/follows"
+            action={BrusselsWtfWeb.FollowControl.action(BrusselsWtfWeb.FollowControl.find(@citizen_follows, "commune", slug)) <> "?lang=" <> @locale}
           >
             <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
             <input type="hidden" name="target_type" value="commune" />
             <input type="hidden" name="target_identifier" value={slug} />
           </form>
+          <p :if={map_size(@citizen_follows) > 0} class="mt-2 text-sm">
+            {BrusselsWtfWeb.FollowControl.text(@locale, :history)}
+          </p>
           <form method="get" action="/" data-reader-communes class="mt-5 space-y-4">
             <input type="hidden" name="lang" value={@locale} />
             <input type="hidden" name="communes_submitted" value="1" />
@@ -160,7 +163,17 @@ defmodule BrusselsWtfWeb.TimelinePage do
                     form={"follow-commune-#{slug}"}
                     class="btn btn-ghost btn-xs"
                     data-follow-control
-                  >{text(@locale, :follow)}</button>
+                    data-unfollow-control={
+                      !!BrusselsWtfWeb.FollowControl.find(@citizen_follows, "commune", slug)
+                    }
+                  >{if BrusselsWtfWeb.FollowControl.find(@citizen_follows, "commune", slug),
+                    do: BrusselsWtfWeb.FollowControl.text(@locale, :unfollow),
+                    else: text(@locale, :follow)}</button>
+                  <span
+                    :if={BrusselsWtfWeb.FollowControl.find(@citizen_follows, "commune", slug)}
+                    class="text-sm"
+                    data-followed-state
+                  >{BrusselsWtfWeb.FollowControl.text(@locale, :following)}</span>
                 </div>
               </fieldset>
             </details>

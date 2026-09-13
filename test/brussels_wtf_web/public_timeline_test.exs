@@ -524,7 +524,7 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
       document = LazyHTML.from_document(html)
 
       assert Enum.count(document[~s(button[data-follow-control])]) == 4
-      assert Enum.count(document[~s(form[action="/citizen/feed/follows"])]) == 4
+      assert Enum.count(document[~s(form[action="/citizen/feed/follows?lang=#{locale}"])]) == 4
       assert html =~ label
 
       for slug <- ["ixelles", "uccle", "forest", "city-of-brussels"] do

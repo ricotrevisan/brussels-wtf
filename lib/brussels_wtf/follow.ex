@@ -69,6 +69,36 @@ defmodule BrusselsWtf.Follow do
     end
   end
 
+  def citizen_follows(citizen) do
+    actor = citizen_actor(citizen)
+
+    CitizenFollow
+    |> Ash.Query.for_read(:mine, %{}, actor: actor)
+    |> Ash.read!(actor: actor, authorize?: true, domain: __MODULE__)
+  end
+
+  @doc "Remove only the actor's follow; retain delivered history until ordinary expiry."
+  def unfollow(citizen, id) do
+    actor = citizen_actor(citizen)
+
+    result =
+      CitizenFollow
+      |> Ash.Query.for_read(:mine, %{}, actor: actor)
+      |> Ash.Query.filter(id == ^id)
+      |> Ash.bulk_destroy(:remove, %{},
+        actor: actor,
+        authorize?: true,
+        domain: __MODULE__,
+        strategy: [:atomic],
+        return_errors?: true
+      )
+
+    case result do
+      %Ash.BulkResult{status: :success} -> :ok
+      result -> {:error, result.errors}
+    end
+  end
+
   @doc "Synchronize every persisted follow from the authoritative public projections."
   def synchronize_registered_feeds do
     actor = %{principal: :system}
@@ -85,8 +115,50 @@ defmodule BrusselsWtf.Follow do
   end
 
   defp synchronize_follow(follow, actor) do
+    # DELETE takes the same row lock. Recheck after locking: a queued worker may
+    # have read this follow before its owner removed it. Keep delivery and the
+    # lock in one transaction so no delivery can commit after unfollow returns.
+    Ash.transact([CitizenFollow, FeedUpdate], fn ->
+      result =
+        Ecto.Adapters.SQL.query!(
+          BrusselsWtf.Repo,
+          "SELECT id FROM citizen_follows WHERE id = $1 FOR UPDATE",
+          [Ecto.UUID.dump!(follow.id)]
+        )
+
+      case result.rows do
+        [] ->
+          0
+
+        [_] ->
+          case synchronize_locked_follow(follow, actor) do
+            {:ok, count} -> count
+            {:error, error} -> BrusselsWtf.Repo.rollback(error)
+          end
+      end
+    end)
+  end
+
+  defp synchronize_locked_follow(follow, actor) do
     target = %Target{type: follow.target_type, identifier: follow.target_identifier}
     locale = citizen_locale(follow.citizen_id)
+
+    # Revalidate retained history even after following again, but deliver only
+    # events after the current follow began (never backfill the unfollowed gap).
+    history =
+      FeedUpdate
+      |> Ash.Query.for_read(:for_follow, %{
+        citizen_id: follow.citizen_id,
+        target_type: follow.target_type,
+        target_identifier: follow.target_identifier
+      })
+      |> Ash.read!(actor: actor, authorize?: true, domain: __MODULE__)
+
+    boundary =
+      Enum.reduce(history, follow.inserted_at, fn delivery, earliest ->
+        candidate = DateTime.add(delivery.occurred_at, -1, :microsecond)
+        if DateTime.before?(candidate, earliest), do: candidate, else: earliest
+      end)
 
     updates =
       BrusselsWtf.Follow.PublicUpdates.list(
@@ -94,14 +166,16 @@ defmodule BrusselsWtf.Follow do
           %{
             "type" => Atom.to_string(target.type),
             "id" => target.identifier,
-            "importedAt" => DateTime.to_iso8601(follow.inserted_at)
+            "importedAt" => DateTime.to_iso8601(boundary)
           }
         ],
         locale
       )
 
     with :ok <- remove_stale_deliveries(follow, updates, actor) do
-      Enum.reduce_while(updates, {:ok, 0}, fn update, {:ok, count} ->
+      updates
+      |> Enum.filter(&DateTime.after?(parse_occurred_at!(&1.occurredAt), follow.inserted_at))
+      |> Enum.reduce_while({:ok, 0}, fn update, {:ok, count} ->
         attrs = %{
           citizen_id: follow.citizen_id,
           target_type: follow.target_type,

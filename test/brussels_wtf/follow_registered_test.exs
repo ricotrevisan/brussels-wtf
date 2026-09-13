@@ -74,6 +74,81 @@ defmodule BrusselsWtf.FollowRegisteredTest do
     assert {:error, _} = Follow.mark_read(alice, original.id)
   end
 
+  test "individual removal is actor-scoped, idempotent and retains read history" do
+    {alice, _} = citizen("alice-unfollow@example.test")
+    {bob, _} = citizen("bob-unfollow@example.test")
+    actor = %{id: alice.id, principal: :citizen}
+    other = %{id: bob.id, principal: :citizen}
+
+    create = fn owner, target ->
+      CitizenFollow
+      |> Ash.Changeset.for_create(:follow, %{
+        citizen_id: owner.id,
+        target_type: :commune,
+        target_identifier: target
+      })
+      |> Ash.create!(
+        actor: %{id: owner.id, principal: :citizen},
+        authorize?: true,
+        domain: Follow
+      )
+    end
+
+    removed = create.(alice, "ixelles")
+    kept = create.(alice, "uccle")
+    other_follow = create.(bob, "ixelles")
+
+    history =
+      FeedUpdate
+      |> Ash.Changeset.for_create(:deliver_once, %{
+        citizen_id: alice.id,
+        target_type: :commune,
+        target_identifier: "ixelles",
+        event_identity: Ash.UUID.generate(),
+        event_kind: :published_meeting_page,
+        public_url: "/meetings/ixelles/42?lang=en#revision-one",
+        occurred_at: DateTime.utc_now()
+      })
+      |> Ash.create!(actor: %{principal: :system}, authorize?: true, domain: Follow)
+
+    {:ok, history} = Follow.mark_read(alice, history.id)
+
+    assert {:ok, nil} =
+             CitizenFollow
+             |> Ash.Query.filter(id == ^removed.id)
+             |> Ash.read_one(actor: other, authorize?: true, domain: Follow)
+
+    assert {:error, _} =
+             Ash.destroy(removed, action: :remove, actor: other, authorize?: true, domain: Follow)
+
+    assert {:error, _} =
+             Ash.destroy(removed, action: :remove, actor: nil, authorize?: true, domain: Follow)
+
+    assert {:error, _} =
+             Ash.destroy(%{removed | citizen_id: bob.id},
+               action: :remove,
+               actor: other,
+               authorize?: true,
+               domain: Follow
+             )
+
+    assert :ok = Follow.unfollow(bob, removed.id)
+    assert Enum.any?(Follow.citizen_follows(alice), &(&1.id == removed.id))
+    assert :ok = Follow.unfollow(alice, removed.id)
+    assert :ok = Follow.unfollow(alice, removed.id)
+    assert Enum.map(Follow.citizen_follows(alice), & &1.id) == [kept.id]
+    assert Enum.map(Follow.citizen_follows(bob), & &1.id) == [other_follow.id]
+    assert {:ok, [retained]} = Follow.registered_feed(alice)
+    assert retained.id == history.id and retained.read_at == history.read_at
+    assert {:error, _} = Follow.mark_read(bob, history.id)
+    expiry = DateTime.shift(history.inserted_at, month: 12)
+    Follow.purge_notifications(expiry)
+    assert {:ok, []} = Follow.registered_feed(alice)
+
+    assert {:ok, _} =
+             Ash.get(CitizenFollow, kept.id, actor: actor, authorize?: true, domain: Follow)
+  end
+
   test "cleanup uses the twelve month maximum and warning does not change sign-in" do
     {citizen, _} = citizen("retention@example.test")
 

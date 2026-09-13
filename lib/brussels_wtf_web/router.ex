@@ -38,6 +38,7 @@ defmodule BrusselsWtfWeb.Router do
     delete "/citizen/session", CitizenSessionController, :delete
     get "/citizen/account", CitizenSessionController, :account
     delete "/citizen/account", CitizenSessionController, :delete_account
+    post "/citizen/feed/follows/:id/remove", FollowCollectionController, :unfollow
     post "/citizen/feed/follows", FollowCollectionController, :follow
     post "/citizen/feed/:id/read", FollowCollectionController, :mark_read
     post "/citizen/collections/:id/visibility", FollowCollectionController, :registered_visibility
