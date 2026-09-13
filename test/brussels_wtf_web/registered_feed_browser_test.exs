@@ -5,6 +5,7 @@ defmodule BrusselsWtfWeb.RegisteredFeedBrowserTest do
   alias BrusselsWtf.Council.PublicationLifecycle
   alias BrusselsWtf.Review.Actor
   alias BrusselsWtf.Test.PublicProfileFixture
+  alias BrusselsWtf.Test.GazetteManagementFixture, as: Gazette
 
   @moduletag :browser
   @port 4104
@@ -180,6 +181,29 @@ defmodule BrusselsWtfWeb.RegisteredFeedBrowserTest do
     assert later_fact.verification_status == :verified
     assert DateTime.after?(later_fact.verified_at, person_follow.inserted_at)
 
+    # Use the exact isolated Gazette contract from the public update slice, after follow.
+    company_follow = Enum.find(follows, &(&1.target_type == :legal_entity))
+    BrusselsWtf.Clock.Controlled.set(DateTime.add(company_follow.inserted_at, 4, :second))
+    publisher = Gazette.publisher!()
+    manager = Gazette.person!()
+    appointment = Gazette.source!(publisher, :appointment)
+
+    Gazette.extract!(
+      appointment.source_version,
+      File.read!("test/support/fixtures/gazette/management-appointment/appointment.extract.txt")
+    )
+
+    management_fact = Gazette.record_appointment!(manager, company, appointment.source_version)
+
+    assert :ok =
+             BrusselsWtf.Workers.VerifyGazetteManagement.perform(%Oban.Job{
+               args: %{"fact_id" => management_fact.id}
+             })
+
+    management_fact = Identity.get_sourced_fact!(management_fact.id)
+    assert management_fact.verification_status == :verified
+    assert DateTime.after?(management_fact.verified_at, company_follow.inserted_at)
+
     # Persist an unverified candidate. It must never reach the public projection or feed.
     Identity.record_sourced_fact!(%{
       subject_type: :person,
@@ -205,14 +229,21 @@ defmodule BrusselsWtfWeb.RegisteredFeedBrowserTest do
              Enum.sort([
                :correction,
                :verified_public_mandate,
+               :verified_management_role,
                :publication_revision_new_decisions
              ])
 
     expected = %{
       dossier: "/meetings/ixelles/268?lang=fr##{item.stable_anchor}",
       person: "/people/#{person.id}?lang=fr#fact-#{later_fact.id}",
-      commune: "/meetings/ixelles/268?lang=fr#revision-#{revision.id}"
+      commune: "/meetings/ixelles/268?lang=fr#revision-#{revision.id}",
+      company: "/companies/#{company.enterprise_number}?lang=fr#fact-#{management_fact.id}"
     }
+
+    [company_update] = Enum.filter(updates, &(&1.target_type == :legal_entity))
+    assert company_update.event_identity == management_fact.id
+    assert company_update.public_url == String.replace(expected.company, "lang=fr", "lang=en")
+    assert {:ok, 0} = Follow.synchronize_registered_feeds()
 
     run_browser!("verify", mail, expected)
 

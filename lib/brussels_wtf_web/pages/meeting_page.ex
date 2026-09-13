@@ -165,7 +165,12 @@ defmodule BrusselsWtfWeb.MeetingPage do
       <details :if={not @withdrawn and @revision_history != []} class="mt-5 text-sm">
         <summary class="cursor-pointer underline">{text(@locale, :history)}</summary>
         <p class="mt-2">{text(@locale, :historical_warning)}</p>
-        <section :for={revision <- @revision_history} class="mt-4 border-t border-base-300 pt-3">
+        <section
+          :for={revision <- @revision_history}
+          id={"revision-#{revision.id}"}
+          tabindex="-1"
+          class="mt-4 scroll-mt-4 border-t border-base-300 pt-3"
+        >
           <h2 class="font-semibold">{format_datetime(revision.published_at)}</h2>
           <ul class="mt-2 space-y-2">
             <li :for={{_key, item} <- Enum.sort(revision.content["items"] || %{})}>
