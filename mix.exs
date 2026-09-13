@@ -104,7 +104,7 @@ defmodule BrusselsWtf.MixProject do
       "test.browser": [
         "assets.setup",
         "assets.build",
-        "test --include browser test/brussels_wtf_web/personal_feed_browser_test.exs test/brussels_wtf_web/citizen_auth_browser_test.exs test/brussels_wtf_web/registered_feed_browser_test.exs test/brussels_wtf_web/inactivity_retention_browser_test.exs test/brussels_wtf_web/private_collection_sharing_browser_test.exs"
+        "test --include browser test/brussels_wtf_web/personal_feed_browser_test.exs test/brussels_wtf_web/citizen_auth_browser_test.exs test/brussels_wtf_web/registered_feed_browser_test.exs test/brussels_wtf_web/inactivity_retention_browser_test.exs test/brussels_wtf_web/private_collection_sharing_browser_test.exs test/brussels_wtf/identity_mandate_declaration_test.exs"
       ],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
       "assets.build": ["compile", "tailwind brussels_wtf", "esbuild brussels_wtf"],

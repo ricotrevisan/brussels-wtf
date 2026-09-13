@@ -2,6 +2,15 @@
 
 _Status: decision spike for [Validate Brussels mandate-publication access and reuse](https://github.com/RicoTrevisan/brussels-wtf/issues/43), not an ingestion decision. Checked 2026-09-03. First-slice implementation remains **blocked** for automated retrieval and republication pending written terms from the municipality; the authoritative document itself is confirmed and publicly linkable._
 
+
+**Subsequent authorization:** The operator's written Ixelles authorization was
+recorded in [the implementation issue](https://github.com/ricotrevisan/brussels-wtf/issues/46#issuecomment-5554481702)
+for automated retrieval, private checksummed evidence, and minimal published
+name/body/role/period with attribution. The permission blockers below describe
+the original September 3 spike, not the current accepted scope. Excluded fiscal,
+remuneration, private identity, address, and signature fields remain excluded.
+See [the current acceptance record](../reviews/2026-09-13-mandate-acceptance.md).
+
 ## Result
 
 The authoritative Brussels public-mandate source for the first municipal slice is the **Commune of Ixelles** publishing the **`Liste des mandats` 2024** (`mandats-2024.pdf`) on its official domain `www.ixelles.be` (French) / `www.elsene.be` (Dutch). The responsible authority, authoritative domain, document, reporting year, and the exact source vocabulary (`mandat`, `fonction`, `fonction dérivée`, and the six remuneration income categories) are all confirmed from first-party sources.

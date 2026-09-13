@@ -8,6 +8,7 @@ defmodule BrusselsWtf.Identity.PublicProjection do
   alias BrusselsWtf.Identity.SourcedFact
 
   @allowed_filters [:subject_type, :subject_id, :object_type, :object_id]
+  @declaration_verifiers ~w(ixelles_mandate_declaration_v2 ixelles_mandate_declaration_v3)
   @verifier "ixelles_municipal_minutes_public_mandate_v1"
 
   def list!(filter) when is_map(filter) do
@@ -31,6 +32,7 @@ defmodule BrusselsWtf.Identity.PublicProjection do
       verification_status == :superseded and
         verified_by in [
           "ixelles_mandate_declaration_v2",
+          "ixelles_mandate_declaration_v3",
           "belgian_official_gazette_management_v1"
         ]
     )
@@ -125,7 +127,8 @@ defmodule BrusselsWtf.Identity.PublicProjection do
     end
   end
 
-  defp safe_declaration?(%{verified_by: "ixelles_mandate_declaration_v2"} = fact, person, version) do
+  defp safe_declaration?(%{verified_by: verifier} = fact, person, version)
+       when verifier in @declaration_verifiers do
     with {:ok, document} <- Identity.MandateDeclaration.contract(version.sha256) do
       Identity.MandateDeclaration.matches?(fact, person, document) and
         Identity.MandateDeclaration.unique_person?(person)
@@ -237,10 +240,11 @@ defmodule BrusselsWtf.Identity.PublicProjection do
   defp safe_evidence_kind?(%{verified_by: @verifier} = fact),
     do: fact.source_authority == :municipal_decision and fact.evidence_kind == :official_decision
 
-  defp safe_evidence_kind?(%{verified_by: "ixelles_mandate_declaration_v2"} = fact),
-    do:
-      fact.source_authority == :municipal_declaration and
-        fact.evidence_kind == :official_declaration
+  defp safe_evidence_kind?(%{verified_by: verifier} = fact)
+       when verifier in @declaration_verifiers,
+       do:
+         fact.source_authority == :municipal_declaration and
+           fact.evidence_kind == :official_declaration
 
   defp safe_evidence_kind?(_), do: false
 
@@ -248,7 +252,7 @@ defmodule BrusselsWtf.Identity.PublicProjection do
     Regex.match?(~r/\Adecision [0-9]+(?:[.-][0-9A-Za-z]+)*\z/, fact.evidence_location)
   end
 
-  defp safe_location?(%{verified_by: "ixelles_mandate_declaration_v2"} = fact) do
+  defp safe_location?(%{verified_by: verifier} = fact) when verifier in @declaration_verifiers do
     Regex.match?(~r/\Adeclaration [0-9]{4} page [1-9][0-9]*\z/, fact.evidence_location)
   end
 
@@ -256,7 +260,7 @@ defmodule BrusselsWtf.Identity.PublicProjection do
 
   defp safe_source_record?(@verifier, record), do: record.role == :minutes
 
-  defp safe_source_record?("ixelles_mandate_declaration_v2", record) do
+  defp safe_source_record?(verifier, record) when verifier in @declaration_verifiers do
     record.role == :mandate_declaration and
       record.origin_url != nil and
       Regex.match?(

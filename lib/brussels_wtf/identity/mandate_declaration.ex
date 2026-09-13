@@ -124,10 +124,14 @@ defmodule BrusselsWtf.Identity.MandateDeclaration do
         "SELECT legal_name, explicit_identifier FROM people WHERE status = 'active'"
       ).rows
 
-    person.status == :active and person.resolution_basis == :explicit_identifier and
-      is_binary(person.explicit_identifier) and person.explicit_identifier != "" and
-      Enum.count(rows, fn [name, _] -> normalize(name) == normalize(person.legal_name) end) == 1 and
-      Enum.count(rows, fn [_, id] -> id == person.explicit_identifier end) == 1
+    identity_valid? =
+      person.resolution_basis == :corroborated_name or
+        (person.resolution_basis == :explicit_identifier and
+           is_binary(person.explicit_identifier) and person.explicit_identifier != "" and
+           Enum.count(rows, fn [_, id] -> id == person.explicit_identifier end) == 1)
+
+    person.status == :active and identity_valid? and
+      Enum.count(rows, fn [name, _] -> normalize(name) == normalize(person.legal_name) end) == 1
   end
 
   def safe_text(sha256, text) do

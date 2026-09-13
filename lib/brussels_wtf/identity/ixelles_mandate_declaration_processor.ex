@@ -21,7 +21,7 @@ defmodule BrusselsWtf.Identity.IxellesMandateDeclarationProcessor do
 
   require Ash.Query
 
-  @verifier :ixelles_mandate_declaration_v2
+  @verifier :ixelles_mandate_declaration_v3
 
   @doc "Acquire the single approved report through its official index and the normal immutable retrieval pipeline."
   def acquire(commune_id, poll_run_id) do
@@ -41,21 +41,22 @@ defmodule BrusselsWtf.Identity.IxellesMandateDeclarationProcessor do
         discovered_at: now
       })
 
-    with :ok <- Ingestion.Pipeline.retrieve(index.id, poll_run_id, "mandate-index:#{poll_run_id}") do
-      record =
-        Ingestion.SourceRecord
-        |> Ash.Query.filter(commune_id == ^commune.id and origin_url == ^index.url)
+    check_key = "mandate-index:#{poll_run_id}"
+
+    with :ok <- Ingestion.Pipeline.retrieve(index.id, poll_run_id, check_key) do
+      observation =
+        Ingestion.RetrievalObservation
+        |> Ash.Query.filter(source_locator_id == ^index.id and check_key == ^check_key)
         |> Ash.read_one!(authorize?: false)
-        |> Ash.load!(:versions)
 
-      version = Enum.max_by(record.versions, & &1.first_retrieved_at, DateTime)
-      {:ok, html} = BrusselsWtf.Archive.get(version.object_key)
+      version = Ingestion.get_source_version!(observation.source_version_id)
 
-      links =
-        Regex.scan(~r/href\s*=\s*["']([^"']+)["']/i, html)
-        |> Enum.map(fn [_, href] -> URI.merge(index.url, href) |> URI.to_string() end)
-
-      if MandateDeclaration.origin() in links do
+      with true <- observation.final_url == index.url,
+           true <- observation.sha256 == version.sha256,
+           {:ok, html} <- BrusselsWtf.Archive.get(version.object_key),
+           true <- BrusselsWtf.Digest.sha256(html) == version.sha256,
+           true <- byte_size(html) == version.byte_size,
+           true <- approved_link?(html, index.url) do
         locator =
           Ingestion.upsert_locator!(%{
             commune_id: commune.id,
@@ -70,9 +71,23 @@ defmodule BrusselsWtf.Identity.IxellesMandateDeclarationProcessor do
 
         Ingestion.Pipeline.retrieve(locator.id, poll_run_id, "mandate-document:#{poll_run_id}")
       else
-        open_document_review(version, :missing_official_declaration_link)
+        _ -> open_document_review(version, :missing_or_invalid_official_declaration_index)
       end
     end
+  end
+
+  defp approved_link?(html, index_url) do
+    html
+    |> LazyHTML.from_document()
+    |> LazyHTML.query("a[href]")
+    |> LazyHTML.attribute("href")
+    |> Enum.any?(fn href ->
+      try do
+        URI.merge(index_url, href) |> URI.to_string() == MandateDeclaration.origin()
+      rescue
+        ArgumentError -> false
+      end
+    end)
   end
 
   @doc """
@@ -123,8 +138,6 @@ defmodule BrusselsWtf.Identity.IxellesMandateDeclarationProcessor do
          {:ok, person} <- Identity.get_person(fact.subject_id),
          true <-
            fact.subject_type == :person and person.status == :active and
-             person.resolution_basis == :explicit_identifier and
-             is_binary(person.explicit_identifier) and person.explicit_identifier != "" and
              fact.object_type == :commune and fact.object_id == commune.id and
              fact.kind == :public_mandate and fact.source_authority == :municipal_declaration and
              fact.evidence_kind == :official_declaration and match?(%Date{}, fact.effective_from) and
@@ -207,7 +220,10 @@ defmodule BrusselsWtf.Identity.IxellesMandateDeclarationProcessor do
           end
 
         [] ->
-          open_document_review(version, :unresolved_person)
+          case Identity.MandateIdentity.resolve(document, version.source_record.commune_id) do
+            {:ok, person} -> record_fact!(version, person, document)
+            {:error, reason} -> open_document_review(version, reason)
+          end
 
         _ ->
           open_document_review(version, :ambiguous_person)
@@ -270,16 +286,7 @@ defmodule BrusselsWtf.Identity.IxellesMandateDeclarationProcessor do
   end
 
   defp corroborated_person?(person_id, commune_id) do
-    Repo.query!(
-      """
-      SELECT 1 FROM sourced_facts
-      WHERE subject_id = $1::text::uuid AND object_id = $2::text::uuid
-        AND verified_by = 'ixelles_municipal_minutes_public_mandate_v1'
-        AND trusted_ixelles_public_mandate_fact(sourced_facts)
-      LIMIT 1
-      """,
-      [person_id, commune_id]
-    ).num_rows == 1
+    Identity.MandateIdentity.corroborated?(Identity.get_person!(person_id), commune_id)
   end
 
   defp declaration_origin_url?(url) when is_binary(url) do
@@ -374,7 +381,7 @@ defmodule BrusselsWtf.Identity.IxellesMandateDeclarationProcessor do
 
     with {:ok, archived} <- BrusselsWtf.Archive.store(claim_bytes, :derived) do
       generation_key =
-        "relationship:ixelles-mandate-declaration-v2:#{fact.id}:#{text_artifact.output_sha256}"
+        "relationship:ixelles-mandate-declaration-v3:#{fact.id}:#{text_artifact.output_sha256}"
 
       run =
         Ingestion.record_processing_run!(%{
