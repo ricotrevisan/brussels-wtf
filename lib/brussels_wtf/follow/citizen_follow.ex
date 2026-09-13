@@ -38,6 +38,7 @@ defmodule BrusselsWtf.Follow.CitizenFollow do
 
     destroy :remove do
       primary? true
+      filter expr(citizen_id == ^actor(:id))
     end
 
     read :for_account_deletion do

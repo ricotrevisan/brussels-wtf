@@ -246,6 +246,10 @@ defmodule BrusselsWtfWeb.RegisteredFeedBrowserTest do
     assert {:ok, 0} = Follow.synchronize_registered_feeds()
 
     run_browser!("verify", mail, expected)
+    run_browser!("unfollow", mail, targets)
+    assert [] = Ash.read!(Follow.CitizenFollow, authorize?: false, domain: Follow)
+    assert {:ok, 0} = Follow.synchronize_registered_feeds()
+    assert length(Ash.read!(Follow.FeedUpdate, authorize?: false, domain: Follow)) == 4
 
     assert Enum.all?(
              Ash.read!(Follow.FeedUpdate, authorize?: false, domain: Follow),

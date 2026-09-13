@@ -63,12 +63,19 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
     <main id="content" class="mx-auto max-w-4xl px-4 py-8 text-base-content" tabindex="-1">
       <p class="text-sm text-base-content/70">{profile_label(@locale, @profile)}</p>
       <h1 class="mt-2 text-3xl font-semibold tracking-tight">{profile_name(@profile)}</h1>
-      <form method="post" action="/citizen/feed/follows" class="mt-4">
-        <input type="hidden" name="_csrf_token" value={@csrf_token} />
-        <input type="hidden" name="target_type" value={follow_type(@profile)} />
-        <input type="hidden" name="target_identifier" value={follow_identifier(@profile)} />
-        <button type="submit" class="btn btn-sm" data-follow-control>{text(@locale, :follow)}</button>
-      </form>
+      <BrusselsWtfWeb.FollowControl.control
+        follow={
+          BrusselsWtfWeb.FollowControl.find(
+            @citizen_follows,
+            follow_type(@profile),
+            follow_identifier(@profile)
+          )
+        }
+        locale={@locale}
+        type={follow_type(@profile)}
+        identifier={follow_identifier(@profile)}
+        label={text(@locale, :follow)}
+      />
 
       <dl :if={match?(%PublicProfile.Company{}, @profile)} class="mt-6 grid gap-3 sm:grid-cols-2">
         <div>
@@ -263,7 +270,7 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
   defp assign_profile(conn, profile, locale, resource_path) do
     enabled = Suggestions.enabled?()
 
-    assign(conn,
+    assign(BrusselsWtfWeb.FollowControl.load(conn),
       page_title: profile_name(profile),
       html_lang: locale,
       resource_path: resource_path,

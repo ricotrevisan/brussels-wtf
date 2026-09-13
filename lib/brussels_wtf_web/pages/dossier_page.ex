@@ -20,7 +20,7 @@ defmodule BrusselsWtfWeb.DossierPage do
           |> Enum.flat_map(&entry(&1, locale))
           |> Enum.sort_by(& &1.date, {:asc, Date})
 
-        assign(conn,
+        assign(BrusselsWtfWeb.FollowControl.load(conn),
           page_title: text(locale, :title) <> ": " <> dossier_title(dossier, locale),
           html_lang: locale,
           resource_path: "/dossiers/#{slug}",
@@ -67,12 +67,13 @@ defmodule BrusselsWtfWeb.DossierPage do
       <h1 class="mt-2 text-3xl font-semibold">
         {text(@locale, :title)}: {dossier_title(@dossier, @locale)}
       </h1>
-      <form method="post" action="/citizen/feed/follows" class="mt-4">
-        <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
-        <input type="hidden" name="target_type" value="dossier" />
-        <input type="hidden" name="target_identifier" value={@dossier.slug} />
-        <button type="submit" class="btn btn-sm" data-follow-control>{text(@locale, :follow)}</button>
-      </form>
+      <BrusselsWtfWeb.FollowControl.control
+        follow={BrusselsWtfWeb.FollowControl.find(@citizen_follows, "dossier", @dossier.slug)}
+        locale={@locale}
+        type="dossier"
+        identifier={@dossier.slug}
+        label={text(@locale, :follow)}
+      />
 
       <ol class="mt-8 border-l border-base-300 pl-6">
         <li :for={entry <- @entries} class="relative pb-8">
