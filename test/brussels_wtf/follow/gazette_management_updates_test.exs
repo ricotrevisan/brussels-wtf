@@ -3,7 +3,7 @@ defmodule BrusselsWtf.Follow.GazetteManagementUpdatesTest do
   use Oban.Testing, repo: BrusselsWtf.Repo
 
   alias BrusselsWtf.Follow.PublicUpdates
-  alias BrusselsWtf.Identity
+  alias BrusselsWtf.{Accounts, Follow, Identity}
   alias BrusselsWtf.Test.GazetteManagementFixture, as: Gazette
 
   setup do
@@ -114,6 +114,85 @@ defmodule BrusselsWtf.Follow.GazetteManagementUpdatesTest do
 
     refute Identity.get_sourced_fact!(unverified.id).verification_status == :verified
     refute Enum.any?(company_updates(company, imported_at), &(&1.factId == unverified.id))
+  end
+
+  test "registered company delivery uses the public fact identity, excludes private work and revalidates",
+       %{
+         company: company,
+         person: person,
+         appointment: appointment
+       } do
+    Process.register(self(), BrusselsWtf.Accounts.Mailbox)
+    {alice, _} = citizen("gazette-alice@example.test")
+    {bob, _} = citizen("gazette-bob@example.test")
+    assert {:ok, follow} = Follow.follow(alice, :legal_entity, company.enterprise_number)
+    BrusselsWtf.Clock.Controlled.set(DateTime.add(follow.inserted_at, 1, :second))
+
+    # Retrieval and extraction alone have no public fact to deliver.
+    Gazette.extract!(
+      appointment.source_version,
+      File.read!("test/support/fixtures/gazette/management-appointment/appointment.extract.txt")
+    )
+
+    assert {:ok, []} = Follow.registered_feed(alice)
+
+    candidate = Gazette.record_appointment!(person, company, appointment.source_version)
+    assert {:ok, []} = Follow.registered_feed(alice)
+
+    assert :ok =
+             perform_job(BrusselsWtf.Workers.VerifyGazetteManagement, %{fact_id: candidate.id})
+
+    fact = Identity.get_sourced_fact!(candidate.id)
+    assert fact.verification_status == :verified
+
+    [public] = company_updates(company, follow.inserted_at)
+    assert {:ok, 1} = Follow.synchronize_registered_feeds()
+    assert {:ok, [delivered]} = Follow.registered_feed(alice)
+    assert delivered.event_identity == public.publicEventId
+    assert public.publicEventId == fact.id
+    assert delivered.public_url == public.url
+    assert delivered.event_kind == public.eventType
+    assert delivered.occurred_at == fact.verified_at
+    assert {:ok, []} = Follow.registered_feed(bob)
+    assert {:error, _} = Follow.mark_read(bob, delivered.id)
+    assert {:ok, read} = Follow.mark_read(alice, delivered.id)
+
+    # Re-recording/extracting/verifying identical evidence cannot reset read state.
+    assert publish_appointment!(person, company, appointment).id == fact.id
+    assert {:ok, 0} = Follow.synchronize_registered_feeds()
+    assert {:ok, [same]} = Follow.registered_feed(alice)
+    assert same.id == delivered.id
+    assert same.read_at == read.read_at
+
+    private = Gazette.person!(%{legal_name: "PRIVATE REVIEW CANDIDATE"})
+    rejected = Gazette.record_appointment!(private, company, appointment.source_version)
+    assert :ok = perform_job(BrusselsWtf.Workers.VerifyGazetteManagement, %{fact_id: rejected.id})
+    assert Identity.get_sourced_fact!(rejected.id).verification_status == :unreviewed
+    assert {:ok, 0} = Follow.synchronize_registered_feeds()
+    assert {:ok, [^same]} = Follow.registered_feed(alice)
+    rendered = inspect(Map.take(same, [:event_identity, :event_kind, :public_url, :occurred_at]))
+
+    for excluded <- ["PRIVATE", "email", "object_key", "review", "@", "0123456749-appointment"] do
+      refute rendered =~ excluded
+    end
+
+    # A retired subject fails the public gate; previously delivered rows disappear too.
+    person |> Ash.Changeset.for_update(:retire, %{}) |> Ash.update!()
+    assert company_updates(company, follow.inserted_at) == []
+    assert {:ok, []} = Follow.registered_feed(alice)
+    assert Ash.read!(Follow.FeedUpdate, authorize?: false, domain: Follow) == []
+    assert {:error, _} = Follow.mark_read(alice, delivered.id)
+  end
+
+  defp citizen(email) do
+    Accounts.request_link(email)
+    assert_receive {:magic_link, ^email, link, _}
+
+    token =
+      link |> URI.parse() |> Map.fetch!(:fragment) |> URI.decode_query() |> Map.fetch!("token")
+
+    {:ok, citizen, session} = Accounts.consume(token)
+    {citizen, session}
   end
 
   defp publish_appointment!(person, company, appointment) do
