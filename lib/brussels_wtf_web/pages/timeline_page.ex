@@ -47,6 +47,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       communes:
         Enum.map(@communes, fn {slug, name} -> {slug, commune_name(locale, slug, name)} end),
       selected_communes: selected,
+      mandates: public_mandates(selected, needle),
       q: q,
       show: show,
       language_path:
@@ -55,6 +56,17 @@ defmodule BrusselsWtfWeb.TimelinePage do
       awaiting: matching |> Enum.filter(&(&1.group == :awaiting)) |> newest_first(),
       previously: matching |> Enum.filter(&(&1.group == :decided)) |> newest_first()
     )
+  end
+
+  defp public_mandates(selected, needle) do
+    names = Enum.map(selected, &BrusselsWtf.Communes.configuration!(&1).name)
+
+    BrusselsWtf.Identity.list_public_relationships!(%{object_type: :commune})
+    |> Enum.filter(fn fact ->
+      fact.mandate_declaration != nil and fact.object_name in names and
+        (needle == "" or String.contains?(String.downcase(fact.subject_name), needle))
+    end)
+    |> Enum.sort_by(&{&1.subject_name, &1.fact_id})
   end
 
   defp prefer_real_corpus(pages) do
@@ -179,6 +191,39 @@ defmodule BrusselsWtfWeb.TimelinePage do
             </details>
             <button type="submit" class="btn btn-sm w-full">{text(@locale, :apply)}</button>
           </form>
+          <section
+            :if={@mandates != []}
+            class="mt-8 border-t border-base-300 pt-5"
+            aria-labelledby="verified-mandates"
+          >
+            <h2 id="verified-mandates" class="font-semibold">{text(@locale, :verified_mandates)}</h2>
+            <ul class="mt-3 space-y-3 text-sm">
+              <li :for={mandate <- @mandates}>
+                <a
+                  class="underline underline-offset-2"
+                  href={"/people/#{mandate.subject_id}?lang=#{@locale}#fact-#{mandate.fact_id}"}
+                >
+                  {mandate.subject_name}
+                </a>
+                <p class="mt-1">{mandate.mandate_declaration["role_labels"][@locale]}</p>
+                <p class="mt-1 text-base-content/70">
+                  {Date.to_iso8601(mandate.effective_from)} – {Date.to_iso8601(mandate.effective_to)}
+                </p>
+                <a
+                  class="mt-1 inline-block underline underline-offset-2"
+                  rel="external"
+                  href={
+                    BrusselsWtfWeb.PublicEvidence.citation_href(%{
+                      citation_url: mandate.authoritative_url,
+                      location: mandate.evidence_location
+                    })
+                  }
+                >
+                  {text(@locale, :source)}
+                </a>
+              </li>
+            </ul>
+          </section>
         </aside>
 
         <div class="min-w-0">
@@ -387,6 +432,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       decision_copy_unavailable: "Decision copy is unavailable in English.",
       synthetic_reference: "Demonstration reference — not evidence of council activity",
       dossiers: "Dossiers",
+      verified_mandates: "Verified declared mandates",
       title: "Council coverage",
       intro:
         "Upcoming proposals, unresolved outcomes, and documented decisions from four Brussels communes.",
@@ -417,6 +463,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
 
   defp fr_text do
     %{
+      verified_mandates: "Mandats déclarés vérifiés",
       skip: "Aller au contenu",
       unavailable_title: "Contenu indisponible en français",
       item_unavailable: "Contenu du point indisponible en français",
@@ -456,6 +503,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
 
   defp nl_text do
     %{
+      verified_mandates: "Geverifieerde aangegeven mandaten",
       skip: "Naar inhoud",
       unavailable_title: "Inhoud niet beschikbaar in het Nederlands",
       item_unavailable: "Inhoud van het agendapunt niet beschikbaar in het Nederlands",

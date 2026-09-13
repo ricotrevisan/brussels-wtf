@@ -32,10 +32,10 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
   @declaration_parent_index_url "https://www.ixelles.be/site/773-Rapports-annuels-Remunerations-et-avantages?langue=fr"
 
   @declaration_config_inputs %{
-    "ruleset" => "ixelles-mandate-declaration-v2",
+    "ruleset" => "ixelles-mandate-declaration-v3",
     "sections" => ["mandats"],
     "signature_policy" => "inspected-immutable-version",
-    "identity_policy" => "complete-name-and-independent-minutes",
+    "identity_policy" => "complete-name-and-pinned-independent-minutes",
     "origin_path" => "/site/fr/download/transparence/mandats-YYYY.pdf",
     "parent_index_url" => @declaration_parent_index_url,
     "forbidden_excerpt_markers" => [
@@ -54,13 +54,13 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
                              )
 
   @ixelles_declaration %{
-    id: :ixelles_mandate_declaration_v2,
-    verifier_id: "ixelles_mandate_declaration_v2",
+    id: :ixelles_mandate_declaration_v3,
+    verifier_id: "ixelles_mandate_declaration_v3",
     commune_slug: "ixelles",
     processor_name: "ixelles-mandate-declarations",
     processor_version: "1.0.0",
     config_hash: @declaration_config_hash,
-    ruleset_version: "ixelles-mandate-declaration-v2",
+    ruleset_version: "ixelles-mandate-declaration-v3",
     artifact_kind: "relationship-claim-json",
     kind: :public_mandate,
     source: %{
@@ -361,9 +361,7 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
 
     unless fact.subject_type == :person and fact.subject_id == person.id and
              person.status == :active and
-             person.resolution_basis == :explicit_identifier and
-             is_binary(person.explicit_identifier) and
-             person.explicit_identifier != "" do
+             resolved_mandate_identity?(person, commune, policy) do
       raise ArgumentError, "verification requires a resolved active person identity"
     end
 
@@ -375,6 +373,16 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
              match?(%Date{}, fact.effective_from) do
       raise ArgumentError, "unsupported Ixelles public-mandate semantics"
     end
+  end
+
+  defp resolved_mandate_identity?(person, commune, %{evidence: :declaration_row}) do
+    Identity.MandateIdentity.corroborated?(person, commune.id) and
+      Identity.MandateIdentity.verify_bytes(person, commune.id) == :ok
+  end
+
+  defp resolved_mandate_identity?(person, _commune, _policy) do
+    person.resolution_basis == :explicit_identifier and
+      is_binary(person.explicit_identifier) and person.explicit_identifier != ""
   end
 
   defp validate_gazette_candidate!(fact, person) do
@@ -580,7 +588,7 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
     }
 
     {expected_inputs, expected_output} =
-      if verifier.id == :ixelles_mandate_declaration_v2 do
+      if verifier.id == :ixelles_mandate_declaration_v3 do
         {:ok, document} = MandateDeclaration.contract(version.sha256)
         declaration = MandateDeclaration.metadata(document)
 
@@ -909,8 +917,17 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
     }
 
     payload =
-      if verifier.id == :ixelles_mandate_declaration_v2,
-        do: Map.put(payload, "mandate_declaration", fact.mandate_declaration),
+      if verifier.id == :ixelles_mandate_declaration_v3,
+        do:
+          payload
+          |> Map.put("mandate_declaration", fact.mandate_declaration)
+          |> Map.put(
+            "identity_evidence",
+            Map.take(
+              person.corroborating_facts,
+              ~w(municipality source_version_id source_sha256 source_url location role observed_on)
+            )
+          ),
         else: payload
 
     if verifier.id == :belgian_official_gazette_management_v1,
@@ -972,7 +989,7 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
           fact.object_type,
           fact.object_id,
           fact.kind,
-          verifier.verifier_id,
+          verifier_lane(verifier),
           declaration_key(fact)
         ],
         ":"
@@ -995,7 +1012,7 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
            AND object_type = $3
            AND object_id = $4::text::uuid
            AND kind = $5
-           AND verified_by = $6
+           AND verified_by = ANY($6::text[])
            AND COALESCE(mandate_declaration ->> 'key', '') = $7
            AND verification_status = 'verified'
          FOR UPDATE
@@ -1006,7 +1023,7 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
           Atom.to_string(fact.object_type),
           fact.object_id,
           Atom.to_string(fact.kind),
-          verifier.verifier_id,
+          verifier_family(verifier),
           declaration_key(fact)
         ]
       )
@@ -1032,6 +1049,14 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
         raise ArgumentError, "multiple current verified facts violate the semantic invariant"
     end
   end
+
+  defp verifier_lane(%{id: :ixelles_mandate_declaration_v3}), do: "ixelles_mandate_declaration_v2"
+  defp verifier_lane(verifier), do: verifier.verifier_id
+
+  defp verifier_family(%{id: :ixelles_mandate_declaration_v3}),
+    do: ["ixelles_mandate_declaration_v2", "ixelles_mandate_declaration_v3"]
+
+  defp verifier_family(verifier), do: [verifier.verifier_id]
 
   defp validate_supersession!(%{supersedes_id: nil}, nil), do: :ok
 

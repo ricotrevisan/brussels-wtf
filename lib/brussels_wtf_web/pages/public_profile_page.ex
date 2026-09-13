@@ -162,7 +162,12 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
               <p class="mt-2 text-sm">
                 <a
                   :if={relationship.authoritative_url}
-                  href={relationship.authoritative_url}
+                  href={
+                    BrusselsWtfWeb.PublicEvidence.citation_href(%{
+                      citation_url: relationship.authoritative_url,
+                      location: relationship.evidence_location
+                    })
+                  }
                   rel="external"
                   class="underline underline-offset-2"
                 >{relationship_source(@locale, relationship)}</a>

@@ -177,43 +177,287 @@ defmodule BrusselsWtf.IdentityMandateDeclarationTest do
            })
   end
 
-  test "a corrected approved version supersedes explicitly and preserves dated evidence", ctx do
+  for previous_verifier <- [:v2, :v3] do
+    test "a corrected approved version supersedes #{previous_verifier} and preserves dated evidence",
+         ctx do
+      corroborate!(ctx)
+      first = acquire!(ctx.commune)
+      [original] = facts(first)
+
+      if unquote(previous_verifier) == :v2 do
+        original = BrusselsWtf.Test.LegacyMandateFixture.verify!(original)
+        assert original.verified_by == "ixelles_mandate_declaration_v2"
+        assert Identity.TrustedVerifier.trusted_fact?(original)
+      else
+        verify!(original)
+      end
+
+      BrusselsWtf.Clock.Controlled.set(~U[2026-09-08 12:00:00Z])
+
+      changed = %{
+        document()
+        | row: "Premier Echevin (Décembre 2024)",
+          role: "Premier Echevin",
+          revision: 2,
+          role_labels: %{
+            "fr" => "Premier Echevin",
+            "nl" => "Eerste schepen",
+            "en" => "First alderman"
+          }
+      }
+
+      second = acquire!(ctx.commune, document: changed, text: page_text(changed))
+      [correction] = facts(second)
+      assert correction.supersedes_id == original.id
+      verify!(correction)
+      assert Identity.get_sourced_fact!(original.id).verification_status == :superseded
+      assert Identity.get_sourced_fact!(correction.id).verification_status == :verified
+      assert first.sha256 != second.sha256
+      html = build_conn() |> get("/people/#{ctx.person.id}?lang=en") |> html_response(200)
+      assert html =~ "Superseded by a corrected declaration"
+      assert html =~ "Premier Echevin et Officier"
+      assert html =~ "fact-#{original.id}"
+      assert html =~ "fact-#{correction.id}"
+
+      assert :ok =
+               IxellesMandateDeclarationProcessor.enqueue_waiting_for_source_version!(first.id)
+
+      assert length(facts(first)) == 1
+      assert length(facts(second)) == 1
+      updates = feed_updates(ctx.person.id, "en")
+      assert Enum.any?(updates, &(&1.factId == correction.id))
+      refute Enum.any?(updates, &(&1.factId == original.id))
+    end
+  end
+
+  @tag :browser
+  test "a reader discovers the dated declaration and its page citation in every language", ctx do
     corroborate!(ctx)
-    first = acquire!(ctx.commune)
-    [original] = facts(first)
-    verify!(original)
-    BrusselsWtf.Clock.Controlled.set(~U[2026-09-08 12:00:00Z])
+    version = acquire!(ctx.commune)
+    [fact] = facts(version)
+    verify!(fact)
+    browser_check!(ctx.person.id, fact.id, "Alex Example", 2)
+  end
 
-    changed = %{
-      document()
-      | row: "Premier Echevin (Décembre 2024)",
-        role: "Premier Echevin",
-        revision: 2,
-        role_labels: %{
-          "fr" => "Premier Echevin",
-          "nl" => "Eerste schepen",
-          "en" => "First alderman"
-        }
-    }
+  @tag :external
+  test "the actual inspected source resolves the declarant without a fabricated identifier",
+       ctx do
+    dir = System.fetch_env!("MANDATE_EVIDENCE_DIR")
+    minutes_bytes = File.read!(Path.join(dir, "minutes-267.pdf"))
+    declaration_bytes = File.read!(Path.join(dir, "mandats-2024.pdf"))
+    text = File.read!(Path.join(dir, "mandats-ocr.txt"))
+    alias BrusselsWtf.Identity.MandateIdentity
+    assert BrusselsWtf.Digest.sha256(minutes_bytes) == MandateIdentity.source_sha()
+    sha = BrusselsWtf.Digest.sha256(declaration_bytes)
+    assert {:ok, doc} = MandateDeclaration.contract(sha)
 
-    second = acquire!(ctx.commune, document: changed, text: page_text(changed))
-    [correction] = facts(second)
-    assert correction.supersedes_id == original.id
-    verify!(correction)
-    assert Identity.get_sourced_fact!(original.id).verification_status == :superseded
-    assert Identity.get_sourced_fact!(correction.id).verification_status == :verified
-    assert first.sha256 != second.sha256
-    html = build_conn() |> get("/people/#{ctx.person.id}?lang=en") |> html_response(200)
-    assert html =~ "Superseded by a corrected declaration"
-    assert html =~ "Premier Echevin et Officier"
-    assert html =~ "fact-#{original.id}"
-    assert html =~ "fact-#{correction.id}"
-    assert :ok = IxellesMandateDeclarationProcessor.enqueue_waiting_for_source_version!(first.id)
-    assert length(facts(first)) == 1
-    assert length(facts(second)) == 1
-    updates = feed_updates(ctx.person.id, "en")
-    assert Enum.any?(updates, &(&1.factId == correction.id))
-    refute Enum.any?(updates, &(&1.factId == original.id))
+    locator =
+      Ingestion.upsert_locator!(%{
+        commune_id: ctx.commune.id,
+        url: @minutes_url,
+        parent_index_url: ctx.commune.index_url,
+        meeting_identifier: "267",
+        scheduled_on: ~D[2026-06-11],
+        role: :minutes,
+        language: :bilingual,
+        observed_label: "Procès-verbal",
+        discovered_at: BrusselsWtf.Clock.utc_now()
+      })
+
+    poll = mandate_poll!(ctx.commune, "real-independent-minutes")
+
+    BrusselsWtf.HTTP.Stub.put(@minutes_url, %{
+      body: minutes_bytes,
+      headers: %{"content-type" => "application/pdf"}
+    })
+
+    assert :ok = Ingestion.Pipeline.retrieve(locator.id, poll.id, "real-independent-minutes")
+
+    version =
+      acquire!(ctx.commune,
+        document: doc,
+        text: text,
+        raw_bytes: declaration_bytes,
+        register_contract: false,
+        searchable_pdf: File.read!(Path.join(dir, "mandats-ocr.pdf"))
+      )
+
+    [fact] = facts(version)
+    person = Identity.get_person!(fact.subject_id)
+    assert person.legal_name == "Gautier Calomne"
+    assert person.resolution_basis == :corroborated_name
+    assert person.explicit_identifier == nil
+    verify!(fact)
+    assert Identity.get_sourced_fact!(fact.id).verification_status == :verified
+    assert {:ok, _} = Identity.get_public_person_profile(person.id)
+    assert {:ok, same} = MandateIdentity.resolve(doc, ctx.commune.id)
+    assert same.id == person.id
+
+    assert :ok =
+             IxellesMandateDeclarationProcessor.enqueue_waiting_for_source_version!(version.id)
+
+    assert length(facts(version)) == 1
+
+    for locale <- ~w(fr nl en) do
+      html = build_conn() |> get("/people/#{person.id}?lang=#{locale}") |> html_response(200)
+      assert html =~ "#page=14"
+      assert html =~ "2024-12-01"
+      assert html =~ "2024-12-31"
+
+      for private <- [
+            "source_version_id",
+            "corroborating_facts",
+            "281.10",
+            "Signature",
+            "Numéro national"
+          ] do
+        refute html =~ private
+      end
+
+      homepage = build_conn() |> get("/?lang=#{locale}") |> html_response(200)
+      assert homepage =~ "/people/#{person.id}?lang=#{locale}#fact-#{fact.id}"
+    end
+
+    if System.get_env("MANDATE_BROWSER") == "1",
+      do: browser_check!(person.id, fact.id, person.legal_name, 14)
+
+    # Changing independent context withdraws the public claim everywhere.
+    BrusselsWtf.Repo.query!(
+      "UPDATE source_records SET role = 'agenda' WHERE id = $1::text::uuid",
+      [
+        Ingestion.get_source_version!(person.corroborating_facts["source_version_id"]).source_record_id
+      ]
+    )
+
+    assert {:error, :not_found} = Identity.get_public_person_profile(person.id)
+    assert feed_updates(person.id, "en") == []
+    refute build_conn() |> get("/?lang=en") |> html_response(200) =~ person.id
+  end
+
+  test "a same-name private identity without independent official evidence remains unresolved",
+       ctx do
+    person =
+      Identity.record_person!(%{
+        legal_name: "Gautier Calomne",
+        resolution_basis: :corroborated_name,
+        corroborating_facts: %{"municipality" => "ixelles"}
+      })
+
+    {:ok, doc} =
+      MandateDeclaration.contract(
+        "c5b717d6243bd8ad3957f486ca9408a153c636927314642d03ec50e4505fbca2"
+      )
+
+    refute BrusselsWtf.Identity.MandateIdentity.corroborated?(person, ctx.commune.id)
+
+    assert {:error, :uncorroborated_person} =
+             BrusselsWtf.Identity.MandateIdentity.resolve(doc, ctx.commune.id)
+
+    assert {:error, :not_found} = Identity.get_public_person_profile(person.id)
+    refute build_conn() |> get("/?lang=en") |> html_response(200) =~ person.id
+  end
+
+  test "reverted index bytes are evaluated from this observation instead of the newest version",
+       ctx do
+    corroborate!(ctx)
+    index_url = MandateDeclaration.index()
+    # First snapshot omits the declaration; second introduces it; third reverts.
+    for {key, html} <- [
+          {"absent", "<html><a href='/unrelated'>Annual report</a></html>"},
+          {"present", ~s(<a href="#{@declaration_url}">Liste des mandats</a>)}
+        ] do
+      BrusselsWtf.Clock.Controlled.set(
+        if key == "absent", do: ~U[2026-09-07 12:00:00Z], else: ~U[2026-09-08 12:00:00Z]
+      )
+
+      BrusselsWtf.HTTP.Stub.put(index_url, %{
+        body: html,
+        headers: %{"content-type" => "text/html"}
+      })
+
+      BrusselsWtf.HTTP.Stub.put(@declaration_url, %{status: 403})
+      poll = mandate_poll!(ctx.commune, key)
+      IxellesMandateDeclarationProcessor.acquire(ctx.commune.id, poll.id)
+    end
+
+    requests = length(BrusselsWtf.HTTP.Stub.requests(@declaration_url))
+
+    BrusselsWtf.HTTP.Stub.put(index_url, %{
+      body: "<html><a href='/unrelated'>Annual report</a></html>",
+      headers: %{"content-type" => "text/html"}
+    })
+
+    poll = mandate_poll!(ctx.commune, "reverted")
+    assert :ok = IxellesMandateDeclarationProcessor.acquire(ctx.commune.id, poll.id)
+    assert length(BrusselsWtf.HTTP.Stub.requests(@declaration_url)) == requests
+  end
+
+  for {name, response} <- [
+        {"redirected index",
+         %{
+           body: ~s(<a href="#{@declaration_url}">List</a>),
+           final_url: "https://example.org/index"
+         }},
+        {"comment-only link", %{body: ~s(<!-- <a href="#{@declaration_url}">List</a> -->)}},
+        {"script-only link",
+         %{body: ~s(<script>const a = '<a href="#{@declaration_url}">List</a>';</script>)}}
+      ] do
+    test "#{name} cannot authorize declaration discovery", ctx do
+      BrusselsWtf.HTTP.Stub.put(
+        MandateDeclaration.index(),
+        Map.put(unquote(Macro.escape(response)), :headers, %{"content-type" => "text/html"})
+      )
+
+      poll = mandate_poll!(ctx.commune, unquote(name))
+      assert :ok = IxellesMandateDeclarationProcessor.acquire(ctx.commune.id, poll.id)
+      assert BrusselsWtf.HTTP.Stub.requests(@declaration_url) == []
+    end
+  end
+
+  defp browser_check!(person_id, fact_id, name, source_page) do
+    {:ok, server} =
+      Bandit.start_link(plug: BrusselsWtfWeb.Endpoint, port: 4116, ip: {127, 0, 0, 1})
+
+    on_exit(fn -> if Process.alive?(server), do: Process.exit(server, :normal) end)
+
+    {output, status} =
+      System.cmd(
+        "uv",
+        [
+          "run",
+          "--project",
+          "test/browser",
+          "--frozen",
+          "python",
+          "test/browser/mandate_declaration.py",
+          "--base",
+          "http://127.0.0.1:4116",
+          "--person",
+          person_id,
+          "--fact",
+          fact_id,
+          "--name",
+          name,
+          "--source-page",
+          to_string(source_page)
+        ],
+        stderr_to_stdout: true
+      )
+
+    assert status == 0, output
+  end
+
+  defp mandate_poll!(commune, key) do
+    Ingestion.start_poll_run!(%{
+      commune_id: commune.id,
+      started_at: BrusselsWtf.Clock.utc_now(),
+      kind: :scheduled,
+      requester_id: "system",
+      target_type: :commune,
+      target_id: commune.id,
+      check_key: key,
+      status: :completed
+    })
   end
 
   defp feed_updates(person_id, locale) do
@@ -429,12 +673,19 @@ defmodule BrusselsWtf.IdentityMandateDeclarationTest do
     # The PDF binary boundary is controlled; fixture layout follows the inspected
     # declaration, with synthetic identity and signature contracts only in tests.
     bytes =
-      "%PDF-1.7 synthetic declaration scenario " <>
-        BrusselsWtf.Digest.sha256(text <> inspect(doc.signed?))
+      Keyword.get(
+        opts,
+        :raw_bytes,
+        "%PDF-1.7 synthetic declaration scenario " <>
+          BrusselsWtf.Digest.sha256(text <> inspect(doc.signed?))
+      )
 
     sha = BrusselsWtf.Digest.sha256(bytes)
     contracts = Application.get_env(:brussels_wtf, :mandate_test_documents, %{})
-    Application.put_env(:brussels_wtf, :mandate_test_documents, Map.put(contracts, sha, doc))
+
+    if Keyword.get(opts, :register_contract, true),
+      do:
+        Application.put_env(:brussels_wtf, :mandate_test_documents, Map.put(contracts, sha, doc))
 
     BrusselsWtf.HTTP.Stub.put(MandateDeclaration.index(), %{
       body: ~s(<a href="fr/download/transparence/mandats-2024.pdf">Liste des mandats 2024</a>),
@@ -447,10 +698,14 @@ defmodule BrusselsWtf.IdentityMandateDeclarationTest do
     })
 
     BrusselsWtf.Processors.Stub.put(sha, %{
-      extract: %{"text" => "", "page_texts" => List.duplicate("", 5)},
+      extract: %{
+        "text" => "",
+        "page_texts" => List.duplicate("", max(doc.page, doc.attestation_page))
+      },
       ocr: %{
         "page_texts" => String.split(text, "\f"),
-        "searchable_pdf" => "%PDF synthetic searchable declaration"
+        "searchable_pdf" =>
+          Keyword.get(opts, :searchable_pdf, "%PDF synthetic searchable declaration")
       }
     })
 
@@ -484,7 +739,7 @@ defmodule BrusselsWtf.IdentityMandateDeclarationTest do
     runs = Ash.load!(version, :processing_runs).processing_runs
 
     if run = Enum.find(runs, &(&1.processor_role == :ocr)) do
-      assert run.inputs["pages"] == [2, 5]
+      assert run.inputs["pages"] == [doc.page, doc.attestation_page]
       assert :ok = Ingestion.Pipeline.ocr(run.id, 1)
     end
 
