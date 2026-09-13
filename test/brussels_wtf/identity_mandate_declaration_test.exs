@@ -177,43 +177,57 @@ defmodule BrusselsWtf.IdentityMandateDeclarationTest do
            })
   end
 
-  test "a corrected approved version supersedes explicitly and preserves dated evidence", ctx do
-    corroborate!(ctx)
-    first = acquire!(ctx.commune)
-    [original] = facts(first)
-    verify!(original)
-    BrusselsWtf.Clock.Controlled.set(~U[2026-09-08 12:00:00Z])
+  for previous_verifier <- [:v2, :v3] do
+    test "a corrected approved version supersedes #{previous_verifier} and preserves dated evidence",
+         ctx do
+      corroborate!(ctx)
+      first = acquire!(ctx.commune)
+      [original] = facts(first)
 
-    changed = %{
-      document()
-      | row: "Premier Echevin (Décembre 2024)",
-        role: "Premier Echevin",
-        revision: 2,
-        role_labels: %{
-          "fr" => "Premier Echevin",
-          "nl" => "Eerste schepen",
-          "en" => "First alderman"
-        }
-    }
+      if unquote(previous_verifier) == :v2 do
+        original = BrusselsWtf.Test.LegacyMandateFixture.verify!(original)
+        assert original.verified_by == "ixelles_mandate_declaration_v2"
+        assert Identity.TrustedVerifier.trusted_fact?(original)
+      else
+        verify!(original)
+      end
 
-    second = acquire!(ctx.commune, document: changed, text: page_text(changed))
-    [correction] = facts(second)
-    assert correction.supersedes_id == original.id
-    verify!(correction)
-    assert Identity.get_sourced_fact!(original.id).verification_status == :superseded
-    assert Identity.get_sourced_fact!(correction.id).verification_status == :verified
-    assert first.sha256 != second.sha256
-    html = build_conn() |> get("/people/#{ctx.person.id}?lang=en") |> html_response(200)
-    assert html =~ "Superseded by a corrected declaration"
-    assert html =~ "Premier Echevin et Officier"
-    assert html =~ "fact-#{original.id}"
-    assert html =~ "fact-#{correction.id}"
-    assert :ok = IxellesMandateDeclarationProcessor.enqueue_waiting_for_source_version!(first.id)
-    assert length(facts(first)) == 1
-    assert length(facts(second)) == 1
-    updates = feed_updates(ctx.person.id, "en")
-    assert Enum.any?(updates, &(&1.factId == correction.id))
-    refute Enum.any?(updates, &(&1.factId == original.id))
+      BrusselsWtf.Clock.Controlled.set(~U[2026-09-08 12:00:00Z])
+
+      changed = %{
+        document()
+        | row: "Premier Echevin (Décembre 2024)",
+          role: "Premier Echevin",
+          revision: 2,
+          role_labels: %{
+            "fr" => "Premier Echevin",
+            "nl" => "Eerste schepen",
+            "en" => "First alderman"
+          }
+      }
+
+      second = acquire!(ctx.commune, document: changed, text: page_text(changed))
+      [correction] = facts(second)
+      assert correction.supersedes_id == original.id
+      verify!(correction)
+      assert Identity.get_sourced_fact!(original.id).verification_status == :superseded
+      assert Identity.get_sourced_fact!(correction.id).verification_status == :verified
+      assert first.sha256 != second.sha256
+      html = build_conn() |> get("/people/#{ctx.person.id}?lang=en") |> html_response(200)
+      assert html =~ "Superseded by a corrected declaration"
+      assert html =~ "Premier Echevin et Officier"
+      assert html =~ "fact-#{original.id}"
+      assert html =~ "fact-#{correction.id}"
+
+      assert :ok =
+               IxellesMandateDeclarationProcessor.enqueue_waiting_for_source_version!(first.id)
+
+      assert length(facts(first)) == 1
+      assert length(facts(second)) == 1
+      updates = feed_updates(ctx.person.id, "en")
+      assert Enum.any?(updates, &(&1.factId == correction.id))
+      refute Enum.any?(updates, &(&1.factId == original.id))
+    end
   end
 
   @tag :browser

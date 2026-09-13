@@ -921,7 +921,13 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
         do:
           payload
           |> Map.put("mandate_declaration", fact.mandate_declaration)
-          |> Map.put("identity_evidence", person.corroborating_facts),
+          |> Map.put(
+            "identity_evidence",
+            Map.take(
+              person.corroborating_facts,
+              ~w(municipality source_version_id source_sha256 source_url location role observed_on)
+            )
+          ),
         else: payload
 
     if verifier.id == :belgian_official_gazette_management_v1,

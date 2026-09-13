@@ -209,6 +209,18 @@ defmodule BrusselsWtfWeb.TimelinePage do
                 <p class="mt-1 text-base-content/70">
                   {Date.to_iso8601(mandate.effective_from)} – {Date.to_iso8601(mandate.effective_to)}
                 </p>
+                <a
+                  class="mt-1 inline-block underline underline-offset-2"
+                  rel="external"
+                  href={
+                    BrusselsWtfWeb.PublicEvidence.citation_href(%{
+                      citation_url: mandate.authoritative_url,
+                      location: mandate.evidence_location
+                    })
+                  }
+                >
+                  {text(@locale, :source)}
+                </a>
               </li>
             </ul>
           </section>

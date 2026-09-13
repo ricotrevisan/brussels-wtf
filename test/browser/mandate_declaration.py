@@ -28,6 +28,9 @@ with sync_playwright() as pw:
             page.goto(f"{args.base}/?lang={locale}")
             link = page.locator("#verified-mandates").locator("..").get_by_role("link", name=args.name, exact=True)
             expect(link).to_have_attribute("href", f"/people/{args.person}?lang={locale}#fact-{args.fact}")
+            expect(link.locator("..").locator('a[rel="external"]')).to_have_attribute(
+                "href", f"https://www.ixelles.be/site/fr/download/transparence/mandats-2024.pdf#page={args.source_page}"
+            )
             link.click()
             expect(page).to_have_url(f"{args.base}/people/{args.person}?lang={locale}#fact-{args.fact}")
             expect(page.get_by_role("heading", name=heading, exact=True)).to_be_visible()
