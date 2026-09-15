@@ -76,7 +76,8 @@ remaining scoped authorization is operational release and one publication run.
 No new correspondence is needed.
 
 On the running app release, create one `Ingestion.start_poll_run!` record with
-the authenticated operator's actor ID, `kind: :poll_now`, `target_type: :index`,
+`requester_id` set to the authenticated operator's actor ID,
+`started_at: BrusselsWtf.Clock.utc_now()`, `kind: :poll_now`, `target_type: :index`,
 the Ixelles commune ID, `target_id: MandateDeclaration.index()`, a fresh unique
 check key, `scope: :current`, and `status: :running`. Retain its ID before I/O.
 Do not call `request_poll_now!` for the commune: that would schedule a broader poll.
@@ -121,8 +122,12 @@ using the visible controls, check selected-commune filtering, and verify the
 December 1–31, 2024 fact is in dated history. June 2026 identity evidence creates
 no new appointment and never extends that period.
 
-Re-run the same verified fact's processor ID through the normal bounded action;
-require unchanged fact/source-version counts and preserved evidence history.
+Load the exact verified fact ID first, then call
+`IxellesMandateDeclarationProcessor.process(fact.id)` through the normal bounded
+action; require unchanged fact/source-version counts and preserved evidence
+history. This checks the verified-fact no-op; isolated integration tests cover
+full acquisition/processing replay. A processing-run ID is not a fact ID, and a
+successful return for an unknown ID proves nothing.
 Verify anonymous review/artifact requests cannot expose private evidence. Record
 actual live URLs, release/image IDs, poll/processing IDs and checksums in the
 acceptance receipt before closing the issue. Keep source bytes and operational
