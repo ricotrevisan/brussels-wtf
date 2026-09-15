@@ -18,9 +18,35 @@ This is a bounded release/publication procedure, not a record of deployment.
   was unavailable because the parser dependency was restricted to `:test`.
   The dependency must ship at runtime; the runner image now exercises its native
   parser as a build gate. Test-environment success alone missed this failure.
-- The personal Loggie catalog did not expose Coolify. Runtime database, queue,
-  image, and CBE mount status remain unobserved in this session. Do not use the
-  work account as a fallback. Restore the intended personal operational access.
+- The personal Loggie catalog did not expose Coolify. Rico subsequently
+  explicitly authorized the Mochary connection for this project. Use that
+  recorded account override for Coolify; existing `rico@coolify` SSH provides
+  runtime inspection. Keep credentials and retained source bytes private.
+
+## Production readback — 2026-09-16
+
+- App and OCR now serve the same `22c1613ba721c518e36c7236f6dfb212bda15443`
+  image, digest `sha256:f3e4d20bd49b580402107d2fc0e193630dc5a312a7311bc47ebb629afdb5cecc`.
+  App readiness and repeated OCR readiness passed. OCR remains one CPU/1 GiB.
+  The inspected queues were idle and unpaused; there was no pending backlog.
+- Both accepted PDFs were already retained, with matching archive checksums.
+  The independent identity source passes `trusted_ixelles_identity_source`.
+  The retained declaration OCR matches the inspected profile and parser.
+  Reuse this lineage; a new download is unnecessary.
+- Bounded candidate discovery created one unreviewed Gautier Calomne mandate.
+  Two ordinary verifier jobs rejected it; no public fact was accepted.
+  A diagnostic traced the cause to the default 15-second database transaction
+  deadline while independent OCR took about 21 seconds. Enclosing test
+  transactions hid the problem. The regression uses a disposable database,
+  ordinary connections and delayed OCR to reproduce the unpublished fact.
+- The verifier fix allows the configured OCR wall-time budget plus 60 seconds
+  for archive, metadata, cleanup and database work. Source, identity, byte,
+  privacy and publication checks remain mandatory. Deploy the reviewed fix to
+  both roles, then retry only the existing eligible fact through the normal
+  OCR worker and complete reader acceptance below.
+- CBE release directory and digest are absent at runtime. Existing KBO login
+  credentials do not activate the full-release adapter; this remains separate
+  from the standalone mandate journey.
 
 The rollout from the observed release also includes already merged Gazette
 projection and registered-feed changes (PRs 85–88 and the individual-unfollow
