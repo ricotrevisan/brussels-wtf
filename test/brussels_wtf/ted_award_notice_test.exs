@@ -30,6 +30,8 @@ defmodule BrusselsWtf.TED.AwardNoticeTest do
           {"54192.04", "not-an-amount"},
           {"currencyID=\"EUR\">54192", "currencyID=\"USD\">54192"},
           {"2026-03-05", "2027-03-05"},
+          {"2026-03-05+01:00", "2026-03-05+99:99"},
+          {"2026-03-05+01:00", "2026-03-05+14:59"},
           {"<cac:ProcurementProjectLot><cbc:ID>LOT-0002</cbc:ID></cac:ProcurementProjectLot>",
            ""},
           {"currencyID=\"EUR\">54192", "cbc:currencyID=\"EUR\">54192"},

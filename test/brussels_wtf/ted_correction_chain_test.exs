@@ -30,6 +30,26 @@ defmodule BrusselsWtf.TED.CorrectionChainTest do
     end
   end
 
+  test "versions increase for the same UUID even when publication dates increase" do
+    first = notice("same-uuid", nil, :awarded)
+
+    later = %{
+      first
+      | version: "02",
+        publication_number: "later",
+        published_on: ~D[2026-09-02],
+        correction_of: "same-uuid-01"
+    }
+
+    assert {:ok, %{latest: ^later}} = CorrectionChain.select([later, first])
+
+    for version <- ["00", "01", "invalid"] do
+      prior = %{first | version: "02"}
+      regression = %{later | version: version, correction_of: "same-uuid-02"}
+      assert {:error, _} = CorrectionChain.select([prior, regression])
+    end
+  end
+
   @tag :external
   test "retained Ixelles correction replaces a no-winner result without discarding history" do
     directory = System.fetch_env!("TED_EVIDENCE_DIR")

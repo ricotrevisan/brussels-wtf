@@ -1,6 +1,6 @@
 # Ixelles TED award: identifier and signature contract
 
-_Checked 2026-09-16 for [#47](https://github.com/ricotrevisan/brussels-wtf/issues/47). Bounded research against the privately retained January/March 2026 notices; no publication decision, source upload, correspondence or new access permission. Supplements [the accepted TED access spike](ted-award-notice-access-2026-09-03.md)._
+_Checked 2026-09-16 for [Publish one TED contract award end to end](https://github.com/ricotrevisan/brussels-wtf/issues/47). Bounded research against the privately retained January/March 2026 notices; no publication decision, source upload, correspondence or new access permission. Supplements [the accepted TED access spike](ted-award-notice-access-2026-09-03.md)._
 
 ## Result
 
@@ -116,7 +116,7 @@ These are signed-source observations, not a payment amount or a person's involve
 Signer certificate: `ARHS Developments SA`, issuer `CAEDICOM04`, fingerprint `b2b6a4ae508c263f7d323654a9abdeb25b3bdb78d65e8588ad4b7d6a768e328a`; validity `2026-06-19T14:37:05Z`–`2029-06-18T14:37:04Z`. The signature timestamp is `2026-09-03T22:03:24Z`. There is one whole-file signature and no `/DSS` or archival document timestamp.
 
 - Whole-file signature math passes; timestamp integrity and trust pass against the same pinned CAEDICOM04. The AdES validation collected two OCSP responses, for signer and timestamp chains.
-- pyHanko's default PDF policy returns `CHAIN_CONSTRAINTS_FAILURE` because it requires `non_repudiation`. That is a **library default**, not a requirement of #47. Its first-party documentation explicitly supports selecting `digital_signature` for applications with different requirements. [pyHanko key-usage configuration](https://docs.pyhanko.eu/en/latest/cli-guide/config.html#key-usage-settings).
+- pyHanko's default PDF policy returns `CHAIN_CONSTRAINTS_FAILURE` because it requires `non_repudiation`. That is a **library default**, not a requirement of [Publish one TED contract award end to end](https://github.com/ricotrevisan/brussels-wtf/issues/47). Its first-party documentation explicitly supports selecting `digital_signature` for applications with different requirements. [pyHanko key-usage configuration](https://docs.pyhanko.eu/en/latest/cli-guide/config.html#key-usage-settings).
 - The actual signer has `digitalSignature=true`, `contentCommitment=false`, and EKU **clientAuth only**. Certificate policy OID is `1.3.6.1.4.1.30051.2.3.2.12` (non-qualified signing).
 - An explicit diagnostic requiring `digital_signature` and the actually present `client_auth`, with mandatory revocation checks, default freshness and no historical exceptions, returns `INTACT:TRUSTED`, trusted timestamp, and `ENTIRE_FILE`. This proves the selected chain/current revocation and signature checks; it does **not** establish that clientAuth authorizes generic document signing.
 - Archival AdES validation still yields `NO_POE`, including with a currently valid signer. A proof of long-term archival preservation is stronger than current source-authenticity acceptance. Do not turn absence of archival material into a new blanket TED requirement.

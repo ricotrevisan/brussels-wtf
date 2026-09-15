@@ -41,6 +41,7 @@ defmodule BrusselsWtf.TED.CorrectionChain do
          status: status
        }) do
     Enum.all?([id, version, publication, procedure, lot], &(is_binary(&1) and &1 != "")) and
+      Regex.match?(~r/\A[0-9]{2}\z/, version) and version != "00" and
       is_map(buyer) and (is_nil(previous) or is_binary(previous)) and
       status in [:awarded, :not_awarded]
   end
@@ -53,6 +54,8 @@ defmodule BrusselsWtf.TED.CorrectionChain do
     case Map.fetch(by_id, notice.correction_of) do
       {:ok, previous} ->
         key(notice) != key(previous) and
+          (notice.notice_id != previous.notice_id or
+             String.to_integer(notice.version) > String.to_integer(previous.version)) and
           Date.compare(previous.published_on, notice.published_on) != :gt
 
       :error ->

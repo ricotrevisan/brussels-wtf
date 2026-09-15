@@ -188,7 +188,10 @@ defmodule BrusselsWtf.TED.AwardNotice do
 
   defp date!(value) do
     require!(
-      Regex.match?(~r/\A[0-9]{4}-[0-9]{2}-[0-9]{2}(?:Z|[+-][0-9]{2}:[0-9]{2})?\z/, value),
+      Regex.match?(
+        ~r/\A[0-9]{4}-[0-9]{2}-[0-9]{2}(?:Z|[+-](?:(?:0[0-9]|1[0-3]):[0-5][0-9]|14:00))?\z/,
+        value
+      ),
       :invalid_date
     )
 
