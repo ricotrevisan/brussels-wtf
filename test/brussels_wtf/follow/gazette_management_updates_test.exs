@@ -12,7 +12,10 @@ defmodule BrusselsWtf.Follow.GazetteManagementUpdatesTest do
 
     on_exit(fn ->
       BrusselsWtf.Clock.Controlled.set(previous_time)
-      Application.put_env(:brussels_wtf, :public_follow_update_provider, previous_provider)
+
+      if previous_provider,
+        do: Application.put_env(:brussels_wtf, :public_follow_update_provider, previous_provider),
+        else: Application.delete_env(:brussels_wtf, :public_follow_update_provider)
     end)
 
     Application.put_env(

@@ -97,7 +97,10 @@ defmodule BrusselsWtf.UnfollowConcurrencyTest do
         assert {:ok, [retained]} = Follow.registered_feed(citizen)
         assert retained.id == history.id
       after
-        Application.put_env(:brussels_wtf, :public_follow_update_provider, old)
+        if old,
+          do: Application.put_env(:brussels_wtf, :public_follow_update_provider, old),
+          else: Application.delete_env(:brussels_wtf, :public_follow_update_provider)
+
         Application.delete_env(:brussels_wtf, :unfollow_race)
 
         for table <- ["citizen_feed_updates", "citizen_follows"] do
