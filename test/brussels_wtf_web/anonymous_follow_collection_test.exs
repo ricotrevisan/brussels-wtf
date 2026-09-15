@@ -358,7 +358,10 @@ defmodule BrusselsWtfWeb.AnonymousFollowCollectionTest do
 
     on_exit(fn ->
       Application.delete_env(:brussels_wtf, :fact_matrix_update)
-      Application.put_env(:brussels_wtf, :public_follow_update_provider, old_provider)
+
+      if old_provider,
+        do: Application.put_env(:brussels_wtf, :public_follow_update_provider, old_provider),
+        else: Application.delete_env(:brussels_wtf, :public_follow_update_provider)
     end)
 
     identifiers = Map.new(targets, fn {type, id} -> {String.to_atom(type), to_string(id)} end)
