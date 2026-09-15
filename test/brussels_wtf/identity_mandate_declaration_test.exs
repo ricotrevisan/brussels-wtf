@@ -14,6 +14,43 @@ defmodule BrusselsWtf.IdentityMandateDeclarationTest do
   @declaration_row "Premier Echevin et Officier de l'Etat Civil (Décembre 2024)"
   @fiscal_page "FISCAL 281.10 tranche 12 345,67 EUR numero national 85.07.23-123.45"
 
+  defmodule SlowOcr do
+    defdelegate metadata(), to: BrusselsWtf.PDF.Stub
+    defdelegate native(meta, bytes), to: BrusselsWtf.PDF.Stub
+
+    def ocr(meta, bytes, pages) do
+      Process.sleep(16_000)
+      BrusselsWtf.PDF.Stub.ocr(meta, bytes, pages)
+    end
+  end
+
+  # A sandbox transaction hides the production Repo.transaction deadline.
+  # This case owns a disposable database and uses ordinary connections instead.
+  setup tags do
+    if tags[:transaction_deadline] do
+      config =
+        Repo.config()
+        |> Keyword.put(
+          :database,
+          "mandate_deadline_#{String.replace(Ash.UUID.generate(), "-", "")}"
+        )
+        |> Keyword.put(:pool, DBConnection.ConnectionPool)
+        |> Keyword.put(:pool_size, 2)
+        |> Keyword.put(:name, nil)
+
+      :ok = Ecto.Adapters.Postgres.storage_up(config)
+      on_exit(fn -> Ecto.Adapters.Postgres.storage_down(config) end)
+      {:ok, pid} = Repo.start_link(config)
+      Process.unlink(pid)
+      on_exit(fn -> if Process.alive?(pid), do: Supervisor.stop(pid) end)
+      previous = Repo.put_dynamic_repo(pid)
+      on_exit(fn -> Repo.put_dynamic_repo(previous) end)
+      Ecto.Migrator.run(Repo, "priv/repo/migrations", :up, all: true, log: false)
+    end
+
+    :ok
+  end
+
   setup do
     BrusselsWtf.Clock.Controlled.set(~U[2026-09-07 12:00:00Z])
     BrusselsWtf.HTTP.Stub.reset()
@@ -96,6 +133,25 @@ defmodule BrusselsWtf.IdentityMandateDeclarationTest do
       })
 
     %{commune: commune, person: person, minutes_version: minutes_version}
+  end
+
+  @tag :transaction_deadline
+  @tag timeout: 90_000
+  test "OCR verification can outlast the default database transaction deadline", ctx do
+    corroborate!(ctx)
+    version = acquire!(ctx.commune)
+    [fact] = facts(version)
+    previous = Application.fetch_env!(:brussels_wtf, :pdf_processor)
+    Application.put_env(:brussels_wtf, :pdf_processor, SlowOcr)
+
+    try do
+      refute Repo.in_transaction?()
+      verify!(fact)
+      assert Identity.get_sourced_fact!(fact.id).verification_status == :verified
+      assert {:ok, _} = Identity.get_public_person_profile(fact.subject_id)
+    after
+      Application.put_env(:brussels_wtf, :pdf_processor, previous)
+    end
   end
 
   test "approved declaration enters through acquisition and renders its exact dated role in every locale",

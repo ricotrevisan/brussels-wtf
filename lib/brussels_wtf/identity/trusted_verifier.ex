@@ -237,7 +237,20 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
   def verify!(fact_id, verifier_id, processing_run_id) do
     verifier = fetch!(verifier_id)
 
-    case Repo.transaction(fn -> verify_in_transaction!(fact_id, processing_run_id, verifier) end) do
+    # Independent OCR runs while the candidate is locked. Its bounded command
+    # budget exceeds Ecto's default 15-second checkout/transaction deadline.
+    options =
+      if verifier.source.text_input == :ocr do
+        limits = Application.fetch_env!(:brussels_wtf, :pdf_limits)
+        [timeout: limits.ocr_wall_time_ms + 60_000]
+      else
+        []
+      end
+
+    case Repo.transaction(
+           fn -> verify_in_transaction!(fact_id, processing_run_id, verifier) end,
+           options
+         ) do
       {:ok, fact} -> fact
       {:error, error} -> raise error
     end
