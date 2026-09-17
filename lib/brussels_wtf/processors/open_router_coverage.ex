@@ -18,7 +18,7 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverage do
   @max_input_bytes 65_536
   @max_request_bytes 131_072
   @max_response_bytes 262_144
-  @max_tokens 4_096
+  @max_tokens 8_192
   @timeout 60_000
   @wall_timeout 70_000
   @version "1"

@@ -59,7 +59,7 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverageTest do
 
     assert_received {:request, body}
     assert body["models"] == @models
-    assert body["max_tokens"] == 4096
+    assert body["max_tokens"] == 8_192
     assert body["stream"] == false
 
     assert body["provider"] == %{
