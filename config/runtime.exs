@@ -42,6 +42,14 @@ if config_env() == :dev do
     ]
 end
 
+# Tests select faithful processors explicitly and never consume operator API keys.
+if config_env() in [:dev, :prod] do
+  coverage = BrusselsWtf.Processors.CoverageRuntime.load()
+  config :brussels_wtf, :coverage_generation, coverage.generation
+  config :brussels_wtf, :coverage_processor, coverage.processor
+  config :brussels_wtf, BrusselsWtf.Processors.OpenRouterCoverage, coverage.provider_config
+end
+
 if config_env() == :prod do
   # The release carries its build identity; stale Coolify runtime variables cannot relabel it.
   release_sha =
@@ -73,10 +81,6 @@ if config_env() == :prod do
   # BrusselsWtf.Application applies this role as one exact Oban child config,
   # avoiding recursive keyword-list leakage from the build configuration.
   config :brussels_wtf, :process_role, role
-
-  config :brussels_wtf,
-         :coverage_generation,
-         BrusselsWtf.Council.GenerationControl.runtime_config()
 
   cbe_open_data_directory = System.get_env("CBE_OPEN_DATA_DIRECTORY")
   cbe_open_data_sha256 = System.get_env("CBE_OPEN_DATA_SHA256")
