@@ -52,7 +52,7 @@ The application reads these variables when the release starts:
 
 `OPENROUTER_API_KEY` is the credential for `COVERAGE_PROCESSOR=openrouter`. Paid mode rejects a missing or malformed key without echoing it. Disabled mode permits stopping generation without a key. Store the production value as a Coolify secret; do not put resolved credentials in files, logs, commands, issues, or commits. Runtime selection applies to development and production; ordinary tests ignore these operator environment settings.
 
-Workers re-read the effective policy immediately before canonical French generation and again before each translation. To stop paid work, set `COVERAGE_GENERATION_MODE=disabled` in Coolify and restart the app process. Jobs already queued before the restart then finish without another provider call. The OCR process may keep running because this switch does not stop extraction.
+Workers re-read the effective policy immediately before canonical French generation and again before each translation. To stop paid work, set `COVERAGE_GENERATION_MODE=disabled` and `BACKFILL_GENERATION_ENABLED=false` in Coolify, remove `COVERAGE_MONTHLY_BUDGET_CENTS` (accepted only in paid mode), and restart the app process. Jobs already queued before the restart then finish without another provider call. The OCR process may keep running because this switch does not stop extraction.
 
 ## Paid-call budget
 
@@ -123,7 +123,7 @@ This implementation is not evidence of a deployment or a model-quality acceptanc
 - `COVERAGE_MONTHLY_BUDGET_CENTS`: the operator-approved positive USD-cent ceiling; **no production default**
 - `BACKFILL_GENERATION_ENABLED=false`
 
-Inspect queued publication work before switching modes. Provider activation does not authorize replaying a historical backlog or publishing unsupported new sources. Keep the existing recorded normalizer, evidence gates and all-locale publication transaction intact. Disable generation with `COVERAGE_GENERATION_MODE=disabled`, remove the monthly-budget variable (it is valid only in paid mode), and restart. Returning to recorded mode also requires `COVERAGE_PROCESSOR=recorded` and removal of the paid-only budget setting. Prior public revisions remain preserved.
+Inspect queued publication work before switching modes. Provider activation does not authorize replaying a historical backlog or publishing unsupported new sources. Keep the existing recorded normalizer, evidence gates and all-locale publication transaction intact. Disable generation with `COVERAGE_GENERATION_MODE=disabled` and `BACKFILL_GENERATION_ENABLED=false`, remove `COVERAGE_MONTHLY_BUDGET_CENTS` (it is valid only in paid mode), and restart. Returning to recorded mode also requires `COVERAGE_PROCESSOR=recorded` and removal of the paid-only budget setting. Prior public revisions remain preserved.
 
 Official API references: [ordered fallbacks](https://openrouter.ai/docs/guides/routing/model-fallbacks), [provider pricing/privacy filters](https://openrouter.ai/docs/guides/routing/provider-selection), [usage accounting](https://openrouter.ai/docs/cookbook/administration/usage-accounting), [provider logging](https://openrouter.ai/docs/guides/privacy/provider-logging).
 
