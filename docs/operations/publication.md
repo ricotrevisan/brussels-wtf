@@ -34,7 +34,7 @@ Processor failures retain one coverage-run record per execution. Oban retries th
 
 ## Processor configuration
 
-Coverage generation is selected through the `:brussels_wtf, :coverage_processor` application configuration, independently of extraction and normalization. Production uses a deterministic recorded contract for the initial Ixelles proposal. That contract matches the commune, meeting, normalized wording, claim text, state, and official citation before returning its recorded copy; source drift fails closed instead of receiving stale prose. Tests use a fixture-backed stub and make no paid or nondeterministic calls. A later benchmark may replace the provider through the same processor seam without changing the publication contract.
+Coverage generation is selected independently of extraction and normalization. `COVERAGE_PROCESSOR=recorded` (the default) uses `RecordedCorpusCoverage` for the sealed historic and September selections. Those contracts match the complete source-backed publication input; source drift fails closed instead of receiving stale prose. `COVERAGE_PROCESSOR=openrouter` selects the network-backed provider described below. Ordinary tests use controlled HTTP responses and make no paid or nondeterministic calls. Selecting OpenRouter does not replace the recorded normalizer or make arbitrary new PDFs supported.
 
 
 ## Runtime generation controls
@@ -48,11 +48,11 @@ The application reads these variables when the release starts:
 
 `disabled` still permits polling, retrieval, extraction, OCR, and normalization. Coverage jobs finish without calling processor metadata or a provider, pages remain private, and no publication review case is opened merely because generation is off.
 
-`recorded` permits only a processor that declares recorded billing and no network access. Recorded runs reserve no money. `paid` permits only a network-backed paid processor and requires the monthly budget. No paid production processor is selected yet, so setting `paid` with the current recorded processor stops startup rather than falling back.
+`recorded` permits only a processor that declares recorded billing and no network access. Recorded runs reserve no money. `paid` permits only a network-backed processor and requires the monthly budget. OpenRouter uses `paid` mode even when the selected model is free, because the chain includes a paid fallback. Paid mode with the recorded processor, or recorded mode with OpenRouter, fails startup.
 
-There are currently no accepted paid-provider credential variables. Do not put a provider key into the application until a provider adapter, credential name, request/output caps, conservative maximum-cost calculation, timeout, and retry contract have been reviewed. That later adapter must read its credential from a Coolify secret, reject missing or partial credentials at startup, and never expose the value in configuration errors, logs, usage records, or review diagnostics.
+`OPENROUTER_API_KEY` is the credential for `COVERAGE_PROCESSOR=openrouter`. Paid mode rejects a missing or malformed key without echoing it. Disabled mode permits stopping generation without a key. Store the production value as a Coolify secret; do not put resolved credentials in files, logs, commands, issues, or commits. Runtime selection applies to development and production; ordinary tests ignore these operator environment settings.
 
-Workers re-read the effective policy immediately before canonical French generation and again before each translation. To stop paid work, set `COVERAGE_GENERATION_MODE=disabled` in Coolify and restart the app process. Jobs already queued before the restart then finish without another provider call. The OCR process may keep running because this switch does not stop extraction.
+Workers re-read the effective policy immediately before canonical French generation and again before each translation. To stop paid work, set `COVERAGE_GENERATION_MODE=disabled` and `BACKFILL_GENERATION_ENABLED=false` in Coolify, remove `COVERAGE_MONTHLY_BUDGET_CENTS` (accepted only in paid mode), and restart the app process. Jobs already queued before the restart then finish without another provider call. The OCR process may keep running because this switch does not stop extraction.
 
 ## Paid-call budget
 
@@ -79,3 +79,54 @@ Issue 33 has a separate authenticated import path. It does not use unrestricted 
 8. Recorded publication creates three zero-network coverage runs per meeting and passes the normal locale, evidence, citation, provenance, and ambiguity gates. Runs keep their actual AI-generation or machine-translation provenance; they do not receive a `human-reviewed` label unless a separate review really occurred. Refreshing the batch after all eight pages publish closes it as `completed`.
 
 Re-running import, dossier preparation, or coverage preparation is idempotent. Existing published revisions retain their recorded provenance immutably; this policy changes what new corpus queue operations assert. A sealed batch never expands its meeting membership. To accept changed official bytes, review the new municipal document, update the research note and manifest, replace the release-owned file, and deploy a new manifest digest. Do not edit a persisted batch or bypass its review case.
+
+## OpenRouter inference
+
+Work is tracked in [Add budgeted OpenRouter coverage with ordered model fallbacks](https://github.com/ricotrevisan/brussels-wtf/issues/95).
+
+The ordered model chain is pinned in code:
+
+1. `stealth/union-alpha` — user-selected primary, currently free.
+2. `google/gemma-4-31b-it:free` — free fallback.
+3. `deepseek/deepseek-v4-flash-0731` — fast paid fallback. The inspected catalog on 2026-09-17 listed $0.06/million input tokens and $0.12/million output tokens, less than V4.1 Flash or Gemini Flash Lite. This is a price observation, not a quality benchmark or latency guarantee.
+
+One OpenRouter request uses its ordered `models` fallback array. Provider failures can trigger fallback; a successful but invalid response is rejected locally, not silently sent through a different model. Req does not retry or follow redirects. Existing publication jobs retain their bounded retry policy. Each request caps input at 64 KiB, encoded request at 128 KiB, response at 256 KiB, output at 4,096 tokens, connect timeout at 10 seconds, receive timeout at 60 seconds and total wall timeout at 70 seconds. Keepalive bytes cannot prolong the total deadline; a cancelled request keeps its cost uncertain. Oversized inputs are rejected rather than truncated.
+
+`provider.max_price` caps prompt/completion at $0.06/$0.18 per million tokens and per-request fees at zero. The initial $0.12 output ceiling selected an endpoint without JSON response-format support; live routing returned 404. The $0.18 ceiling admits compatible endpoints, including the inspected $0.03/$0.13 OpenInference and $0.06/$0.18 DeepInfra routes. These ceilings filter available endpoints; a price increase or unavailable provider fails closed. Every operation reserves a conservative 3 cents before network access, covering the bounded three-model chain. Reported account cost is rounded **up** to cents for the existing ledger. Missing/uncertain cost is never zero: the reservation's maximum is charged by the existing reconciliation contract. Thus ledger spend can exceed actual provider spend for sub-cent calls. Model pricing or caps require a versioned code change, not an unreviewed environment override.
+
+Requests use `data_collection: "deny"`. This is **not** a zero-retention promise. Union Alpha's official page says its anonymous provider may retain prompts/completions; provider policy metadata is not sufficient to guarantee this model passes the deny filter. Do not relax privacy settings to force the primary or free fallback. Each response must identify an allowlisted actual model, retained in immutable run provenance and usage. Only the publication-input projection or canonical translation text is sent; no archive access, tools, browsing, credentials, reviewer notes or suggestion bodies are provided. Exact input/output key validation rejects unexpected fields. A schema and valid claim references do not independently prove every generated sentence is entailed by its evidence; real-source language/faithfulness checks are required before scaling.
+
+### Development
+
+The committed `.env.openrouter.dev` contains only the 1Password reference `op://Dev/openrouter/brussels-wtf-dev`, not its value. It explicitly opts into OpenRouter with a **$1/month development ceiling** and backfill generation off:
+
+```bash
+op run --env-file=.env.openrouter.dev -- mix phx.server
+```
+
+Use the normal isolated test database for contract checks. Ordinary tests never call OpenRouter. Never point these tests at production storage. The opt-in check makes at most three budget-reserved requests using the two already published Ixelles 269 proposal interpretations. It checks structured output, not a new PDF normalizer or a full semantic benchmark, and never publishes:
+
+```bash
+op run --env-file=.env.openrouter.dev -- env ERL_FLAGS='+S 4:4' \
+  MIX_TEST_PARTITION=_live mix test --include external test/contracts/openrouter_live_test.exs
+```
+
+It prints only sanitized model/usage/status receipts. Test-database reservations roll back; actual OpenRouter charges do not. Do not repeatedly run it to bypass a real spending limit.
+
+### Production activation
+
+This implementation is not evidence of a deployment or a model-quality acceptance. Before activation, pass normal release checks and a bounded real-source FR/NL/EN check, then configure the reviewed release in Coolify:
+
+- `COVERAGE_PROCESSOR=openrouter`
+- `OPENROUTER_API_KEY`: secret value from **Dev → openrouter → brussels-wtf-prod** (not the dev field)
+- `COVERAGE_GENERATION_MODE=paid`
+- `COVERAGE_MONTHLY_BUDGET_CENTS`: the operator-approved positive USD-cent ceiling; **no production default**
+- `BACKFILL_GENERATION_ENABLED=false`
+
+Inspect queued publication work before switching modes. Provider activation does not authorize replaying a historical backlog or publishing unsupported new sources. Keep the existing recorded normalizer, evidence gates and all-locale publication transaction intact. Disable generation with `COVERAGE_GENERATION_MODE=disabled` and `BACKFILL_GENERATION_ENABLED=false`, remove `COVERAGE_MONTHLY_BUDGET_CENTS` (it is valid only in paid mode), and restart. Returning to recorded mode also requires `COVERAGE_PROCESSOR=recorded` and removal of the paid-only budget setting. Prior public revisions remain preserved.
+
+Official API references: [ordered fallbacks](https://openrouter.ai/docs/guides/routing/model-fallbacks), [provider pricing/privacy filters](https://openrouter.ai/docs/guides/routing/provider-selection), [usage accounting](https://openrouter.ai/docs/cookbook/administration/usage-accounting), [provider logging](https://openrouter.ai/docs/guides/privacy/provider-logging).
+
+### Implementation checkpoint — 2026-09-17
+
+The dev key authenticated successfully. Minimal live diagnostics observed Stealth 504, Gemma free 429, and an incompatible paid endpoint at the original price ceiling. After correcting the ceiling, a minimal DeepSeek-only JSON request succeeded through OpenInference. This does **not** establish a full-chain coverage benchmark. Real-source FR/NL/EN acceptance remains incomplete: one sandbox test exceeded its 120-second database ownership lease (now explicitly extended only in the opt-in test), and a database-free full adapter request exceeded 70 seconds without a usable completion. The adapter now enforces that total wall limit itself. No production activation, publication, or historical replay was performed. Do not report the feature as live-ready until the bounded acceptance passes.

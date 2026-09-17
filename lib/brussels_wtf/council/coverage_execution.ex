@@ -294,7 +294,7 @@ defmodule BrusselsWtf.Council.CoverageExecution do
       processor_version: metadata.processor_version,
       config_hash: metadata.config_hash,
       provider_category: metadata.provider_category,
-      model: metadata.model,
+      model: executed_model(metadata, usage),
       method: method,
       carried_provenance: carried_provenance(metadata, operation),
       status: :succeeded,
@@ -329,7 +329,7 @@ defmodule BrusselsWtf.Council.CoverageExecution do
       processor_version: metadata.processor_version,
       config_hash: metadata.config_hash,
       provider_category: metadata.provider_category,
-      model: metadata.model,
+      model: executed_model(metadata, usage),
       method: method,
       carried_provenance: carried_provenance(metadata, operation),
       status: :failed,
@@ -339,6 +339,18 @@ defmodule BrusselsWtf.Council.CoverageExecution do
       duration_ms: duration,
       failure_details: failure_details
     })
+  end
+
+  # Only the trusted processor's explicit allowlist may replace its planned model
+  # chain. Raw provider strings and other adapters' usage never supply provenance.
+  defp executed_model(metadata, usage) do
+    actual = Map.get(usage, "model")
+
+    if is_binary(actual) and actual in Map.get(metadata, :allowed_models, []) do
+      actual
+    else
+      metadata.model
+    end
   end
 
   defp carried_provenance(metadata, :canonical_generation),
