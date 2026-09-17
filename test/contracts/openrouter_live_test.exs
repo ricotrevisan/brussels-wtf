@@ -80,7 +80,7 @@ defmodule BrusselsWtf.Contracts.OpenRouterLiveTest do
     metadata = OpenRouterCoverage.metadata()
 
     try do
-      # No retry loop: stop on the first failure, at most three adapter requests.
+      # No operation retry loop: at most three operations, each with two bounded HTTP stages.
       assert {:ok, canonical, canonical_run} =
                CoverageExecution.canonical(page, input, metadata, :automatic, 1)
 
