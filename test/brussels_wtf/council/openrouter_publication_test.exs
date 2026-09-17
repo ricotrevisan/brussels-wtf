@@ -93,9 +93,16 @@ defmodule BrusselsWtf.Council.OpenRouterPublicationTest do
       assert run.provider_category == "openrouter"
       assert run.model == @actual_model
 
-      assert run.usage == %{
+      assert [primary, paid] = run.usage["stages"]
+      assert primary["status"] == "provider_http_error"
+      assert primary["http_status"] == 429
+      assert primary["cost_cents"] == 0
+      assert paid["status"] == "ok"
+      assert paid["model"] == @actual_model
+
+      assert Map.drop(run.usage, ["stages"]) == %{
                "model" => @actual_model,
-               "network_calls" => 1,
+               "network_calls" => 2,
                "input_tokens" => 100,
                "output_tokens" => 20,
                "cost_cents" => 1
@@ -120,7 +127,7 @@ defmodule BrusselsWtf.Council.OpenRouterPublicationTest do
     assert {:ok, budget} = CoverageBudget.ensure_month(100, BrusselsWtf.Clock.utc_now())
     assert budget.spent_cents == 3
     assert budget.reserved_cents == 0
-    refute_received {:openrouter_call, _, _}
+    refute_received {:openrouter_call, _, _, _}
   end
 
   test "an incomplete English response leaves the entire page in draft", ctx do
@@ -228,30 +235,56 @@ defmodule BrusselsWtf.Council.OpenRouterPublicationTest do
 
   defp stub_bundles(bundles, opts \\ []) do
     owner = self()
-    queue = start_supervised!({Agent, fn -> ~w(fr nl en) end}, id: make_ref())
+    calls = for locale <- ~w(fr nl en), stage <- [:primary, :paid], do: {locale, stage}
+    queue = start_supervised!({Agent, fn -> calls end}, id: make_ref())
 
     Req.Test.stub(OpenRouterCoverage, fn conn ->
-      locale = Agent.get_and_update(queue, fn [locale | rest] -> {locale, rest} end)
-      reservations = Ash.read!(CoverageReservation, domain: Council)
-      send(owner, {:openrouter_call, locale, reservations})
+      {{locale, stage}, reservations} = {
+        Agent.get_and_update(queue, fn [call | rest] -> {call, rest} end),
+        Ash.read!(CoverageReservation, domain: Council)
+      }
 
-      Req.Test.json(conn, %{
-        "id" => "mock-#{locale}",
-        "model" => @actual_model,
-        "choices" => [
-          %{
-            "finish_reason" => if(opts[:incomplete] == locale, do: "length", else: "stop"),
-            "message" => %{"role" => "assistant", "content" => Jason.encode!(bundles[locale])}
-          }
-        ],
-        "usage" => %{"prompt_tokens" => 100, "completion_tokens" => 20, "cost" => 0.001}
-      })
+      send(owner, {:openrouter_call, locale, stage, reservations})
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      request = Jason.decode!(body)
+
+      if stage == :primary do
+        assert request["models"] == ["stealth/union-alpha", "google/gemma-4-31b-it:free"]
+        refute Map.has_key?(request, "reasoning")
+
+        conn
+        |> Plug.Conn.put_status(429)
+        |> Req.Test.json(%{
+          "model" => "stealth/union-alpha",
+          "usage" => %{"prompt_tokens" => 0, "completion_tokens" => 0, "cost" => 0}
+        })
+      else
+        assert request["models"] == [@actual_model]
+        assert request["reasoning"] == %{"enabled" => false}
+
+        Req.Test.json(conn, %{
+          "id" => "mock-#{locale}",
+          "model" => @actual_model,
+          "choices" => [
+            %{
+              "finish_reason" => if(opts[:incomplete] == locale, do: "length", else: "stop"),
+              "message" => %{"role" => "assistant", "content" => Jason.encode!(bundles[locale])}
+            }
+          ],
+          "usage" => %{"prompt_tokens" => 100, "completion_tokens" => 20, "cost" => 0.001}
+        })
+      end
     end)
   end
 
   defp assert_reserved_request(locale, page_id) do
-    assert_received {:openrouter_call, ^locale, reservations}
+    assert_received {:openrouter_call, ^locale, :primary, reservations}
+    assert_received {:openrouter_call, ^locale, :paid, paid_reservations}
+    assert Enum.map(reservations, & &1.id) == Enum.map(paid_reservations, & &1.id)
+    assert [paid] = Enum.filter(paid_reservations, &(&1.status == :executing))
     assert [executing] = Enum.filter(reservations, &(&1.status == :executing))
+    assert paid.id == executing.id
+    assert paid.reserved_cents == executing.reserved_cents
     assert executing.locale == locale
     assert executing.meeting_page_id == page_id
     assert executing.reserved_cents > 0

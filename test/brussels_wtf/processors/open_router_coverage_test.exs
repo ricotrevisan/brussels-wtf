@@ -33,7 +33,7 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverageTest do
     refute inspect(metadata) =~ "secret"
   end
 
-  test "one ordered fallback request carries fixed caps and records the actual paid model" do
+  test "primary request carries fixed caps without disabling reasoning" do
     parent = self()
 
     Req.Test.expect(Provider, fn conn ->
@@ -42,15 +42,15 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverageTest do
       send(parent, {:request, data})
       assert conn.request_path == "/api/v1/chat/completions"
       assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer secret-test-key"]
-      Req.Test.json(conn, response(bundle(), List.last(@models)))
+      Req.Test.json(conn, response(bundle()))
     end)
 
     assert {:ok, output, usage} = Provider.generate_fr(input())
     assert output == bundle()
 
-    assert usage == %{
+    assert Map.drop(usage, ["stages"]) == %{
              "network_calls" => 1,
-             "model" => List.last(@models),
+             "model" => hd(@models),
              "input_tokens" => 100,
              "output_tokens" => 200,
              "cost_cents" => 1,
@@ -58,8 +58,11 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverageTest do
            }
 
     assert_received {:request, body}
-    assert body["models"] == @models
-    assert body["max_tokens"] == 4096
+    assert body["models"] == Enum.take(@models, 2)
+    refute Map.has_key?(body, "reasoning")
+    assert hd(body["messages"])["content"] =~ "does NOT establish adoption"
+    assert hd(body["messages"])["content"] =~ "not yet adopted"
+    assert body["max_tokens"] == 8_192
     assert body["stream"] == false
 
     assert body["provider"] == %{
@@ -72,8 +75,116 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverageTest do
     assert Jason.decode!(List.last(body["messages"])["content"]) == input()
   end
 
+  test "retryable provider failure advances once to the paid singleton with reasoning disabled" do
+    parent = self()
+
+    Req.Test.expect(Provider, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      send(parent, {:primary, Jason.decode!(body)})
+      conn |> Plug.Conn.put_status(429) |> Req.Test.json(response(bundle()))
+    end)
+
+    Req.Test.expect(Provider, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      send(parent, {:paid, Jason.decode!(body)})
+      Req.Test.json(conn, response(bundle(), List.last(@models)))
+    end)
+
+    assert {:ok, _, usage} = Provider.generate_fr(input())
+    assert_received {:primary, primary}
+    assert_received {:paid, paid}
+    assert primary["models"] == Enum.take(@models, 2)
+    refute Map.has_key?(primary, "reasoning")
+    assert paid["models"] == [List.last(@models)]
+    assert paid["reasoning"] == %{"enabled" => false}
+    assert Map.drop(paid, ["models", "reasoning"]) == Map.delete(primary, "models")
+    assert usage["model"] == List.last(@models)
+    assert usage["network_calls"] == 2
+    assert usage["cost_cents"] == 2
+    assert usage["input_tokens"] == 200
+    assert usage["output_tokens"] == 400
+    assert [first, second] = usage["stages"]
+    assert first["status"] == "provider_http_error"
+    assert first["http_status"] == 429
+    assert first["response_id"] == "gen-example"
+    assert second["status"] == "ok"
+    assert second["model"] == List.last(@models)
+  end
+
+  test "routing 404 advances to paid without exposing the provider error body" do
+    for message <- [
+          "No endpoints found that support the requested parameters. private prompt",
+          "No endpoints found matching your data policy. secret-test-key",
+          "No endpoints found that match your preferences. private prompt"
+        ] do
+      Req.Test.expect(Provider, fn conn ->
+        conn
+        |> Plug.Conn.put_status(404)
+        |> Req.Test.json(%{
+          "error" => %{"code" => 404, "message" => message}
+        })
+      end)
+
+      Req.Test.expect(Provider, fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+        request = Jason.decode!(body)
+        assert request["models"] == [List.last(@models)]
+        assert request["reasoning"] == %{"enabled" => false}
+        Req.Test.json(conn, response(bundle(), List.last(@models)))
+      end)
+
+      assert {:ok, _, usage} = result = Provider.generate_fr(input())
+      assert usage["network_calls"] == 2
+      refute Map.has_key?(usage, "cost_cents")
+      refute inspect(result) =~ "private prompt"
+      refute inspect(result) =~ "secret-test-key"
+    end
+  end
+
+  test "unrecognized routing bodies and non-404 errors never trigger paid fallback" do
+    for {status, body} <- [
+          {404, %{"error" => %{"code" => 404, "message" => "Model not found"}}},
+          {404,
+           %{
+             "error" => %{
+               "code" => 400,
+               "message" => "No endpoints found that match your preferences"
+             }
+           }},
+          {404, %{"error" => %{"message" => "No endpoints found that match your preferences"}}},
+          {404, %{"error" => %{"code" => 404, "message" => nil}}},
+          {401,
+           %{
+             "error" => %{
+               "code" => 404,
+               "message" => "No endpoints found that match your preferences"
+             }
+           }},
+          {402,
+           %{
+             "error" => %{
+               "code" => 404,
+               "message" => "No endpoints found that match your preferences"
+             }
+           }}
+        ] do
+      Req.Test.expect(Provider, fn conn ->
+        conn |> Plug.Conn.put_status(status) |> Req.Test.json(body)
+      end)
+
+      assert {:error, {:provider_http_error, %{retryable: false}}, usage} =
+               Provider.generate_fr(input())
+
+      assert usage["network_calls"] == 1
+    end
+  end
+
   test "all allowed models are accepted and missing cost remains unknown" do
     for model <- @models do
+      if model == List.last(@models) do
+        Req.Test.expect(Provider, fn conn -> Plug.Conn.send_resp(conn, 503, "unavailable") end)
+      end
+
       Req.Test.expect(Provider, fn conn ->
         Req.Test.json(conn, Map.delete(response(bundle(), model), "usage"))
       end)
@@ -82,6 +193,95 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverageTest do
       assert usage["model"] == model
       refute Map.has_key?(usage, "cost_cents")
     end
+  end
+
+  test "unknown cost from either stage remains unknown after a paid response" do
+    for {first_cost, final_cost} <- [{nil, "0"}, {"0.001", nil}, {nil, nil}] do
+      Req.Test.expect(Provider, fn conn ->
+        conn
+        |> Plug.Conn.put_status(503)
+        |> Req.Test.json(put_in(response(bundle()), ["usage", "cost"], first_cost))
+      end)
+
+      Req.Test.expect(Provider, fn conn ->
+        Req.Test.json(
+          conn,
+          put_in(response(bundle(), List.last(@models)), ["usage", "cost"], final_cost)
+        )
+      end)
+
+      assert {:ok, _, usage} = Provider.translate(bundle(), "en")
+      assert usage["network_calls"] == 2
+      refute Map.has_key?(usage, "cost_cents")
+    end
+  end
+
+  test "retryable failures stop after two requests and retain safe stage receipts" do
+    for status <- [408, 429, 500, 503] do
+      Req.Test.expect(Provider, 2, fn conn ->
+        Plug.Conn.send_resp(conn, status, "secret-test-key private prompt")
+      end)
+
+      assert {:error, {:provider_http_error, %{http_status: ^status}}, usage} =
+               result = Provider.generate_fr(input())
+
+      assert usage["network_calls"] == 2
+      assert length(usage["stages"]) == 2
+      refute Map.has_key?(usage, "cost_cents")
+      refute inspect(result) =~ "secret-test-key"
+      refute inspect(result) =~ "private prompt"
+    end
+  end
+
+  test "transport timeout advances to paid once and keeps the cancelled cost unknown" do
+    parent = self()
+
+    Req.Test.expect(Provider, fn conn ->
+      send(parent, {:waiting_primary, self()})
+
+      receive do
+        :never -> conn
+      end
+    end)
+
+    Req.Test.expect(Provider, fn conn ->
+      Req.Test.json(conn, response(bundle(), List.last(@models)))
+    end)
+
+    started = System.monotonic_time(:millisecond)
+    assert {:ok, _, usage} = Provider.generate_fr(input())
+    elapsed = System.monotonic_time(:millisecond) - started
+    assert elapsed >= 20_000 and elapsed < 25_000
+    assert_received {:waiting_primary, pid}
+    refute Process.alive?(pid)
+    assert usage["network_calls"] == 2
+    assert hd(usage["stages"])["status"] == "provider_wall_timeout"
+    refute Map.has_key?(usage, "cost_cents")
+  end
+
+  test "configuration cannot override request limits or the paid reasoning policy" do
+    Application.put_env(:brussels_wtf, Provider,
+      api_key: "secret-test-key",
+      plug: {Req.Test, Provider},
+      req_options: [
+        receive_timeout: 999_999,
+        retry: true,
+        redirect: true,
+        json: %{"max_tokens" => 99_999}
+      ]
+    )
+
+    Req.Test.expect(Provider, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      data = Jason.decode!(body)
+      assert data["max_tokens"] == 8_192
+      assert data["provider"]["data_collection"] == "deny"
+      assert data["models"] == Enum.take(@models, 2)
+      refute Map.has_key?(data, "reasoning")
+      Req.Test.json(conn, response(bundle()))
+    end)
+
+    assert {:ok, _, _} = Provider.generate_fr(input())
   end
 
   test "decimal-string costs round up without charging a free response" do
@@ -110,8 +310,8 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverageTest do
     assert {:error, :missing_api_key, %{"network_calls" => 0}} = Provider.generate_fr(input())
   end
 
-  test "HTTP errors and redirects are sanitized and never retried" do
-    for status <- [302, 401, 429, 500] do
+  test "nonretryable HTTP errors and redirects are sanitized and never retried" do
+    for status <- [302, 400, 401, 402, 403, 404, 422] do
       Req.Test.expect(Provider, fn conn ->
         conn
         |> Plug.Conn.put_resp_header("location", "https://evil.example")
@@ -121,7 +321,8 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverageTest do
       assert {:error, {:provider_http_error, %{http_status: ^status}}, usage} =
                result = Provider.generate_fr(input())
 
-      assert usage == %{"network_calls" => 1}
+      assert usage["network_calls"] == 1
+      refute Map.has_key?(usage, "cost_cents")
       refute inspect(result) =~ "secret-test-key"
       refute inspect(result) =~ "private prompt"
     end
@@ -131,6 +332,7 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverageTest do
     for body <- [
           "not json",
           Jason.encode!(response(bundle(), "unexpected/model")),
+          Jason.encode!(response(bundle(), List.last(@models))),
           Jason.encode!(%{"choices" => []})
         ] do
       Req.Test.expect(Provider, fn conn -> Plug.Conn.send_resp(conn, 200, body) end)
@@ -175,6 +377,7 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverageTest do
 
   test "truncated content, tool calls and refusal are never accepted" do
     for response <- [
+          put_in(response(bundle()), ["choices", Access.at(0), "message", "refusal"], "refused"),
           put_in(response(bundle()), ["choices"], [
             %{"finish_reason" => "length", "message" => %{"content" => Jason.encode!(bundle())}}
           ]),
