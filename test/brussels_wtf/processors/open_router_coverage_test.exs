@@ -111,6 +111,74 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverageTest do
     assert second["model"] == List.last(@models)
   end
 
+  test "routing 404 advances to paid without exposing the provider error body" do
+    for message <- [
+          "No endpoints found that support the requested parameters. private prompt",
+          "No endpoints found matching your data policy. secret-test-key",
+          "No endpoints found that match your preferences. private prompt"
+        ] do
+      Req.Test.expect(Provider, fn conn ->
+        conn
+        |> Plug.Conn.put_status(404)
+        |> Req.Test.json(%{
+          "error" => %{"code" => 404, "message" => message}
+        })
+      end)
+
+      Req.Test.expect(Provider, fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+        request = Jason.decode!(body)
+        assert request["models"] == [List.last(@models)]
+        assert request["reasoning"] == %{"enabled" => false}
+        Req.Test.json(conn, response(bundle(), List.last(@models)))
+      end)
+
+      assert {:ok, _, usage} = result = Provider.generate_fr(input())
+      assert usage["network_calls"] == 2
+      refute Map.has_key?(usage, "cost_cents")
+      refute inspect(result) =~ "private prompt"
+      refute inspect(result) =~ "secret-test-key"
+    end
+  end
+
+  test "unrecognized routing bodies and non-404 errors never trigger paid fallback" do
+    for {status, body} <- [
+          {404, %{"error" => %{"code" => 404, "message" => "Model not found"}}},
+          {404,
+           %{
+             "error" => %{
+               "code" => 400,
+               "message" => "No endpoints found that match your preferences"
+             }
+           }},
+          {404, %{"error" => %{"message" => "No endpoints found that match your preferences"}}},
+          {404, %{"error" => %{"code" => 404, "message" => nil}}},
+          {401,
+           %{
+             "error" => %{
+               "code" => 404,
+               "message" => "No endpoints found that match your preferences"
+             }
+           }},
+          {402,
+           %{
+             "error" => %{
+               "code" => 404,
+               "message" => "No endpoints found that match your preferences"
+             }
+           }}
+        ] do
+      Req.Test.expect(Provider, fn conn ->
+        conn |> Plug.Conn.put_status(status) |> Req.Test.json(body)
+      end)
+
+      assert {:error, {:provider_http_error, %{retryable: false}}, usage} =
+               Provider.generate_fr(input())
+
+      assert usage["network_calls"] == 1
+    end
+  end
+
   test "all allowed models are accepted and missing cost remains unknown" do
     for model <- @models do
       if model == List.last(@models) do

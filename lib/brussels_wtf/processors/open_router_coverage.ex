@@ -276,8 +276,7 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverage do
 
       {:ok, %Req.Response{status: status, body: body}} ->
         {:error,
-         {:provider_http_error,
-          %{http_status: status, retryable: status in [408, 429] or status in 500..599}},
+         {:provider_http_error, %{http_status: status, retryable: retryable_http?(status, body)}},
          error_usage(body)}
 
       {:error, _} ->
@@ -288,6 +287,24 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverage do
   catch
     _, _ -> {:error, :provider_transport_error, %{"network_calls" => 1}}
   end
+
+  defp retryable_http?(404, body) when is_binary(body) or is_list(body) do
+    body = IO.iodata_to_binary(body)
+
+    with true <- byte_size(body) <= @max_response_bytes,
+         {:ok, %{"error" => %{"code" => 404, "message" => message}}} <- Jason.decode(body),
+         true <- is_binary(message) do
+      String.starts_with?(message, [
+        "No endpoints found that support the requested parameters",
+        "No endpoints found matching your data policy",
+        "No endpoints found that match your preferences"
+      ])
+    else
+      _ -> false
+    end
+  end
+
+  defp retryable_http?(status, _), do: status in [408, 429] or status in 500..599
 
   defp error_usage(body) when is_binary(body) or is_list(body) do
     with {:ok, response} when is_map(response) <- Jason.decode(IO.iodata_to_binary(body)) do
