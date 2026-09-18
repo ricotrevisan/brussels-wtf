@@ -71,7 +71,7 @@ config :brussels_wtf,
   poll_stale_after_seconds: 12 * 60 * 60,
   archive: BrusselsWtf.Archive.Unconfigured,
   readiness: BrusselsWtf.Readiness.Monitor,
-  processors: BrusselsWtf.Processors.RecordedCorpus,
+  processors: BrusselsWtf.Processors.Council,
   cbe_source: BrusselsWtf.CBE.Unconfigured,
   pdf_processor: BrusselsWtf.PDF.PopplerOcr,
   pdf_quality_thresholds: %{
