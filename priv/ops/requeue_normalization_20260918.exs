@@ -21,8 +21,15 @@ cursor = Map.get(options, :cursor)
 
 if apply? and not is_integer(limit), do: raise("limit must be an integer")
 if apply? and limit < 1, do: raise("limit must be positive")
-if apply? and limit > 25, do: raise("refusing to requeue more than 25 runs without a new decision")
+
+if apply? and limit > 25,
+  do: raise("refusing to requeue more than 25 runs without a new decision")
+
 if cursor not in [nil, ""] and not is_binary(cursor), do: raise("cursor must be a run id string")
+
+# Postgres wants the 16-byte form for a uuid parameter; this also rejects a
+# malformed cursor before any query runs.
+cursor_param = if(cursor in [nil, ""], do: nil, else: Ecto.UUID.dump!(cursor))
 
 candidates_sql = """
 SELECT DISTINCT ON (r.id) r.id, c.slug, l.role, s.origin_url, v.sha256
@@ -44,26 +51,12 @@ WHERE r.processor_role = 'native_extraction'
   )
 ORDER BY r.id, v.inserted_at DESC
 """
-SELECT DISTINCT ON (r.id) r.id, c.slug, l.role, s.origin_url, v.sha256
-FROM processing_runs r
-JOIN source_versions v ON v.id = r.source_version_id
-JOIN source_records s ON s.id = v.source_record_id
-JOIN communes c ON c.id = s.commune_id
-LEFT JOIN source_locators l ON l.url = s.origin_url
-WHERE r.processor_role = 'native_extraction'
-  AND r.status = 'succeeded'
-  AND coalesce((r.quality_measurements->>'accepted')::boolean, false)
-  AND s.council_meeting_id IS NULL
-  AND c.slug = $1
-  AND ($2::text IS NULL OR l.role = $2)
-ORDER BY r.id, v.inserted_at DESC
-"""
 
 %{rows: rows} =
   BrusselsWtf.Repo.query!(candidates_sql, [
     commune,
     if(role in [nil, ""], do: nil, else: role),
-    if(cursor in [nil, ""], do: nil, else: cursor)
+    cursor_param
   ])
 
 preflight = %{
@@ -74,9 +67,10 @@ preflight = %{
   cursor: cursor,
   normalization_contract: BrusselsWtf.Processors.normalization_contract(),
   candidate_count: length(rows),
-  candidates: Enum.map(rows, fn [run_id, slug, loc_role, origin_url, sha256] ->
-    %{run_id: run_id, commune: slug, role: loc_role, sha256: sha256, origin_url: origin_url}
-  end)
+  candidates:
+    Enum.map(rows, fn [run_id, slug, loc_role, origin_url, sha256] ->
+      %{run_id: run_id, commune: slug, role: loc_role, sha256: sha256, origin_url: origin_url}
+    end)
 }
 
 IO.inspect(preflight, limit: :infinity, printable_limit: :infinity)
