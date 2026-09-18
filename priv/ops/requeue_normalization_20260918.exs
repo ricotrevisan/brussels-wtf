@@ -3,13 +3,13 @@
 #   Code.eval_file(Application.app_dir(:brussels_wtf, "priv/ops/requeue_normalization_20260918.exs"))
 # Default is read-only: it prints the candidate work and changes nothing.
 # Applying requires explicit bindings, for example:
-#   Code.eval_string(File.read!(path), [], %{apply?: true, commune: "ixelles", role: "agenda", limit: 3})
+#   Code.eval_string(File.read!(path), [apply?: true, commune: "ixelles", role: "agenda", limit: 3])
 # Bindings never change the running release's environment or generation policy.
 #
 # Before applying: pause the :normalize and :publish queues through the normal
 # operational path, and confirm no deployment is mid-flight (a deploy changes the
 # normalization contract and discards queued work). This script never touches Oban.
-options = binding()
+options = Map.new(binding())
 apply? = Map.get(options, :apply?, false)
 commune = Map.get(options, :commune, "ixelles")
 role = Map.get(options, :role, "agenda")
