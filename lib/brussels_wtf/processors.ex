@@ -11,6 +11,16 @@ defmodule BrusselsWtf.Processors do
   @callback extract(meta :: map(), bytes :: binary()) :: {:ok, map()} | {:error, term()}
   @callback normalize(extracted :: map()) :: {:ok, map()} | {:error, term()}
 
+  @doc """
+  Optional provenance digest over every module whose code can change normalized output.
+
+  A composite processor defines it so the normalization contract follows the code it
+  delegates to, not only the configured module itself.
+  """
+  @callback normalization_digest() :: binary()
+
+  @optional_callbacks normalization_digest: 0
+
   def extract(meta, bytes), do: impl().extract(meta, bytes)
   def normalize(extracted), do: impl().normalize(extracted)
 
@@ -21,6 +31,13 @@ defmodule BrusselsWtf.Processors do
       {processor, processor.module_info(:md5), BrusselsWtf.Corpus.Manifest.module_info(:md5),
        BrusselsWtf.Corpus.Manifest.digest(),
        BrusselsWtf.Corpus.Manifest.digest("current-20260911")}
+
+    # Only a composite processor widens the contract; every module without the
+    # optional callback keeps the exact recorded contract shape.
+    contract =
+      if function_exported?(processor, :normalization_digest, 0),
+        do: :erlang.append_element(contract, processor.normalization_digest()),
+        else: contract
 
     contract |> :erlang.term_to_binary([:deterministic]) |> BrusselsWtf.Digest.sha256()
   end

@@ -917,7 +917,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
       raise "derived extraction artifact checksum mismatch"
     end
 
-    case BrusselsWtf.Processors.normalize(Map.put(run.output, "text", text)) do
+    case BrusselsWtf.Processors.normalize(processor_input(run, source_record, text)) do
       {:ok, normalized} ->
         persist_normalized(source_record, version, citation_url, normalized, generation_kind)
 
@@ -1720,6 +1720,59 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         raise "processing run has no unique accepted text artifact"
     end
   end
+
+  # Normalization consumes exactly one accepted text artifact plus the explicit
+  # discovery context of the source locator. The lookup is read-only and a missing
+  # locator degrades to nil identifiers instead of failing the run.
+  defp processor_input(run, source_record, text) do
+    run.output
+    |> Map.put("text", text)
+    |> Map.merge(source_context(source_record))
+  end
+
+  defp source_context(source_record) do
+    locator = source_locator(source_record)
+
+    %{
+      "commune_slug" => commune_slug(source_record),
+      "origin_url" => source_record.origin_url,
+      "role" => locator_value(locator, & &1.role) || source_record.role,
+      "language" => locator_value(locator, & &1.language) || source_record.original_language,
+      "meeting_identifier" => locator_value(locator, & &1.meeting_identifier),
+      "scheduled_on" => locator_value(locator, & &1.scheduled_on),
+      "item_identifier" => locator_value(locator, & &1.item_identifier),
+      "dossier_identifier" => locator_value(locator, & &1.dossier_identifier)
+    }
+    |> Map.new(fn {key, value} -> {key, context_value(value)} end)
+  end
+
+  defp source_locator(source_record) do
+    source_record.commune_id
+    |> Ingestion.list_document_locators!()
+    |> Enum.find(&(&1.url == source_record.origin_url))
+    |> case do
+      nil ->
+        source_record.commune_id
+        |> Ingestion.list_locators!()
+        |> Enum.find(&(&1.url == source_record.origin_url))
+
+      locator ->
+        locator
+    end
+  end
+
+  defp commune_slug(%{commune: %{slug: slug}}), do: slug
+
+  defp commune_slug(source_record),
+    do: source_record |> Ash.load!(:commune) |> Map.fetch!(:commune) |> Map.fetch!(:slug)
+
+  defp locator_value(nil, _getter), do: nil
+  defp locator_value(locator, getter), do: getter.(locator)
+
+  defp context_value(nil), do: nil
+  defp context_value(value) when is_atom(value), do: Atom.to_string(value)
+  defp context_value(%Date{} = value), do: Date.to_iso8601(value)
+  defp context_value(value), do: value
 
   def fail_native_generation(source_version_id, classification) do
     metadata = BrusselsWtf.PDF.Processor.metadata()
