@@ -1,5 +1,22 @@
 defmodule BrusselsWtf.Council.PublicationInput do
-  @moduledoc "Builds and hashes the deterministic normalized input allowed into coverage generation."
+  @moduledoc """
+  Builds and hashes the deterministic normalized input allowed into coverage generation.
+
+  The built projection contains only the publishable set: agenda items that carry at
+  least one current (non-synthetic) proposal or decision claim. An item that asserts a
+  terminal decision outcome or a decision procedural state also stays in the publishable
+  set even when its decision record is missing, so the gate still fails loudly for that
+  inconsistency. A real council agenda also contains information, interpellation,
+  communication, and other non-votable points. Those items have no claim to summarize or cite, so they are excluded from the
+  publication input rather than failing the gate for the whole page. The meeting record
+  keeps every agenda item; only this projection narrows. A public meeting page therefore
+  covers the votable points, while non-votable points stay in the record and are not
+  summarized. A meeting whose publishable set is empty still fails closed with
+  `missing_item`.
+
+  `validate/1` semantics are unchanged for every included item: evidence, claim kind,
+  decision outcome, and state validation still fail closed.
+  """
 
   @fetchable_schemes ["http", "https"]
 
@@ -10,8 +27,39 @@ defmodule BrusselsWtf.Council.PublicationInput do
       "scheduled_on" => Date.to_iso8601(meeting.scheduled_on),
       "items" =>
         meeting.agenda_items
+        |> Enum.filter(&publishable?/1)
         |> Enum.sort_by(&item_sort_key/1)
         |> Enum.map(&item_input/1)
+    }
+  end
+
+  @doc """
+  Returns true when the item asserts something worth publishing.
+
+  An item is publishable when it carries at least one current claim (a non-synthetic
+  current proposal or the current non-synthetic decision), which is the same set
+  `item_input/1` projects. An item that asserts a terminal decision outcome or a decision
+  procedural state is also publishable even when its decision record is missing, so the
+  gate still fails loudly for that inconsistency instead of silently dropping it.
+  """
+  def publishable?(item) do
+    current_proposals(item) != [] or current_decisions(item) != [] or asserts_decision?(item)
+  end
+
+  @doc """
+  Restricts a loaded meeting to the items present in its built publication input.
+
+  Callers that persist coverage variants or evaluate the publication gate must use this
+  narrowed meeting. Otherwise the gate still requires coverage variants for an item that
+  coverage generation never produced, and the whole page fails. The stored meeting keeps
+  every agenda item; only the publication path narrows.
+  """
+  def scope_meeting(meeting, %{"items" => items}) do
+    keys = MapSet.new(items, & &1["key"])
+
+    %{
+      meeting
+      | agenda_items: Enum.filter(meeting.agenda_items, &MapSet.member?(keys, item_key(&1)))
     }
   end
 
@@ -219,6 +267,13 @@ defmodule BrusselsWtf.Council.PublicationInput do
 
   defp present?(value) when is_binary(value), do: String.trim(value) != ""
   defp present?(_value), do: false
+  @terminal_outcomes ~w(approved rejected amended postponed withdrawn other)
+
+  defp asserts_decision?(item) do
+    to_string(Map.get(item, :outcome)) in @terminal_outcomes or
+      to_string(Map.get(item, :procedural_state)) == "decision"
+  end
+
   defp item_key(item), do: item.authoritative_identifier || item.continuity_key
   defp item_sort_key(item), do: {item_key(item), item.item_number}
 

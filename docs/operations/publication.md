@@ -2,6 +2,28 @@
 
 [#17: Generate and publish upcoming Ixelles coverage](https://github.com/ricotrevisan/brussels-wtf/issues/17) adds evidence-gated automatic publication.
 
+## What a page covers
+
+A published meeting page covers the votable points of the meeting. The publication input is
+the publishable set: only agenda items that carry at least one current proposal or decision
+claim. Real agendas also contain information, interpellation, communication, and other
+non-votable points. Those points carry no claim and no official evidence, so they are not
+summarized and do not appear as coverage items. They stay in the meeting record, keep their
+normalization history and their review-inbox visibility, and are never presented as
+published prose. The page's input hash still identifies the exact evidence input that
+produced its content. [Issue 98](https://github.com/RicoTrevisan/brussels-wtf/issues/98)
+records the policy change; [ADR 0005](../adr/0005-publish-only-votable-points.md) records
+the decision.
+
+An item that asserts a terminal decision outcome or a decision procedural state stays in
+the publishable set even when its decision record is missing, so the gate reports
+`unsupported_publication_state` and `missing_decision_claim` instead of dropping the item.
+Only items that assert nothing publishable are excluded. A meeting whose publishable set is
+empty still fails closed with `missing_item`. Every included item keeps all existing gate
+checks: official evidence, claim kind, decision outcome, and procedural state. A claim-less
+non-votable item that is added later never makes published content stale, because it is
+outside the projection and cannot change the page.
+
 ## Flow
 
 1. Normalization persists the current meeting, agenda items, proposals, and official evidence.
@@ -17,6 +39,8 @@ The variant upserts and page publication happen in one database transaction. Pub
 
 A gate failure preserves the last complete publication state, stores typed failure details on the page, and opens one deduplicated `publication` review case for the publication-input hash. A later successful generation resolves that gate case. Common failure codes include:
 
+- `missing_item`
+- `missing_claim`
 - `missing_page_variant`
 - `missing_coverage_variant`
 - `missing_evidence`
