@@ -129,9 +129,6 @@ defmodule BrusselsWtfWeb.DossierPage do
         </li>
       </ol>
 
-      <footer class="mt-8 border-t border-base-300 pt-5 text-sm text-base-content/70">
-        {text(@locale, :byline)} Rico Trevisan
-      </footer>
       <BrusselsWtfWeb.PublicationComponents.footer locale={@locale} />
     </main>
     """
@@ -238,7 +235,6 @@ defmodule BrusselsWtfWeb.DossierPage do
   defp text("fr", :synthetic_reference),
     do: "Référence de démonstration — ne constitue pas une preuve d’activité communale"
 
-  defp text("fr", :byline), do: "Par"
   defp text("fr", :report_link), do: "Signaler un lien de dossier incorrect"
   defp text("fr", :report_reason), do: "Pourquoi ce lien est-il incorrect ?"
   defp text("fr", :submit_report), do: "Envoyer le signalement"
@@ -254,7 +250,6 @@ defmodule BrusselsWtfWeb.DossierPage do
   defp text("nl", :synthetic_reference),
     do: "Demonstratiereferentie — geen bewijs van gemeentelijke activiteit"
 
-  defp text("nl", :byline), do: "Door"
   defp text("nl", :report_link), do: "Een onjuiste dossierlink melden"
   defp text("nl", :report_reason), do: "Waarom is deze link onjuist?"
   defp text("nl", :submit_report), do: "Melding versturen"
@@ -268,7 +263,6 @@ defmodule BrusselsWtfWeb.DossierPage do
   defp text(_locale, :synthetic_reference),
     do: "Demonstration reference — not evidence of council activity"
 
-  defp text(_locale, :byline), do: "By"
   defp text(_locale, :report_link), do: "Report an incorrect dossier link"
   defp text(_locale, :report_reason), do: "Why is this link incorrect?"
   defp text(_locale, :submit_report), do: "Submit report"

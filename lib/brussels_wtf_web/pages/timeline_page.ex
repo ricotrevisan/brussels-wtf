@@ -269,9 +269,6 @@ defmodule BrusselsWtfWeb.TimelinePage do
         </div>
       </div>
 
-      <footer class="mt-12 border-t border-base-300 pt-5 text-sm text-base-content/70">
-        {text(@locale, :byline)} Rico Trevisan
-      </footer>
       <BrusselsWtfWeb.PublicationComponents.footer locale={@locale} />
     </main>
     """
@@ -456,8 +453,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       outcome_unknown: "Outcome unknown",
       decision: "Decision",
       provenance: "Content provenance",
-      source: "Source",
-      byline: "By"
+      source: "Source"
     }
   end
 
@@ -496,8 +492,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       outcome_unknown: "Résultat inconnu",
       decision: "Décision",
       provenance: "Provenance du contenu",
-      source: "Source",
-      byline: "Par"
+      source: "Source"
     }
   end
 
@@ -535,8 +530,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       outcome_unknown: "Resultaat onbekend",
       decision: "Besluit",
       provenance: "Herkomst van de inhoud",
-      source: "Bron",
-      byline: "Door"
+      source: "Bron"
     }
   end
 end

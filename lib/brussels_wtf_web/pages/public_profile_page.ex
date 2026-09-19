@@ -223,10 +223,6 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
           />
         </div>
       </section>
-
-      <footer class="mt-12 border-t border-base-300 pt-5 text-sm text-base-content/70">
-        {text(@locale, :byline)} Rico Trevisan
-      </footer>
     </main>
     """
   end
@@ -428,8 +424,7 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
         "Your text and optional contact stay private. A suggestion is only a lead and cannot publish or verify a fact.",
       suggestion: "Suggestion",
       contact: "Private contact (optional)",
-      website: "Website",
-      byline: "By"
+      website: "Website"
     }
   end
 
@@ -461,8 +456,7 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
         "Votre texte et votre éventuel contact restent privés. Une suggestion est seulement une piste et ne peut ni publier ni vérifier un fait.",
       suggestion: "Suggestion",
       contact: "Contact privé (facultatif)",
-      website: "Site web",
-      byline: "Par"
+      website: "Site web"
     }
   end
 
@@ -494,8 +488,7 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
         "Uw tekst en optionele contactgegevens blijven privé. Een suggestie is alleen een aanwijzing en kan geen feit publiceren of verifiëren.",
       suggestion: "Suggestie",
       contact: "Privécontact (optioneel)",
-      website: "Website",
-      byline: "Door"
+      website: "Website"
     }
   end
 end
