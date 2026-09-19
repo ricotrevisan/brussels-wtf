@@ -146,7 +146,7 @@ defmodule BrusselsWtfWeb.PrincipalSeamTest do
 
       assert html =~ title
       assert html =~ "agenda-item-4"
-      assert html =~ "Rico Trevisan"
+      refute html =~ "Rico Trevisan"
 
       assert html =~
                %{"en" => "AI-generated", "fr" => "Généré par IA", "nl" => "AI-gegenereerd"}[

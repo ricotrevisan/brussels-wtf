@@ -137,6 +137,7 @@ defmodule BrusselsWtfWeb.PublicProfilePageTest do
       assert html =~ expected_kind
       assert html =~ expected_correction
       assert html =~ ~s(href="/people/#{person.id}?lang=#{locale}")
+      refute html =~ "Rico Trevisan"
       refute html =~ "PRIVATE"
     end
   end

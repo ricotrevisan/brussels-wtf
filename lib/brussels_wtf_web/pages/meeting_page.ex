@@ -194,9 +194,6 @@ defmodule BrusselsWtfWeb.MeetingPage do
         </p>
       </section>
 
-      <footer class="mt-12 border-t border-base-300 pt-5 text-sm text-base-content/70">
-        {text(@locale, :byline)} Rico Trevisan
-      </footer>
       <BrusselsWtfWeb.PublicationComponents.footer locale={@locale} />
     </main>
     """
@@ -566,7 +563,6 @@ defmodule BrusselsWtfWeb.MeetingPage do
       evidence: "Evidence and citations",
       source: "Authoritative source",
       retrieved: "Retrieved",
-      byline: "By",
       withdrawn_title: "Meeting coverage withdrawn",
       withdrawn_heading: "This coverage has been withdrawn",
       withdrawn_explanation: "The page is temporarily unavailable while its content is reviewed.",
@@ -612,7 +608,6 @@ defmodule BrusselsWtfWeb.MeetingPage do
       evidence: "Preuves et citations",
       source: "Source officielle",
       retrieved: "Récupérée",
-      byline: "Par",
       withdrawn_title: "Contenu de la réunion retiré",
       withdrawn_heading: "Ce contenu a été retiré",
       withdrawn_explanation:
@@ -658,7 +653,6 @@ defmodule BrusselsWtfWeb.MeetingPage do
       evidence: "Bewijs en citaten",
       source: "Officiële bron",
       retrieved: "Opgehaald",
-      byline: "Door",
       withdrawn_title: "Vergaderbericht ingetrokken",
       withdrawn_heading: "Dit bericht is ingetrokken",
       withdrawn_explanation:

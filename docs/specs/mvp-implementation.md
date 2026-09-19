@@ -47,7 +47,7 @@ Production will reuse the Coolify-managed PostgreSQL and rustFS services. The ap
 15. As a reader, I want source retrieval times and checksums available where useful, so that I can distinguish evidence versions even when a municipality reuses a URL.
 16. As a reader, I want applicable `AI-generated`, `machine-translated`, and `human-reviewed` labels, so that I understand how the text was produced.
 17. As a reader, I want official sourcing communicated through citations rather than a redundant badge, so that provenance labels retain a precise meaning.
-18. As a reader, I want every public page to carry Rico Trevisan's byline, so that editorial responsibility is visible.
+18. As a reader, I want public coverage to omit a personal byline, so that the civic information remains the focus.
 
 ### Multilingual reading
 

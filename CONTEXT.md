@@ -154,7 +154,7 @@ Whether a meeting page is `draft` or `published`. A draft publishes automaticall
 
 ## Publication gate
 
-The automated checks required to move content from `draft` to `published`. The gate requires complete FR/NL/EN locale variants, claim-specific official evidence, and applicable provenance labels. Rico Trevisan may review or edit content but his approval is not required for publication. Public coverage carries his byline.
+The automated checks required to move content from `draft` to `published`. The gate requires complete FR/NL/EN locale variants, claim-specific official evidence, and applicable provenance labels. Rico Trevisan may review or edit content but his approval is not required for publication. Public coverage does not carry a personal byline.
 
 ## Coverage generation mode
 

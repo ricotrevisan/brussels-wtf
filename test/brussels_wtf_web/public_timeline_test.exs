@@ -62,7 +62,7 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
     timeline = conn |> get("/?lang=en") |> html_response(200)
 
     assert timeline =~ ~s(href="/meetings/ixelles/demo-ixelles?lang=en#agenda-item-mobility-1")
-    assert timeline =~ "Rico Trevisan"
+    refute timeline =~ "Rico Trevisan"
 
     meeting =
       conn |> recycle() |> get("/meetings/ixelles/demo-ixelles?lang=en") |> html_response(200)
@@ -78,7 +78,7 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
     assert meeting =~ "Continuing dossier"
     assert meeting =~ "Demonstration reference — not evidence of council activity"
     refute meeting =~ "SHA-256"
-    assert meeting =~ "Rico Trevisan"
+    refute meeting =~ "Rico Trevisan"
   end
 
   test "a missing requested variant never leaks another language", %{conn: conn} do
@@ -306,7 +306,7 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
     assert dossier =~ "Dossier timeline"
     assert dossier =~ "Ixelles demonstration meeting"
     assert dossier =~ "Uccle demonstration meeting"
-    assert dossier =~ "Rico Trevisan"
+    refute dossier =~ "Rico Trevisan"
     assert dossier =~ "Report an incorrect dossier link"
   end
 

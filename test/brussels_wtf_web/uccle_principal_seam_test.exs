@@ -91,7 +91,7 @@ defmodule BrusselsWtfWeb.UcclePrincipalSeamTest do
 
       assert page =~ scenario.sources.register.url
       assert page =~ scenario.sources.register.sha256
-      assert page =~ "Rico Trevisan"
+      refute page =~ "Rico Trevisan"
     end
   end
 end
