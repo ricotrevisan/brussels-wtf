@@ -214,7 +214,47 @@ defmodule BrusselsWtf.Council.PublicationLifecycleTest do
     assert List.last(events).details["withdrawn_at"] == "2026-08-21T11:00:00.000000Z"
   end
 
-  test "unscoped republication rejects newly normalized agenda items", %{
+  test "unscoped republication rejects newly normalized claim-bearing agenda items", %{
+    actor: actor,
+    meeting: meeting,
+    page: page
+  } do
+    [existing_item] = meeting.agenda_items
+
+    PublicationLifecycle.withdraw!(
+      page.id,
+      %{"fr" => "Retiré", "nl" => "Ingetrokken", "en" => "Withdrawn"},
+      actor
+    )
+
+    new_item =
+      Council.upsert_agenda_item!(%{
+        council_meeting_id: meeting.id,
+        item_number: "5",
+        authoritative_identifier: "new-item-after-publication",
+        source_wording: "Newly normalized legitimate agenda item",
+        current_source_version_id: existing_item.current_source_version_id,
+        current_version_order: "later",
+        procedural_state: :unknown,
+        outcome: :unknown
+      })
+
+    Council.record_proposal!(%{
+      agenda_item_id: new_item.id,
+      source_version_id: existing_item.current_source_version_id,
+      text: "A newly normalized proposal that changes the publishable set."
+    })
+
+    assert_raise ArgumentError,
+                 "withdrawn content is stale and requires a new generated revision",
+                 fn ->
+                   PublicationLifecycle.republish!(page.id, actor)
+                 end
+
+    assert Council.get_meeting_page!(page.id).publication_status == :draft
+  end
+
+  test "unscoped republication ignores newly normalized items without claims", %{
     actor: actor,
     meeting: meeting,
     page: page
@@ -230,21 +270,30 @@ defmodule BrusselsWtf.Council.PublicationLifecycleTest do
     Council.upsert_agenda_item!(%{
       council_meeting_id: meeting.id,
       item_number: "5",
-      authoritative_identifier: "new-item-after-publication",
-      source_wording: "Newly normalized legitimate agenda item",
+      authoritative_identifier: "information-after-publication",
+      source_wording: "Information au Conseil communal des décisions prises par le Collège.",
       current_source_version_id: existing_item.current_source_version_id,
       current_version_order: "later",
       procedural_state: :unknown,
       outcome: :unknown
     })
 
-    assert_raise ArgumentError,
-                 "withdrawn content is stale and requires a new generated revision",
-                 fn ->
-                   PublicationLifecycle.republish!(page.id, actor)
-                 end
+    revision = PublicationLifecycle.republish!(page.id, actor)
+    assert revision.revision_kind == :republication
 
-    assert Council.get_meeting_page!(page.id).publication_status == :draft
+    republished = Council.get_meeting_page!(page.id)
+    assert republished.publication_status == :published
+    refute republished.withdrawn_at
+
+    reloaded = Council.get_ingested_meeting!("ixelles", "268")
+    assert length(reloaded.agenda_items) == 2
+
+    information = Enum.find(reloaded.agenda_items, &(&1.item_number == "5"))
+    assert Ash.load!(information, :coverage_variants).coverage_variants == []
+    refute information.published?
+
+    published_items = Enum.filter(reloaded.agenda_items, & &1.published?)
+    assert Enum.map(published_items, & &1.item_number) == ["4"]
   end
 
   test "a newer revision survives an interleaved recorded correction and its attempted runs remain",

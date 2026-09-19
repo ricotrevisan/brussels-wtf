@@ -377,6 +377,47 @@ defmodule BrusselsWtf.Council.PublicationTest do
     assert [%{status: :resolved}] = Review.list_review_cases!(%{kind: :publication}, actor: actor)
   end
 
+  test "a meeting publishes its votable points and keeps non-votable items off the page", %{
+    conn: conn
+  } do
+    scenario = BrusselsWtf.Test.Harness.load("ixelles/proposal")
+
+    information = %{
+      "item_number" => "2",
+      "authoritative_identifier" => "2",
+      "source_wording" => "Information au Conseil communal des décisions prises par le Collège.",
+      "proposals" => []
+    }
+
+    outputs =
+      put_in(
+        scenario.sources.projects.outputs,
+        [:normalize, "items"],
+        [information | scenario.sources.projects.outputs.normalize["items"]]
+      )
+
+    BrusselsWtf.Processors.Stub.put(scenario.sources.projects.sha256, outputs)
+
+    page = poll_and_page!()
+
+    assert page.publication_status == :published
+
+    meeting = Council.get_ingested_meeting!("ixelles", "268")
+    assert length(meeting.agenda_items) == 2
+
+    input = BrusselsWtf.Council.Publication.generation_input(meeting.id)
+    assert Enum.map(input["items"], & &1["key"]) == ["4"]
+
+    information_item = Enum.find(meeting.agenda_items, &(&1.item_number == "2"))
+    assert information_item.procedural_state == :unknown
+    assert Ash.load!(information_item, :coverage_variants).coverage_variants == []
+    refute information_item.published?
+
+    html = conn |> get("/meetings/ixelles/268?lang=fr") |> html_response(200)
+    assert html =~ "Subvention"
+    refute html =~ "Information au Conseil communal"
+  end
+
   defp poll_and_page! do
     assert :ok = BrusselsWtf.Ingestion.poll_now("ixelles")
     assert :ok = BrusselsWtf.Test.Harness.drain_pipeline()

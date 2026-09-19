@@ -1,19 +1,23 @@
 defmodule BrusselsWtf.Council.PublicationScope do
-  @moduledoc "Builds and restores explicit or all-current agenda-item publication scopes."
+  @moduledoc "Builds and restores explicit or publishable agenda-item publication scopes."
 
   alias BrusselsWtf.Council
   alias BrusselsWtf.Council.PublicationInput
 
   @scope_key "publication_scope"
 
-  def for_batch!(meeting, nil), do: {meeting, PublicationInput.build(meeting)}
+  def for_batch!(meeting, nil) do
+    input = PublicationInput.build(meeting)
+    {PublicationInput.scope_meeting(meeting, input), input}
+  end
 
   def for_batch!(meeting, coverage_batch_id) do
     batch = Council.get_coverage_batch!(coverage_batch_id)
 
     case batch.item_scopes do
       scopes when scopes == %{} ->
-        {meeting, PublicationInput.build(meeting)}
+        input = PublicationInput.build(meeting)
+        {PublicationInput.scope_meeting(meeting, input), input}
 
       scopes ->
         keys = Map.fetch!(scopes, meeting.id)
@@ -36,7 +40,7 @@ defmodule BrusselsWtf.Council.PublicationScope do
   end
 
   def selection(meeting, input) when is_map(input) and not is_map_key(input, @scope_key),
-    do: {:ok, meeting}
+    do: {:ok, PublicationInput.scope_meeting(meeting, input)}
 
   def selection(_meeting, _input), do: {:error, :invalid_publication_scope}
 
@@ -45,7 +49,7 @@ defmodule BrusselsWtf.Council.PublicationScope do
       current_input =
         case input do
           %{@scope_key => %{"item_keys" => keys}} -> explicit_input(selected, keys)
-          _unscoped -> PublicationInput.build(selected)
+          _unscoped -> PublicationInput.build(meeting)
         end
 
       {:ok, {selected, current_input}}
