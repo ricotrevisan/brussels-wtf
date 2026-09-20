@@ -22,6 +22,13 @@ defmodule BrusselsWtfWeb.Router do
     plug BrusselsWtfWeb.Plugs.RequireReviewer
   end
 
+  scope "/internal/discovery", BrusselsWtfWeb do
+    pipe_through :api
+    post "/claim", DiscoveryController, :claim, log: false
+    post "/:id/result", DiscoveryController, :result, log: false
+    post "/:id/fail", DiscoveryController, :fail, log: false
+  end
+
   scope "/health", BrusselsWtfWeb do
     get "/live", HealthController, :live
     get "/ready", HealthController, :ready

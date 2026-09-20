@@ -61,6 +61,7 @@ config :brussels_wtf,
     BrusselsWtf.Council,
     BrusselsWtf.Review,
     BrusselsWtf.Identity,
+    BrusselsWtf.Discovery,
     BrusselsWtf.Follow,
     BrusselsWtf.Accounts
   ],
@@ -99,6 +100,7 @@ config :brussels_wtf,
   },
   allow_synthetic_seeds: false,
   automatic_transcription: false,
+  discovery_token_digest: nil,
   citizen_mailer: BrusselsWtf.Accounts.Mail.Memory,
   citizen_token_signing_secret: String.duplicate("dev-only-citizen-token-secret-", 3),
   citizen_session: [idle_days: 30, absolute_days: 90],
@@ -233,7 +235,19 @@ config :logger, :default_formatter,
 
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
-config :phoenix, :filter_parameters, ["email", "token", "management_secret", "citizen_session"]
+
+config :phoenix, :filter_parameters, [
+  "email",
+  "token",
+  "management_secret",
+  "citizen_session",
+  "lease_token",
+  "result",
+  "processor",
+  "mentions",
+  "lines",
+  "quote"
+]
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
