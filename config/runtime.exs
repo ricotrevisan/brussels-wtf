@@ -50,6 +50,16 @@ if config_env() in [:dev, :prod] do
   config :brussels_wtf, BrusselsWtf.Processors.OpenRouterCoverage, coverage.provider_config
 end
 
+if config_env() in [:dev, :prod] do
+  digest = System.get_env("DISCOVERY_TOKEN_SHA256")
+
+  if digest not in [nil, ""] and not Regex.match?(~r/\A[0-9a-f]{64}\z/, digest) do
+    raise "DISCOVERY_TOKEN_SHA256 must be a lowercase SHA-256 digest"
+  end
+
+  config :brussels_wtf, :discovery_token_digest, if(digest == "", do: nil, else: digest)
+end
+
 if config_env() == :prod do
   # The release carries its build identity; stale Coolify runtime variables cannot relabel it.
   release_sha =
