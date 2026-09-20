@@ -203,7 +203,7 @@ defmodule BrusselsWtf.Discovery.Input do
         |> Enum.with_index(1)
         |> Enum.map(fn {line, l} -> %{"id" => "p#{p}-l#{l}", "text" => line} end)
       end)
-      |> Enum.split_while(&(not Regex.match?(@private, &1["text"])))
+      |> split_private_section()
 
     counts = if private == [], do: %{}, else: %{"private_session" => length(private)}
 
@@ -235,6 +235,21 @@ defmodule BrusselsWtf.Discovery.Input do
     |> then(fn {blocks, counts} ->
       {blocks |> Enum.reverse() |> List.flatten(), %{"excluded_lines" => counts}}
     end)
+  end
+
+  defp split_private_section(lines) do
+    text = Enum.map_join(lines, "\n", & &1["text"])
+
+    case Regex.run(@private, text, return: :index, capture: :first) do
+      [{offset, _length}] ->
+        # Match across line/page boundaries, then exclude from the heading's
+        # first original line, not merely the line containing its last word.
+        heading_line = text |> binary_part(0, offset) |> :binary.matches("\n") |> length()
+        Enum.split(lines, heading_line)
+
+      nil ->
+        {lines, []}
+    end
   end
 
   defp chunks(lines) do

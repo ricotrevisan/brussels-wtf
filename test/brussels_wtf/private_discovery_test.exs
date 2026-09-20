@@ -538,37 +538,46 @@ defmodule BrusselsWtf.PrivateDiscoveryTest do
     assert {:ok, []} = Ash.read(Discovery.Job)
   end
 
-  test "private-session text never reopens on prose or headings mentioning a public session" do
-    text =
-      "SÉANCE PUBLIQUE\nÉlodie D’Haene présente le projet de l’ASBL Élan.\n\n" <>
-        "HUIS CLOS\nLe président rappelle la décision prise en séance publique.\n" <>
-        "Jean Dupont demande une aide individuelle.\n\nSÉANCE PUBLIQUE\n" <>
-        "Marie Martin demande une aide individuelle.\fOpenbare zitting\nJan Janssens vraagt steun."
+  for heading <- ["HUIS CLOS", "Séance\nnon publique", "Besloten\nzitting", "Geheime\nzitting"] do
+    test "private-session #{inspect(heading)} excludes its entire heading and later paragraphs" do
+      heading = unquote(heading)
+      heading_lines = length(String.split(heading, "\n"))
 
-    run = source!("ixelles/proposal", :agenda, :native_extraction, text)
-    {:ok, preview} = Discovery.preview([run.id], actor: @actor, max_jobs: 8)
-    assert hd(preview.runs).measurements["excluded_lines"]["private_session"] == 8
-    {:ok, _} = Discovery.enqueue([run.id], actor: @actor, max_jobs: 8)
-    claim = request("/internal/discovery/claim", %{}) |> json_response(200)
-    assert Enum.map(claim["input"]["lines"], & &1["id"]) == ["p1-l1", "p1-l2"]
+      text =
+        "SÉANCE PUBLIQUE\nÉlodie D’Haene présente le projet de l’ASBL Élan.\n\n" <>
+          heading <>
+          "\nLe président rappelle la décision prise en séance publique.\n\n" <>
+          "Jean Dupont demande une aide individuelle.\n\nSÉANCE PUBLIQUE\n" <>
+          "Marie Martin demande une aide individuelle.\fOpenbare zitting\nJan Janssens vraagt steun."
 
-    payload =
-      result(claim)
-      |> put_in(["result", "mentions"], [
-        %{
-          "kind" => "person",
-          "text" => "Jean Dupont",
-          "line_id" => "p1-l6",
-          "quote" => "Jean Dupont demande une aide individuelle."
-        }
-      ])
+      run = source!("ixelles/proposal", :agenda, :native_extraction, text)
+      {:ok, preview} = Discovery.preview([run.id], actor: @actor, max_jobs: 8)
 
-    assert request("/internal/discovery/#{claim["id"]}/result", payload) |> response(422)
+      assert hd(preview.runs).measurements["excluded_lines"]["private_session"] ==
+               8 + heading_lines
 
-    assert request("/internal/discovery/#{claim["id"]}/result", result(claim))
-           |> json_response(200)
+      {:ok, _} = Discovery.enqueue([run.id], actor: @actor, max_jobs: 8)
+      claim = request("/internal/discovery/claim", %{}) |> json_response(200)
+      assert Enum.map(claim["input"]["lines"], & &1["id"]) == ["p1-l1", "p1-l2"]
 
-    assert Enum.map(Ash.read!(Identity.Mention), & &1.text) == ["Élodie D’Haene"]
+      payload =
+        result(claim)
+        |> put_in(["result", "mentions"], [
+          %{
+            "kind" => "person",
+            "text" => "Jean Dupont",
+            "line_id" => "p1-l#{heading_lines + 6}",
+            "quote" => "Jean Dupont demande une aide individuelle."
+          }
+        ])
+
+      assert request("/internal/discovery/#{claim["id"]}/result", payload) |> response(422)
+
+      assert request("/internal/discovery/#{claim["id"]}/result", result(claim))
+             |> json_response(200)
+
+      assert Enum.map(Ash.read!(Identity.Mention), & &1.text) == ["Élodie D’Haene"]
+    end
   end
 
   for {scenario, source, role} <- [
