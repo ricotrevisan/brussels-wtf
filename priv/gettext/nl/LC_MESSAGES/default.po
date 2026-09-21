@@ -1,0 +1,13 @@
+msgid ""
+msgstr ""
+"Language: nl\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+#, elixir-format
+msgid "Installation documented on %{date}; end date not established"
+msgstr "Installatie gedocumenteerd op %{date}; einddatum niet vastgesteld"
+
+#, elixir-format
+msgid "Installation documented on %{date}; end date: %{end_date}"
+msgstr "Installatie gedocumenteerd op %{date}; einddatum: %{end_date}"
+

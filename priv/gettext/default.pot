@@ -1,0 +1,48 @@
+## This file is a PO Template file.
+##
+## "msgid"s here are often extracted from source code.
+## Add new messages manually only if they're dynamic
+## messages that can't be statically extracted.
+##
+## Run "mix gettext.extract" to bring this file up to
+## date. Leave "msgstr"s empty as changing them here has no
+## effect: edit them in PO (.po) files instead.
+#
+msgid ""
+msgstr ""
+
+#: lib/brussels_wtf_web/components/core_components.ex:375
+#, elixir-autogen, elixir-format
+msgid "Actions"
+msgstr ""
+
+#: lib/brussels_wtf_web/components/layouts.ex:124
+#: lib/brussels_wtf_web/components/layouts.ex:139
+#, elixir-autogen, elixir-format
+msgid "Attempting to reconnect"
+msgstr ""
+
+#: lib/brussels_wtf_web/components/public_mandate.ex:30
+#, elixir-autogen, elixir-format
+msgid "Installation documented on %{date}; end date not established"
+msgstr ""
+
+#: lib/brussels_wtf_web/components/public_mandate.ex:25
+#, elixir-autogen, elixir-format
+msgid "Installation documented on %{date}; end date: %{end_date}"
+msgstr ""
+
+#: lib/brussels_wtf_web/components/layouts.ex:131
+#, elixir-autogen, elixir-format
+msgid "Something went wrong!"
+msgstr ""
+
+#: lib/brussels_wtf_web/components/layouts.ex:116
+#, elixir-autogen, elixir-format
+msgid "We can't find the internet"
+msgstr ""
+
+#: lib/brussels_wtf_web/components/core_components.ex:81
+#, elixir-autogen, elixir-format
+msgid "close"
+msgstr ""

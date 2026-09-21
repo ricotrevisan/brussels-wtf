@@ -139,6 +139,50 @@ defmodule BrusselsWtf.Communes.CityOfBrusselsTest do
              )
   end
 
+  test "complete reports are a separate host/path/year-bounded profile, not arbitrary links" do
+    index = "https://www.brussels.be/complete-reports-public-meetings-city-council"
+
+    html = """
+    <a href="/sites/default/files/outside.pdf">Public meeting of the City Council of 01/12/2024</a>
+    <div class="views-row">
+      <div class="views-field views-field-field-file-document"><div class="field-content">
+        <i class="fa fa-file-pdf ext"></i><a href="/sites/default/files/observed-report.pdf">Public meeting of the City Council of 01/12/2024</a>
+      </div></div>
+    </div>
+    """
+
+    assert {:ok, [report]} =
+             CityOfBrussels.discover(html, index <> "?field_date_document_value=2024")
+
+    assert report.url == "https://www.brussels.be/sites/default/files/observed-report.pdf"
+    assert report.role == :minutes
+    assert report.scheduled_on == ~D[2024-12-01]
+    assert report.meeting_identifier == "2024-12-01"
+
+    for url <- [
+          String.replace(index, "www.brussels.be", "unapproved.invalid"),
+          String.replace(index, "https:", "http:"),
+          index <> "?field_date_document_value=2024&other=1",
+          index <> "?field_date_document_value=2025",
+          index <> "#fragment",
+          "https://www.brussels.be/unrelated"
+        ] do
+      assert {:error, {:invalid_index, _}} = CityOfBrussels.discover(html, url)
+    end
+
+    for changed <- [
+          String.replace(
+            html,
+            "/sites/default/files/observed-report.pdf",
+            "https://unapproved.invalid/report.pdf"
+          ),
+          String.replace(html, "01/12/2024", "32/12/2024"),
+          String.replace(html, "views-row", "views-row-unrelated")
+        ] do
+      assert {:error, {:invalid_index, _}} = CityOfBrussels.discover(changed, index)
+    end
+  end
+
   defp fixture(name) do
     Path.expand("../../support/fixtures/city_of_brussels/adapter/#{name}", __DIR__)
     |> File.read!()

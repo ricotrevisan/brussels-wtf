@@ -139,7 +139,13 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
   @registry %{
     @ixelles_mandate.id => @ixelles_mandate,
     @ixelles_declaration.id => @ixelles_declaration,
-    @gazette_management.id => @gazette_management
+    @gazette_management.id => @gazette_management,
+    municipal_installation_v1: %{
+      id: :municipal_installation_v1,
+      verifier_id: "municipal_installation_v1",
+      kind: :public_mandate,
+      module: Identity.MunicipalInstallation.Verifier
+    }
   }
 
   @doc false
@@ -156,6 +162,9 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
   def available_for?(kind) when is_atom(kind) do
     Enum.any?(@registry, fn {_id, verifier} -> verifier.kind == kind end)
   end
+
+  def trusted_fact?(%{verified_by: "municipal_installation_v1"} = fact),
+    do: Identity.MunicipalInstallation.Verifier.trusted_fact?(fact)
 
   def trusted_fact?(fact)
       when fact.verification_status in [:verified, :superseded] and
@@ -233,6 +242,10 @@ defmodule BrusselsWtf.Identity.TrustedVerifier do
   def gazette_semantic_payload(fact, person, commune, version) do
     semantic_payload(fact, person, commune, version, @gazette_management)
   end
+
+  def verify!(fact_id, verifier_id, processing_run_id)
+      when verifier_id in [:municipal_installation_v1, "municipal_installation_v1"],
+      do: Identity.MunicipalInstallation.Verifier.verify!(fact_id, processing_run_id)
 
   def verify!(fact_id, verifier_id, processing_run_id) do
     verifier = fetch!(verifier_id)

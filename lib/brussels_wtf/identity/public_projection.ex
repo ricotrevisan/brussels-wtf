@@ -33,7 +33,8 @@ defmodule BrusselsWtf.Identity.PublicProjection do
         verified_by in [
           "ixelles_mandate_declaration_v2",
           "ixelles_mandate_declaration_v3",
-          "belgian_official_gazette_management_v1"
+          "belgian_official_gazette_management_v1",
+          "municipal_installation_v1"
         ]
     )
     |> maybe_filter(:subject_type, filter)
@@ -52,6 +53,41 @@ defmodule BrusselsWtf.Identity.PublicProjection do
     )
     |> Ash.read!(authorize?: false, domain: Identity)
     |> Enum.any?(&historically_safe_person_fact?(&1, person_id))
+  end
+
+  defp project(%{verified_by: "municipal_installation_v1"} = fact) do
+    if Identity.TrustedVerifier.trusted_fact?(fact) do
+      fact = Ash.load!(fact, source_version: [source_record: :commune])
+      version = fact.source_version
+      commune = version.source_record.commune
+      person = Identity.get_person!(fact.subject_id)
+      {:ok, contract} = Identity.MunicipalInstallation.Source.contract(commune.slug)
+      labels = Map.fetch!(contract.role_labels, fact.object_label)
+
+      [
+        %PublicRelationship{
+          fact_id: fact.id,
+          subject_type: :person,
+          subject_id: person.id,
+          subject_name: person.legal_name,
+          object_type: :commune,
+          object_id: commune.id,
+          object_name: commune.name,
+          kind: :public_mandate,
+          effective_from: fact.effective_from,
+          effective_to: fact.effective_to,
+          source_authority: fact.source_authority,
+          authoritative_url: fact.authoritative_url,
+          evidence_location: fact.evidence_location,
+          source_retrieved_at: version.first_retrieved_at,
+          verified_at: fact.verified_at,
+          state: fact_state(fact),
+          role_labels: Map.new(labels, fn {key, value} -> {to_string(key), value} end)
+        }
+      ]
+    else
+      []
+    end
   end
 
   defp project(%{verified_by: "belgian_official_gazette_management_v1"} = fact) do
@@ -157,7 +193,15 @@ defmodule BrusselsWtf.Identity.PublicProjection do
       else: :current
   end
 
+  defp fact_state(%{verified_by: "municipal_installation_v1", effective_to: nil}), do: :documented
+
   defp fact_state(_), do: :current
+
+  defp historically_safe_person_fact?(
+         %{verified_by: "municipal_installation_v1"} = fact,
+         person_id
+       ),
+       do: fact.subject_id == person_id and Identity.TrustedVerifier.trusted_fact?(fact)
 
   defp historically_safe_person_fact?(fact, person_id) do
     with %{source_version: version} <-
