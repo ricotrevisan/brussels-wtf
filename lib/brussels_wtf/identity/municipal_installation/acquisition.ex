@@ -8,7 +8,8 @@ defmodule BrusselsWtf.Identity.MunicipalInstallation.Acquisition do
   No corpus manifest or normalized meeting link is required. Existing retrieval
   timestamps and duplicate discovery contexts are preserved.
 
-  `:reused` means checksum-verified bytes and accepted native text are ready;
+  `:reused` means size/checksum-verified bytes and accepted native text from the
+  current processor name/version/configuration are ready;
   `:queued` means native extraction was requested (possibly already queued).
   Call again after the returned extract jobs finish to check accepted native
   artifacts. Do not drain general queues. Jobs use `generation_kind: backfill`,
@@ -325,9 +326,10 @@ defmodule BrusselsWtf.Identity.MunicipalInstallation.Acquisition do
       true ->
         case Archive.get(version.object_key) do
           {:ok, bytes} ->
-            if Digest.sha256(bytes) == source.sha256 and String.starts_with?(bytes, "%PDF-"),
-              do: :ok,
-              else: {:error, :archive_checksum_mismatch}
+            if Digest.sha256(bytes) == source.sha256 and byte_size(bytes) == version.byte_size and
+                 String.starts_with?(bytes, "%PDF-"),
+               do: :ok,
+               else: {:error, :archive_checksum_mismatch}
 
           _ ->
             {:error, :archive_unavailable}
@@ -337,12 +339,21 @@ defmodule BrusselsWtf.Identity.MunicipalInstallation.Acquisition do
 
   defp native_state(version) do
     version = Ash.load!(version, processing_runs: [:derived_artifacts, :artifact_links])
-    native = Enum.filter(version.processing_runs, &(&1.processor_role == :native_extraction))
+    metadata = BrusselsWtf.PDF.Processor.metadata()
+
+    native =
+      Enum.filter(version.processing_runs, fn run ->
+        run.processor_role == :native_extraction and
+          run.processor_name == metadata.native_processor_name and
+          run.processor_version == metadata.native_processor_version and
+          run.config_hash == metadata.config_hash
+      end)
 
     accepted =
       Enum.filter(
         native,
-        &(&1.status == :succeeded and &1.quality_measurements["accepted"] == true)
+        &(&1.status == :succeeded and not is_nil(&1.completed_at) and
+            &1.quality_measurements["accepted"] == true)
       )
 
     ready =
@@ -353,13 +364,16 @@ defmodule BrusselsWtf.Identity.MunicipalInstallation.Acquisition do
                    artifact.processor_name == run.processor_name and
                    artifact.processor_version == run.processor_version and
                    artifact.config_hash == run.config_hash and
-                   artifact.quality_measurements["accepted"] == true and
+                   artifact.media_type == "text/plain; charset=utf-8" and
+                   artifact.quality_measurements == run.quality_measurements and
                    Enum.any?(
                      run.artifact_links,
                      &(&1.derived_artifact_id == artifact.id and &1.role == :native_output)
                    ),
                {:ok, bytes} <- Archive.get(artifact.object_key),
-               true <- Digest.sha256(bytes) == artifact.output_sha256 do
+               true <-
+                 Digest.sha256(bytes) == artifact.output_sha256 and
+                   byte_size(bytes) == artifact.byte_size do
             run.id
           else
             _ -> nil

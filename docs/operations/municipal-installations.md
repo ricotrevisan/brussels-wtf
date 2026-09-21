@@ -91,7 +91,8 @@ Code.eval_string(
 The helper calls `Acquisition.acquire(slugs, actor: reviewer)`. It prints only
 `reused`, `queued`, and `failures` counts:
 
-- **reused:** archived bytes and accepted native text were checksum-verified.
+- **reused:** archived bytes and accepted native text were size/checksum-verified
+  against a completed run of the current native processor name, version and configuration.
 - **queued:** normal native extraction was requested; this is not readiness or
   publication. It may already be queued.
 - **failures:** stop and inspect the private source/review diagnostics. Changed
@@ -106,7 +107,10 @@ private, authenticated diagnosis; the helper deliberately does not print them.
 If a necessary queue is held, use the existing bounded job workflow with scoped
 authorization for those jobs, not an unrestricted resume/drain. Rerun acquisition
 after those jobs complete; require all selected documents reused and no failures
-before proceeding. Four communes should yield eight ready PDFs.
+before proceeding. Four communes should yield eight ready PDFs. After a native
+toolchain/configuration change, stale successful or failed runs remain in history
+but current extraction is queued. Corrupt or inconsistent current artifacts remain
+classified failures; acquisition does not silently repair them.
 
 **Exact PDF leaf policy (v1):** a PDF retrieval's final URL must equal its approved
 source URL exactly. Even a same-origin redirect to another path or query is

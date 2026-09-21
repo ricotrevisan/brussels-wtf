@@ -319,34 +319,162 @@ defmodule BrusselsWtf.Identity.MunicipalInstallation.AcquisitionTest do
     end
   end
 
+  defmodule ChangingProcessor do
+    @behaviour BrusselsWtf.PDF.Processor
+    defdelegate native(meta, bytes), to: BrusselsWtf.PDF.Stub
+    defdelegate ocr(meta, bytes, pages), to: BrusselsWtf.PDF.Stub
+    def metadata, do: Application.fetch_env!(:brussels_wtf, __MODULE__)
+  end
+
+  @tag :external
+  test "toolchain changes queue current native generations instead of reusing stale success or failure" do
+    contract = stub_city_pair!()
+    old_processor = Application.fetch_env!(:brussels_wtf, :pdf_processor)
+    old_metadata = Application.get_env(:brussels_wtf, ChangingProcessor)
+    metadata = BrusselsWtf.PDF.Processor.metadata()
+    Application.put_env(:brussels_wtf, ChangingProcessor, metadata)
+    Application.put_env(:brussels_wtf, :pdf_processor, ChangingProcessor)
+
+    on_exit(fn ->
+      Application.put_env(:brussels_wtf, :pdf_processor, old_processor)
+
+      if old_metadata,
+        do: Application.put_env(:brussels_wtf, ChangingProcessor, old_metadata),
+        else: Application.delete_env(:brussels_wtf, ChangingProcessor)
+    end)
+
+    # Real terminal worker results: one accepted run, one failed run, completed jobs.
+    BrusselsWtf.Processors.Stub.put(contract.corroboration.sha256, %{
+      extract: {:error, :invalid_content}
+    })
+
+    assert {:ok, %{queued: 2, sources: initial}} =
+             Acquisition.acquire([contract.slug], actor: @actor, http: HTTP.Stub)
+
+    finish_extractions!(initial)
+
+    assert {:ok, %{reused: 1, failures: 1}} =
+             Acquisition.acquire([contract.slug], actor: @actor, http: HTTP.Stub)
+
+    HTTP.Stub.reset()
+    stub_city_pair!()
+    version_changed = %{metadata | native_processor_version: "fixture-poppler-upgraded"}
+    config_changed = %{version_changed | config_hash: "sha256:fixture-pdf-quality-upgraded"}
+
+    for current <- [version_changed, config_changed] do
+      Application.put_env(:brussels_wtf, ChangingProcessor, current)
+
+      assert {:ok, %{reused: 0, queued: 2, failures: 0, sources: queued}} =
+               Acquisition.acquire([contract.slug], actor: @actor, http: HTTP.Stub)
+
+      refute Enum.any?(queued, fn source -> Enum.any?(initial, &(&1.job_id == source.job_id)) end)
+
+      assert {:ok, [%{published_new: 0, error: :native_extraction_required}]} =
+               BrusselsWtf.Identity.MunicipalInstallation.publish([contract.slug],
+                 actor: @actor,
+                 max_facts_per_commune: 1
+               )
+
+      finish_extractions!(queued)
+
+      assert {:ok, %{reused: 2, queued: 0, failures: 0, sources: ready}} =
+               Acquisition.acquire([contract.slug], actor: @actor, http: HTTP.Stub)
+
+      for source <- ready do
+        run = Ingestion.get_processing_run!(source.processing_run_id)
+        assert run.processor_version == current.native_processor_version
+        assert run.config_hash == current.config_hash
+      end
+    end
+
+    assert {:ok, [%{published_new: 1, rejected: []}]} =
+             BrusselsWtf.Identity.MunicipalInstallation.publish([contract.slug],
+               actor: @actor,
+               max_facts_per_commune: 1
+             )
+
+    assert length(BrusselsWtf.Identity.list_public_relationships!()) == 1
+    assert HTTP.Stub.requests(contract.installation.url) == []
+    assert HTTP.Stub.requests(contract.corroboration.url) == []
+
+    # Name is also part of the readiness tuple (not permission for a new verifier).
+    Application.put_env(:brussels_wtf, ChangingProcessor, %{
+      config_changed
+      | native_processor_name: "different-native-processor"
+    })
+
+    assert {:ok, %{reused: 0, queued: 2, failures: 0}} =
+             Acquisition.acquire([contract.slug], actor: @actor, http: HTTP.Stub)
+  end
+
+  @tag :external
+  test "readiness rejects incomplete or inconsistent current native evidence just like publication" do
+    contract = stub_city_pair!()
+
+    assert {:ok, %{sources: queued, queued: 2}} =
+             Acquisition.acquire([contract.slug], actor: @actor, http: HTTP.Stub)
+
+    finish_extractions!(queued)
+
+    assert {:ok, %{sources: [installation, _], reused: 2}} =
+             Acquisition.acquire([contract.slug], actor: @actor, http: HTTP.Stub)
+
+    run =
+      Ingestion.get_processing_run!(installation.processing_run_id)
+      |> Ash.load!(:derived_artifacts)
+
+    assert [artifact] = run.derived_artifacts
+
+    # Deliberate persisted-lineage faults, each restored independently. None
+    # may be relabelled ready merely because the current run says "accepted".
+    faults = [
+      {"processing_runs", "completed_at", "NULL", run.id},
+      {"derived_artifacts", "media_type", "'text/html'", artifact.id},
+      {"derived_artifacts", "quality_measurements",
+       "quality_measurements || '{\"test-extra\":true}'::jsonb", artifact.id},
+      {"derived_artifacts", "byte_size", "byte_size + 1", artifact.id},
+      {"derived_artifacts", "output_sha256", "repeat('0', 64)", artifact.id},
+      {"source_versions", "byte_size", "byte_size + 1", installation.source_version_id}
+    ]
+
+    for {table, column, mutation, id} <- faults do
+      [[original]] =
+        Repo.query!("SELECT #{column} FROM #{table} WHERE id = $1::text::uuid", [id]).rows
+
+      try do
+        Repo.query!("UPDATE #{table} SET #{column} = #{mutation} WHERE id = $1::text::uuid", [id])
+
+        assert {:ok, %{reused: 1, queued: 0, failures: 1, sources: [failed, _]}} =
+                 Acquisition.acquire([contract.slug], actor: @actor, http: HTTP.Stub)
+
+        assert failed.status == :failed
+
+        assert {:ok, [%{published_new: 0, error: _}]} =
+                 BrusselsWtf.Identity.MunicipalInstallation.publish([contract.slug],
+                   actor: @actor,
+                   max_facts_per_commune: 1
+                 )
+
+        assert BrusselsWtf.Identity.list_public_relationships!() == []
+      after
+        Repo.query!("UPDATE #{table} SET #{column} = $2 WHERE id = $1::text::uuid", [id, original])
+      end
+    end
+
+    assert {:ok, %{reused: 2, queued: 0, failures: 0}} =
+             Acquisition.acquire([contract.slug], actor: @actor, http: HTTP.Stub)
+
+    assert {:ok, [%{published_new: 1, rejected: []}]} =
+             BrusselsWtf.Identity.MunicipalInstallation.publish([contract.slug],
+               actor: @actor,
+               max_facts_per_commune: 1
+             )
+  end
+
   @tag :external
   test "redirected archived PDF lineage cannot report ready or publish until an exact leaf retrieval succeeds" do
     dir = System.fetch_env!("ISSUE104_SOURCE_DIR")
-    {:ok, contract} = Source.contract("city-of-brussels")
-    {installation, corroboration} = BrusselsWtf.MunicipalInstallationFixture.pair(contract.slug)
-    BrusselsWtf.Processors.Stub.reset()
-
-    for {source, filename, text} <- [
-          {contract.installation, "city-install", installation},
-          {contract.corroboration, "city-report", corroboration}
-        ] do
-      HTTP.Stub.put(source.parent_index_url, %{body: city_index(source)})
-      HTTP.Stub.put(source.url, %{body: File.read!(Path.join(dir, filename))})
-
-      pages =
-        text
-        |> String.split("\f")
-        |> Enum.map(
-          &(&1 <>
-              "\n" <>
-              String.duplicate(
-                "Le conseil communal examine les documents de la séance publique. ",
-                4
-              ))
-        )
-
-      BrusselsWtf.Processors.Stub.put(source.sha256, %{extract: %{"page_texts" => pages}})
-    end
+    contract = stub_city_pair!()
 
     assert {:ok, %{queued: 2, failures: 0, sources: queued}} =
              Acquisition.acquire([contract.slug], actor: @actor, http: HTTP.Stub)
@@ -451,6 +579,51 @@ defmodule BrusselsWtf.Identity.MunicipalInstallation.AcquisitionTest do
           BrusselsWtf.Workers.PublishMeeting
         ] do
       assert Oban.Testing.all_enqueued(worker: worker, repo: BrusselsWtf.Repo) == []
+    end
+  end
+
+  defp stub_city_pair! do
+    dir = System.fetch_env!("ISSUE104_SOURCE_DIR")
+    {:ok, contract} = Source.contract("city-of-brussels")
+    {installation, corroboration} = BrusselsWtf.MunicipalInstallationFixture.pair(contract.slug)
+    BrusselsWtf.Processors.Stub.reset()
+
+    for {source, filename, text} <- [
+          {contract.installation, "city-install", installation},
+          {contract.corroboration, "city-report", corroboration}
+        ] do
+      HTTP.Stub.put(source.parent_index_url, %{body: city_index(source)})
+      HTTP.Stub.put(source.url, %{body: File.read!(Path.join(dir, filename))})
+
+      pages =
+        text
+        |> String.split("\f")
+        |> Enum.map(
+          &(&1 <>
+              "\n" <>
+              String.duplicate(
+                "Le conseil communal examine les documents de la séance publique. ",
+                4
+              ))
+        )
+
+      BrusselsWtf.Processors.Stub.put(source.sha256, %{extract: %{"page_texts" => pages}})
+    end
+
+    contract
+  end
+
+  defp finish_extractions!(sources) do
+    for source <- sources do
+      job = Repo.get!(Oban.Job, source.job_id)
+      assert job.state == "available"
+
+      assert :ok =
+               Oban.Testing.perform_job(BrusselsWtf.Workers.ExtractSource, job.args, repo: Repo)
+
+      # Acknowledge only these completed jobs, never drain a general queue.
+      assert :ok = Oban.Engine.complete_job(Oban.config(), job)
+      assert Repo.get!(Oban.Job, job.id).state == "completed"
     end
   end
 
