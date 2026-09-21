@@ -118,7 +118,7 @@ A natural person whose identity is supported by an explicit identifier or an exa
 
 ## Role
 
-A sourced position held by a person or legal entity, such as council member, director, manager, beneficial owner, shareholder, contractor, or office holder. A role may have effective dates.
+A sourced position held by a person or legal entity, such as council member, director, manager, beneficial owner, shareholder, contractor, or office holder. A role may have effective dates. A documented installation establishes its supported start, not an uninterrupted tenure; an unknown end date does not establish that the office is still held. A dated observation of a role alone establishes neither its start nor its end.
 
 ## Relationship claim
 

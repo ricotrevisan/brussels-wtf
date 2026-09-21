@@ -13,9 +13,18 @@ defmodule BrusselsWtf.Communes.CityOfBrussels do
   @link ~r/<a\b[^>]*\bhref\s*=\s*(["'])(.*?)\1[^>]*>(.*?)<\/a>/is
   @item_marker ~r/point_punt/i
   @item_identifier ~r/point_punt\s*\((\d+)\)/i
+  @report_row ~r/<div\b[^>]*class\s*=\s*["'](?:[^"']*\s)?views-row(?:\s[^"']*)?["'][^>]*>\s*<div\b[^>]*class\s*=\s*["'](?:[^"']*\s)?views-field-field-file-document(?:\s[^"']*)?["'][^>]*>\s*<div\b[^>]*class\s*=\s*["'](?:[^"']*\s)?field-content(?:\s[^"']*)?["'][^>]*>\s*(?:<i\b[^>]*>\s*<\/i>\s*)?(<a\b[^>]*>.*?<\/a>)/is
 
   @impl true
   def discover(html, index_url) when is_binary(html) and is_binary(index_url) do
+    if URI.parse(index_url).path == "/complete-reports-public-meetings-city-council" do
+      discover_reports(html, index_url)
+    else
+      discover_meeting_sections(html, index_url)
+    end
+  end
+
+  defp discover_meeting_sections(html, index_url) do
     sections = Regex.scan(@meeting_section, html)
 
     with false <- sections == [],
@@ -51,6 +60,44 @@ defmodule BrusselsWtf.Communes.CityOfBrussels do
 
   def discover_children(_html, %{role: role}), do: {:error, {:unsupported_parent_role, role}}
   def discover_children(_html, _parent), do: {:error, {:unsupported_parent_role, nil}}
+
+  # This is a separate publisher profile, not a fallback for arbitrary HTML links.
+  defp discover_reports(html, index_url) do
+    uri = URI.parse(index_url)
+
+    with true <-
+           uri.scheme == "https" and uri.host == "www.brussels.be" and
+             uri.port == 443 and is_nil(uri.userinfo) and is_nil(uri.fragment),
+         true <-
+           is_nil(uri.query) or Regex.match?(~r/^field_date_document_value=\d{4}$/, uri.query) do
+      Regex.scan(@report_row, html)
+      |> Enum.flat_map(fn [_, anchor] -> links(anchor, index_url) end)
+      |> Enum.reduce_while({:ok, []}, fn link, {:ok, acc} ->
+        label = link.label
+        leaf = URI.parse(link.url)
+
+        with [_, displayed] <-
+               Regex.run(~r/^Public meeting of the City Council of (\d{2}\/\d{2}\/\d{4})$/, label),
+             {:ok, date} <- parse_displayed_date(displayed),
+             true <- is_nil(uri.query) or uri.query == "field_date_document_value=#{date.year}",
+             true <-
+               leaf.scheme == "https" and leaf.host == uri.host and leaf.port == 443 and
+                 is_nil(leaf.userinfo) and is_nil(leaf.query) and is_nil(leaf.fragment) and
+                 String.starts_with?(leaf.path || "", "/sites/default/files/") and
+                 String.ends_with?(String.downcase(leaf.path || ""), ".pdf") do
+          {:cont, {:ok, acc ++ [locator(link, index_url, date, :minutes, :bilingual, nil)]}}
+        else
+          _ -> {:halt, {:error, {:invalid_index, :invalid_report_row}}}
+        end
+      end)
+      |> case do
+        {:ok, []} -> {:error, {:invalid_index, :no_authoritative_locators}}
+        result -> result
+      end
+    else
+      _ -> {:error, {:invalid_index, :unapproved_report_index}}
+    end
+  end
 
   defp parse_meeting_sections(sections, index_url) do
     Enum.reduce_while(sections, {:ok, []}, fn [_, displayed_date, body], {:ok, accumulated} ->

@@ -63,7 +63,8 @@ defmodule BrusselsWtfWeb.TimelinePage do
 
     BrusselsWtf.Identity.list_public_relationships!(%{object_type: :commune})
     |> Enum.filter(fn fact ->
-      fact.mandate_declaration != nil and fact.object_name in names and
+      (fact.mandate_declaration != nil or fact.state == :documented) and
+        fact.object_name in names and
         (needle == "" or String.contains?(String.downcase(fact.subject_name), needle))
     end)
     |> Enum.sort_by(&{&1.subject_name, &1.fact_id})
@@ -205,9 +206,24 @@ defmodule BrusselsWtfWeb.TimelinePage do
                 >
                   {mandate.subject_name}
                 </a>
-                <p class="mt-1">{mandate.mandate_declaration["role_labels"][@locale]}</p>
-                <p class="mt-1 text-base-content/70">
-                  {Date.to_iso8601(mandate.effective_from)} – {Date.to_iso8601(mandate.effective_to)}
+                <p class="mt-1">{BrusselsWtfWeb.PublicMandate.role_label(@locale, mandate)}</p>
+                <p class="mt-1">{mandate.object_name}</p>
+                <BrusselsWtfWeb.PublicMandate.installation_period
+                  :if={mandate.state == :documented}
+                  relationship={mandate}
+                  locale={@locale}
+                />
+                <p :if={mandate.state != :documented} class="mt-1 text-base-content/70">
+                  <time
+                    :if={mandate.effective_from}
+                    datetime={Date.to_iso8601(mandate.effective_from)}
+                  >
+                    {Date.to_iso8601(mandate.effective_from)}
+                  </time>
+                  <span :if={mandate.effective_from && mandate.effective_to}> – </span>
+                  <time :if={mandate.effective_to} datetime={Date.to_iso8601(mandate.effective_to)}>
+                    {Date.to_iso8601(mandate.effective_to)}
+                  </time>
                 </p>
                 <a
                   class="mt-1 inline-block underline underline-offset-2"
@@ -429,7 +445,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       decision_copy_unavailable: "Decision copy is unavailable in English.",
       synthetic_reference: "Demonstration reference — not evidence of council activity",
       dossiers: "Dossiers",
-      verified_mandates: "Verified declared mandates",
+      verified_mandates: "Verified public mandates",
       title: "Council coverage",
       intro:
         "Upcoming proposals, unresolved outcomes, and documented decisions from four Brussels communes.",
@@ -459,7 +475,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
 
   defp fr_text do
     %{
-      verified_mandates: "Mandats déclarés vérifiés",
+      verified_mandates: "Mandats publics vérifiés",
       skip: "Aller au contenu",
       unavailable_title: "Contenu indisponible en français",
       item_unavailable: "Contenu du point indisponible en français",
@@ -498,7 +514,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
 
   defp nl_text do
     %{
-      verified_mandates: "Geverifieerde aangegeven mandaten",
+      verified_mandates: "Geverifieerde openbare mandaten",
       skip: "Naar inhoud",
       unavailable_title: "Inhoud niet beschikbaar in het Nederlands",
       item_unavailable: "Inhoud van het agendapunt niet beschikbaar in het Nederlands",

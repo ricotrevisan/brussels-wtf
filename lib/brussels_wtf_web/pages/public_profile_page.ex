@@ -137,8 +137,16 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
                 {text(@locale, :superseded)}
               </p>
               <p class="mt-1">{relationship.subject_name} — {relationship.object_name}</p>
+              <BrusselsWtfWeb.PublicMandate.installation_period
+                :if={relationship.state == :documented}
+                relationship={relationship}
+                locale={@locale}
+              />
               <p
-                :if={relationship.effective_from || relationship.effective_to}
+                :if={
+                  relationship.state != :documented &&
+                    (relationship.effective_from || relationship.effective_to)
+                }
                 class="mt-2 text-sm text-base-content/70"
               >
                 {text(
@@ -281,7 +289,7 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
         [
           {:current_facts, Enum.filter(profile.relationships, &(&1.state in [nil, :current]))},
           {:dated_history,
-           Enum.filter(profile.relationships, &(&1.state in [:ended, :superseded]))}
+           Enum.filter(profile.relationships, &(&1.state in [:documented, :ended, :superseded]))}
         ]
         |> Enum.reject(fn {_, facts} -> facts == [] end),
       suggestions_enabled: enabled,
