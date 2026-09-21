@@ -61,6 +61,7 @@ config :brussels_wtf,
     BrusselsWtf.Council,
     BrusselsWtf.Review,
     BrusselsWtf.Identity,
+    BrusselsWtf.CBE.Index,
     BrusselsWtf.Discovery,
     BrusselsWtf.Follow,
     BrusselsWtf.Accounts

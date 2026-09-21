@@ -92,23 +92,9 @@ if config_env() == :prod do
   # avoiding recursive keyword-list leakage from the build configuration.
   config :brussels_wtf, :process_role, role
 
-  cbe_open_data_directory = System.get_env("CBE_OPEN_DATA_DIRECTORY")
-  cbe_open_data_sha256 = System.get_env("CBE_OPEN_DATA_SHA256")
-
-  case {cbe_open_data_directory, cbe_open_data_sha256} do
-    {directory, sha256} when directory not in [nil, ""] and sha256 not in [nil, ""] ->
-      config :brussels_wtf, :cbe_source, BrusselsWtf.CBE.OpenData
-
-      config :brussels_wtf, BrusselsWtf.CBE.OpenData,
-        directory: directory,
-        release_sha256: sha256
-
-    {directory, sha256} when directory in [nil, ""] and sha256 in [nil, ""] ->
-      :ok
-
-    _ ->
-      raise "CBE Open Data requires both CBE_OPEN_DATA_DIRECTORY and CBE_OPEN_DATA_SHA256"
-  end
+  cbe = BrusselsWtf.CBE.Runtime.load()
+  config :brussels_wtf, :cbe_source, cbe.source
+  config :brussels_wtf, cbe.source, cbe.source_config
 
   config :brussels_wtf, :pdf_limits, %{
     max_input_bytes: String.to_integer(System.get_env("PDF_MAX_INPUT_BYTES", "26214400")),

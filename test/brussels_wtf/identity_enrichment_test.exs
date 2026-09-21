@@ -38,6 +38,60 @@ defmodule BrusselsWtf.IdentityEnrichmentTest do
      source_version: source_version, actor: %BrusselsWtf.Review.Actor{id: "rico", role: :reviewer}}
   end
 
+  test "indexing writes no public identity facts and indexed natural persons remain blocked", %{
+    source_version: source_version
+  } do
+    alias BrusselsWtf.CBE.{Index, Indexed, OpenDataFixture}
+    directory = OpenDataFixture.write_release()
+    manifest = OpenDataFixture.manifest(directory)
+    previous = Application.get_env(:brussels_wtf, :cbe_source)
+    previous_indexed = Application.get_env(:brussels_wtf, Indexed)
+    Application.put_env(:brussels_wtf, :cbe_source, Indexed)
+    Application.put_env(:brussels_wtf, Indexed, release_sha256: manifest["sha256"])
+
+    on_exit(fn ->
+      File.rm_rf!(directory)
+      Application.put_env(:brussels_wtf, :cbe_source, previous)
+
+      if previous_indexed,
+        do: Application.put_env(:brussels_wtf, Indexed, previous_indexed),
+        else: Application.delete_env(:brussels_wtf, Indexed)
+    end)
+
+    counts = fn ->
+      for resource <- [
+            Identity.LegalEntity,
+            Identity.Person,
+            Identity.SourcedFact,
+            Identity.CbeRelease
+          ],
+          do: Ash.count!(resource, authorize?: false)
+    end
+
+    before = counts.()
+    assert {:ok, %{state: :ready}} = Index.import_release(directory, manifest)
+    assert counts.() == before
+
+    mention =
+      Identity.record_mention!(%{
+        occurrence_key: "natural-registration",
+        source_version_id: source_version.id,
+        text: "Example Natural Registration",
+        kind: :organization,
+        explicit_identifier: "0474521921"
+      })
+
+    request = Identity.request_cbe_enrichment!(mention.id, "0474521921")
+
+    assert_raise ArgumentError,
+                 ~r/natural-person CBE registration cannot create a legal entity/,
+                 fn ->
+                   Identity.complete_cbe_enrichment(request.id, 1, 1)
+                 end
+
+    assert counts.() == before
+  end
+
   test "an explicit enterprise number enriches one mention asynchronously", %{
     source_version: source_version
   } do
