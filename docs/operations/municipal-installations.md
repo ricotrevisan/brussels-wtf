@@ -155,18 +155,39 @@ eight total), not eight named people. Ambiguous identities can reduce the count;
 never weaken the gate merely to fill a quota. Publication needs no individual
 human approval once the source-specific gate passes.
 
-**The cap is cumulative per commune, not an increment.** Repeating `2` converges
-on the same first two admissible events; it does not publish the next two. After
-readback, explicitly raise the cap (for example to `4`) to admit the next
-source-ordered rows. The hard maximum is `100`. `published_existing` counts the
-already-verified rows toward the cap; `published_new` counts new admissions.
+**The cap bounds persisted verified `municipal_installation_v1` facts per commune,
+not an increment or the successes encountered in one invocation.** Every already
+verified v1 installation counts, including facts absent from the latest candidate
+set; legacy declaration and other verifier lanes do not count. Capacity is checked
+under a commune-scoped transaction lock before each admission, together with that
+admission's writes. Concurrent publishers cannot spend the same remaining capacity.
+A full cap creates no new private person or candidate fact.
+
+For example, if row A is ambiguous and rows B/C fill cap `2`, making A eligible
+later does **not** admit A on a same-cap retry. After readback, explicitly raise the
+cap to `3` to admit A. Remaining admissible events are considered in source order,
+including earlier rows that have become eligible. Repeating a full cap admits
+nothing new. Requesting a lower cap after a larger batch likewise admits nothing
+new; it never deletes or unpublishes existing facts. The hard maximum is `100`.
+
+`published_new` counts admissions by this caller. `published_existing` reports the
+persisted v1 count at the latest admission/capacity decision minus this caller's
+new admissions—not merely existing facts encountered in its candidate list. It may
+include another concurrent publisher's admissions and may exceed a newly lowered
+cap. These are readback snapshots, not a promise that another authorized publisher
+will not subsequently raise the total with a larger cap.
 
 The helper prints safe counts and public profile URLs only from a fresh verified
 public projection after publication. Those URLs may include previously published
 installations for the selected communes; they are not a list of newly created
 people. No pending name, excerpt, object key, source-version ID, processing ID or
-raw rejection message is printed. A failure can coexist with successful facts
-from another commune: inspect counts, do not assume all-or-nothing publication.
+raw rejection message is printed. Domain failures use finite classifications
+(such as `ambiguous_person`, `database_error`, or `database_unavailable`), not raw
+source bodies or SQL details. An unavailable capacity check cannot authorize a
+new admission. A failed candidate does not prevent later candidates from being
+checked while persisted capacity remains. A failure can coexist with successful
+facts, even in the same commune: inspect counts, do not assume all-or-nothing
+publication.
 
 ## Readback and acceptance receipt
 

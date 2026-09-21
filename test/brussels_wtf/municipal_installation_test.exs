@@ -67,6 +67,118 @@ defmodule BrusselsWtf.MunicipalInstallationTest do
     end
   end
 
+  test "a full persisted cap survives an earlier candidate becoming eligible without creating a private person" do
+    load!("forest")
+
+    blockers =
+      for _ <- 1..2 do
+        Identity.record_person!(%{
+          legal_name: "Chloé Exemple",
+          resolution_basis: :corroborated_name,
+          corroborating_facts: %{"municipality" => "forest"}
+        })
+      end
+
+    assert {:ok,
+            [%{published_new: 2, published_existing: 0, rejected: [%{reason: :ambiguous_person}]}]} =
+             MunicipalInstallation.publish(["forest"], actor: actor(), max_facts_per_commune: 2)
+
+    assert Enum.sort(Enum.map(Identity.list_public_relationships!(), & &1.subject_name)) ==
+             ["Jean-Louis Test", "Zoé Autre"]
+
+    # Retiring these private conflicting identities is a normal resource action.
+    for blocker <- blockers, do: Identity.retire_person!(blocker, %{})
+    people_before = Ash.count!(Identity.Person)
+
+    assert {:ok, [%{published_new: 0, published_existing: 2}]} =
+             MunicipalInstallation.publish(["forest"], actor: actor(), max_facts_per_commune: 2)
+
+    assert Ash.count!(Identity.Person) == people_before
+    assert length(Identity.list_public_relationships!()) == 2
+
+    assert {:ok, [%{published_new: 1, published_existing: 2}]} =
+             MunicipalInstallation.publish(["forest"], actor: actor(), max_facts_per_commune: 3)
+
+    assert length(Identity.list_public_relationships!()) == 3
+    assert Ash.count!(Identity.Person) == people_before + 1
+
+    for cap <- [3, 2] do
+      assert {:ok, [%{published_new: 0, published_existing: 3}]} =
+               MunicipalInstallation.publish(["forest"],
+                 actor: actor(),
+                 max_facts_per_commune: cap
+               )
+
+      assert length(Identity.list_public_relationships!()) == 3
+      assert Ash.count!(Identity.Person) == people_before + 1
+    end
+  end
+
+  defmodule RefreshedNative do
+    @behaviour BrusselsWtf.PDF.Processor
+    def metadata,
+      do:
+        Map.put(BrusselsWtf.PDF.Stub.metadata(), :config_hash, "sha256:fixture-refreshed-native")
+
+    defdelegate native(meta, bytes), to: BrusselsWtf.PDF.Stub
+    defdelegate ocr(meta, bytes, pages), to: BrusselsWtf.PDF.Stub
+  end
+
+  test "persisted installations outside the latest candidate scope still consume capacity" do
+    commune = load!("forest")
+
+    {:ok, [%{published_new: 2}]} =
+      MunicipalInstallation.publish(["forest"], actor: actor(), max_facts_per_commune: 2)
+
+    {:ok, contract} = Source.contract("forest")
+    [corroboration] = Ingestion.source_history!(commune.id, contract.corroboration.url).versions
+    {:ok, output} = BrusselsWtf.Processors.Stub.pdf_fixture(corroboration.sha256, :extract)
+
+    output =
+      Map.update!(output, "page_texts", fn pages ->
+        Enum.map(pages, &String.replace(&1, "Chloé Exemple", "Autre Personne"))
+      end)
+
+    BrusselsWtf.Processors.Stub.put(corroboration.sha256, %{extract: output})
+
+    # Model a later accepted extraction generation with a narrower candidate set.
+    # No production parser/policy changes, stale artifact edits or status shortcuts.
+    previous = Application.fetch_env!(:brussels_wtf, :pdf_processor)
+    Application.put_env(:brussels_wtf, :pdf_processor, RefreshedNative)
+    on_exit(fn -> Application.put_env(:brussels_wtf, :pdf_processor, previous) end)
+
+    for document <- [contract.installation, contract.corroboration] do
+      [version] = Ingestion.source_history!(commune.id, document.url).versions
+      assert :ok = Ingestion.Pipeline.extract(version.id)
+    end
+
+    assert {:ok, [%{eligible: 2, candidates: candidates}]} =
+             MunicipalInstallation.preview(["forest"], actor: actor())
+
+    refute Enum.any?(candidates, &(&1.legal_name == "Chloé Exemple"))
+    people_before = Ash.count!(Identity.Person)
+
+    assert {:ok, [%{published_new: 0, published_existing: 2}]} =
+             MunicipalInstallation.publish(["forest"], actor: actor(), max_facts_per_commune: 2)
+
+    assert Ash.count!(Identity.Person) == people_before
+
+    assert Enum.sort(Enum.map(Identity.list_public_relationships!(), & &1.subject_name)) ==
+             ["Chloé Exemple", "Jean-Louis Test"]
+  end
+
+  test "legacy verified mandates do not consume the installation lane's capacity" do
+    fixture = BrusselsWtf.Test.PublicProfileFixture.load!(["Legacy Public"])
+    BrusselsWtf.Test.PublicProfileFixture.publish_person!(fixture, "Legacy Public", "267")
+    assert length(Identity.list_public_relationships!()) == 1
+    load!("ixelles")
+
+    assert {:ok, [%{published_new: 2, published_existing: 0}]} =
+             MunicipalInstallation.publish(["ixelles"], actor: actor(), max_facts_per_commune: 2)
+
+    assert length(Identity.list_public_relationships!()) == 3
+  end
+
   defmodule NativeProbe do
     @behaviour BrusselsWtf.PDF.Processor
     defdelegate metadata(), to: BrusselsWtf.PDF.Stub
@@ -361,6 +473,19 @@ defmodule BrusselsWtf.MunicipalInstallationTest do
   } do
     load!("forest")
 
+    blocker =
+      Identity.record_person!(%{
+        legal_name: "Chloé Exemple",
+        resolution_basis: :corroborated_name,
+        corroborating_facts: %{"municipality" => "uccle"}
+      })
+
+    {:ok, [%{published_new: 2}]} =
+      MunicipalInstallation.publish(["forest"], actor: actor(), max_facts_per_commune: 2)
+
+    Identity.retire_person!(blocker, %{})
+    people_before = Ash.count!(Identity.Person)
+
     results =
       1..2
       |> Enum.map(fn _ ->
@@ -371,12 +496,33 @@ defmodule BrusselsWtf.MunicipalInstallationTest do
       end)
       |> Enum.map(&Task.await(&1, 30_000))
 
-    assert Enum.all?(results, &match?({:ok, [_]}, &1))
+    assert Enum.all?(results, &match?({:ok, [%{published_new: 0, published_existing: 2}]}, &1))
     assert length(Identity.list_public_relationships!()) == 2
+    assert Ash.count!(Identity.Person) == people_before
 
     assert Repo.query!(
              "SELECT count(*) FROM sourced_fact_verification_events WHERE verifier_id = 'municipal_installation_v1'"
            ).rows == [[2]]
+
+    expanded =
+      1..2
+      |> Enum.map(fn _ ->
+        Task.async(fn ->
+          Repo.put_dynamic_repo(repo)
+          MunicipalInstallation.publish(["forest"], actor: actor(), max_facts_per_commune: 3)
+        end)
+      end)
+      |> Enum.map(&Task.await(&1, 30_000))
+
+    new_counts = for {:ok, [report]} <- expanded, do: report.published_new
+    assert Enum.sort(new_counts) == [0, 1]
+
+    for {:ok, [report]} <- expanded do
+      assert report.published_existing + report.published_new == 3
+    end
+
+    assert length(Identity.list_public_relationships!()) == 3
+    assert Ash.count!(Identity.Person) == people_before + 1
   end
 
   test "wrong corroboration locator and raw archive corruption both fail closed" do

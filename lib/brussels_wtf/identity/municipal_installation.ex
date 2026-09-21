@@ -10,7 +10,7 @@ defmodule BrusselsWtf.Identity.MunicipalInstallation do
     {:ok, Enum.map(slugs, &inspect_commune/1)}
   end
 
-  @doc "Publish up to the cumulative source-ordered cap per commune (1..100). Reruns converge."
+  @doc "Admit source-ordered events up to the persisted verified v1 fact cap per commune (1..100)."
   def publish(slugs, opts \\ []) do
     authorize!(slugs, opts, [:actor, :reviewer, :max_facts_per_commune])
     cap = Keyword.fetch!(opts, :max_facts_per_commune)
@@ -43,30 +43,27 @@ defmodule BrusselsWtf.Identity.MunicipalInstallation do
       slug: slug,
       eligible: length(bundle.candidates),
       published_new: 0,
-      published_existing: 0,
+      published_existing: verified_count!(bundle.installation.commune.id),
       out_of_scope: bundle.excluded,
       rejected: []
     }
 
     Enum.reduce_while(bundle.candidates, initial, fn candidate, report ->
-      if report.published_new + report.published_existing >= cap do
-        {:halt, report}
-      else
-        case admit(bundle, candidate) do
-          {:ok, :existing} ->
-            {:cont, Map.update!(report, :published_existing, &(&1 + 1))}
+      case admit(bundle, candidate, cap) do
+        {:ok, {:capacity_reached, count}} ->
+          {:halt, %{report | published_existing: count - report.published_new}}
 
-          {:ok, :new} ->
-            {:cont, Map.update!(report, :published_new, &(&1 + 1))}
+        {:ok, {result, count}} when result in [:new, :existing] ->
+          new = report.published_new + if(result == :new, do: 1, else: 0)
+          {:cont, %{report | published_new: new, published_existing: count - new}}
 
-          {:error, reason} ->
-            {:cont,
-             Map.update!(
-               report,
-               :rejected,
-               &(&1 ++ [%{role_key: candidate.role_key, reason: reason}])
-             )}
-        end
+        {:error, reason} ->
+          {:cont,
+           Map.update!(
+             report,
+             :rejected,
+             &(&1 ++ [%{role_key: candidate.role_key, reason: reason}])
+           )}
       end
     end)
   rescue
@@ -80,25 +77,24 @@ defmodule BrusselsWtf.Identity.MunicipalInstallation do
       }
   end
 
-  defp admit(bundle, candidate) do
+  defp admit(bundle, candidate, cap) do
     Repo.transaction(
       fn ->
-        {person, person_notifications} = Resolver.resolve!(bundle, candidate)
-        attrs = fact_attributes(bundle, candidate, person)
-        # The evidence identity includes the stable role key; different offices do not collide.
-        {fact, fact_notifications} = Identity.record_fact!(attrs, return_notifications?: true)
-        notifications = person_notifications ++ fact_notifications
+        commune_id = bundle.installation.commune.id
+        # Capacity and admission share one transaction. Always lock commune before
+        # Resolver's person lock, and do not create even a private person when full.
+        Repo.query!("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [
+          "municipal-installation-capacity:#{commune_id}"
+        ])
 
-        if fact.verification_status == :verified do
-          unless Identity.TrustedVerifier.trusted_fact?(fact),
-            do: raise(ArgumentError, "existing fact is no longer trusted")
+        count = verified_count!(commune_id)
 
-          {:existing, notifications}
+        if count >= cap do
+          {{:capacity_reached, count}, []}
         else
-          {run, run_notifications} = Verifier.persist!(fact, person, bundle, candidate)
-          Identity.verify_sourced_fact!(fact.id, Verifier.id(), run.id)
-          mention_notifications = Resolver.link_mentions!(person, bundle, candidate)
-          {:new, notifications ++ run_notifications ++ mention_notifications}
+          {result, notifications} = verify_candidate!(bundle, candidate)
+          count = count + if(result == :new, do: 1, else: 0)
+          {{result, count}, notifications}
         end
       end,
       timeout: 120_000
@@ -114,6 +110,37 @@ defmodule BrusselsWtf.Identity.MunicipalInstallation do
   rescue
     e in [ArgumentError, MatchError, Postgrex.Error, DBConnection.ConnectionError] ->
       {:error, failure_code(e)}
+  end
+
+  defp verified_count!(commune_id) do
+    verifier = Verifier.id()
+
+    Identity.SourcedFact
+    |> Ash.Query.filter(
+      object_type == :commune and object_id == ^commune_id and
+        verified_by == ^verifier and verification_status == :verified
+    )
+    |> Ash.count!(authorize?: false)
+  end
+
+  defp verify_candidate!(bundle, candidate) do
+    {person, person_notifications} = Resolver.resolve!(bundle, candidate)
+    attrs = fact_attributes(bundle, candidate, person)
+    # The evidence identity includes the stable role key; different offices do not collide.
+    {fact, fact_notifications} = Identity.record_fact!(attrs, return_notifications?: true)
+    notifications = person_notifications ++ fact_notifications
+
+    if fact.verification_status == :verified do
+      unless Identity.TrustedVerifier.trusted_fact?(fact),
+        do: raise(ArgumentError, "existing fact is no longer trusted")
+
+      {:existing, notifications}
+    else
+      {run, run_notifications} = Verifier.persist!(fact, person, bundle, candidate)
+      Identity.verify_sourced_fact!(fact.id, Verifier.id(), run.id)
+      mention_notifications = Resolver.link_mentions!(person, bundle, candidate)
+      {:new, notifications ++ run_notifications ++ mention_notifications}
+    end
   end
 
   # Reports are private but must not echo processor bodies, SQL parameters or excerpts.
