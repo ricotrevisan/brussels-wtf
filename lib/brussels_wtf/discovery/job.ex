@@ -111,5 +111,6 @@ defmodule BrusselsWtf.Discovery.Job do
 
   identities do
     identity :unique_input, [:extraction_run_id, :chunk, :contract]
+    identity :unique_input_hash, [:input_hash, :contract]
   end
 end

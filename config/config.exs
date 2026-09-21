@@ -137,6 +137,7 @@ config :brussels_wtf, Oban,
   plugins: [
     {Oban.Plugins.Cron,
      crontab: [
+       {"* * * * *", BrusselsWtf.Workers.SweepPrivateDiscovery, args: %{}},
        {"*/5 * * * *", BrusselsWtf.Workers.SynchronizeRegisteredFeeds, args: %{}},
        {"0 */6 * * *", BrusselsWtf.Workers.PollCommune,
         args: %{commune_slug: "ixelles", kind: "scheduled"}},

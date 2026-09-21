@@ -46,6 +46,85 @@ and inspect representative source layouts before expanding. Mandate declarations
 Gazette acts, recordings and unrecognized supporting-document roles are excluded.
 This discovery does not activate those sources or change their access rules.
 
+## Automatic admission (issue #105)
+
+**Disabled by default.** Deploying the code or configuring the machine token does
+not enable automatic admission. After migrations, inspect safe state via the same
+authenticated release RPC wrapper:
+
+```elixir
+[operation: :sweep_status]
+[operation: :enable_sweep] # explicit operator authorization; initial limits below
+[operation: :pause]        # global hold, including an empty queue
+[operation: :resume]       # clears hold; preserves opt-in, cursors, attempts and budget
+```
+
+Direct domain equivalents require `actor: %BrusselsWtf.Review.Actor{...}` with a
+nonempty reviewer ID: `Discovery.enable_sweep/1`, `Discovery.sweep_status/1`,
+`Discovery.pause/1`, `Discovery.resume/1`. The RPC wrapper derives that actor
+from review configuration; never expose it to an unauthenticated caller.
+`enable_sweep` **does not clear an existing manual or quota hold**. Resume does
+not enable a never-enabled sweep. Pause invalidates leases as before; stop the
+lab consumer first when possible.
+
+The maintenance cron ticks once per minute. Hard ceilings (lower values may be
+persisted through explicit enable options) are four examined runs per tick,
+one per available commune; eight **new** jobs per tick; and 64 unfinished jobs
+(queued + leased + paused) globally. The initial admission allowance is **12 new
+jobs per UTC day**, adjustable only explicitly with `daily_jobs: 1..500`:
+
+```elixir
+[operation: :enable_sweep, max_runs: 4, max_jobs: 8,
+ max_unfinished: 64, daily_jobs: 12]
+```
+
+Unknown domain options and out-of-range limits are rejected. Omitted limits
+retain their stored values. Re-enabling, pausing, resuming or restarting does not
+reset the current day's spending. UTC rollover renews the allowance, not a quota
+hold. The allowance counts admitted jobs, **not tokens or inference attempts**;
+the unchanged worker can retry each job up to three times. These are conservative
+rollout limits, not measured capacity or a subscription-token budget. Measure
+actual usage, latency, omissions and terminal failures before raising them.
+
+Explicit `enqueue` remains available without sweep opt-in for compatibility, but
+shares the global hold, UTC admission allowance and unfinished-job ceiling. It
+cannot override quota holds. Existing input identities cost no new admission;
+failed jobs are not automatically re-executed. One original lab Codex consumer
+remains the only inference consumer. There is no new paid fallback, polling,
+normalization or coverage generation action.
+
+Per-commune run-ID cursors cycle repeatedly, with rotating first-commune priority.
+This revisits older queued runs that later succeed and previously excluded runs
+whose context is corrected. A durable per-run absolute chunk offset allows all
+chunks to be admitted across bounded ticks; neither the old 20-candidate window
+nor eight-chunk window is a permanent truncation. Archive reads occur outside
+the serialization transaction; a concurrent hold/admission invalidates the
+prepared cursor before jobs can commit. Next tick retries from committed state.
+
+`sweep_status` returns safe control state, counts, 100 run progress rows, recent
+operation receipts and 100 terminal failures. Page each independently with the
+returned `next_cursor` → `cursor`, `failure_cursor` and `event_cursor`. Counts
+cover all retained discovery jobs, including explicit batches. `examined` counts
+unique sweep runs; `examinations` includes repeated visits; `eligible`, `excluded`
+and `fully_admitted` describe runs. `completed` and `failed` describe **jobs**, not
+complete documents. Fully admitted is not equivalent to successfully analyzed.
+`mention_occurrences` counts deduplicated retained discovery evidence;
+`unique_mention_names` counts distinct exact `(kind, text)` values and
+`repeated_mention_names` is the remainder—none is a resolved-person count.
+
+Run exclusions include uncertain meeting context, ineligible date, missing
+linked authoritative text, unverified source, no eligible public lines and
+preparation failure. Exclusion measurements, cursor progress, control audits,
+per-tick new/existing counts, failure receipts and terminal reasons live in Ash
+resources independently of Oban pruning. No source text is included in the
+operator report. Inspect a failed job through the private batch status rather
+than deleting it or blindly resetting attempts.
+
+Local acceptance uses an isolated `_sweep105` database partition, real Ash and
+archive/input fixtures, including >20 runs, >8 chunks, all four communes,
+concurrent pause during archive I/O and repeated/restarted ticks. No production
+activation, model call, measured throughput or recall is claimed by this change.
+
 ## Machine access
 
 Generate a random dedicated token into an owner-only file on lab; configure only
@@ -117,9 +196,15 @@ compatible spending ledger.
 ## Verification and honest acceptance
 
 ```sh
-ERL_FLAGS='+S 4:4' MIX_TEST_PARTITION=_discovery_backend \
+ERL_FLAGS='+S 4:4' MIX_TEST_PARTITION=_sweep105 \
+  mise exec elixir@1.19.5-otp-28 erlang@28.1 -- \
   mix test test/brussels_wtf/private_discovery_test.exs
-python3 -m unittest discover -s test/scripts -p test_discovery_worker.py
+ERL_FLAGS='+S 4:4' mise exec elixir@1.19.5-otp-28 erlang@28.1 -- \
+  python3 -m unittest discover -s test/scripts -p test_discovery_worker.py
+ERL_FLAGS='+S 4:4' MIX_TEST_PARTITION=_sweep105 \
+  mise exec elixir@1.19.5-otp-28 erlang@28.1 -- mix precommit
+
+# Separately authorized model calls only; NOT an ordinary verification step:
 DISCOVERY_CODEX_LIVE=1 ERL_FLAGS='+S 4:4' MIX_TEST_PARTITION=_discovery_live \
   timeout 600s mix test test/contracts/discovery_codex_live_test.exs --include external
 ```

@@ -109,6 +109,7 @@ defmodule BrusselsWtf.Discovery.Input do
 
       {:ok, %{jobs: jobs, measurements: measurements}}
     else
+      {:error, reason} when is_atom(reason) -> {:error, reason}
       _ -> {:error, :ineligible_or_unverified_source}
     end
   rescue
