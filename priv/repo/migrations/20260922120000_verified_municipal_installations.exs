@@ -55,7 +55,7 @@ defmodule BrusselsWtf.Repo.Migrations.VerifiedMunicipalInstallations do
           AND x.source_version_id = v.id AND x.status = 'succeeded' AND x.completed_at IS NOT NULL
           AND x.processor_role = 'native_extraction' AND x.processor_name = 'poppler-native-text'
           AND x.quality_measurements ->> 'accepted' = 'true'
-          AND a.source_version_id = v.id AND a.input_sha256 = v.sha256
+          AND a.input_sha256 = v.sha256
           AND a.output_sha256 = pin ->> 'text_sha256'
           AND a.output_kind = 'native-text' AND a.media_type = 'text/plain; charset=utf-8'
           AND a.processor_name = x.processor_name AND a.processor_version = x.processor_version

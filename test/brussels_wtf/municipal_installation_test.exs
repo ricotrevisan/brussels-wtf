@@ -67,6 +67,72 @@ defmodule BrusselsWtf.MunicipalInstallationTest do
     end
   end
 
+  defmodule NativeProbe do
+    @behaviour BrusselsWtf.PDF.Processor
+    defdelegate metadata(), to: BrusselsWtf.PDF.Stub
+    defdelegate ocr(meta, bytes, pages), to: BrusselsWtf.PDF.Stub
+
+    def native(meta, bytes) do
+      send(self(), {:native_bytes, meta.sha256, bytes})
+      BrusselsWtf.PDF.Stub.native(meta, bytes)
+    end
+  end
+
+  test "publication reproduces raw bytes through the current run even when native artifacts originated elsewhere" do
+    previous = Application.fetch_env!(:brussels_wtf, :pdf_processor)
+    Application.put_env(:brussels_wtf, :pdf_processor, NativeProbe)
+    on_exit(fn -> Application.put_env(:brussels_wtf, :pdf_processor, previous) end)
+
+    commune =
+      load!("forest", &Function.identity/1, fn commune, version ->
+        record =
+          Ingestion.upsert_source_record!(%{
+            commune_id: commune.id,
+            origin_url: "https://forest.brussels/shared-fixture/#{version.sha256}.pdf",
+            role: :minutes,
+            original_language: :bilingual
+          })
+
+        other_version =
+          version
+          |> Map.take([:sha256, :byte_size, :media_type, :object_key, :first_retrieved_at])
+          |> Map.put(:source_record_id, record.id)
+          |> Ingestion.upsert_source_version!()
+
+        assert :ok = Ingestion.Pipeline.extract(other_version.id)
+      end)
+
+    {:ok, contract} = Source.contract("forest")
+
+    for document <- [contract.installation, contract.corroboration] do
+      history = Ingestion.source_history!(commune.id, document.url)
+      [version] = history.versions
+      [run] = history.processing_runs |> Ash.load!(:derived_artifacts)
+      assert [artifact] = run.derived_artifacts
+      refute artifact.source_version_id == version.id
+      refute artifact.processing_run_id == run.id
+      assert artifact.input_sha256 == version.sha256
+      {:ok, raw} = BrusselsWtf.Archive.get(version.object_key)
+      # Clear both initial extraction calls; publication must reproduce the bytes again.
+      assert_received {:native_bytes, hash, ^raw}
+      assert hash == version.sha256
+      assert_received {:native_bytes, ^hash, ^raw}
+    end
+
+    assert {:ok, [%{published_new: 1, rejected: []}]} =
+             MunicipalInstallation.publish(["forest"], actor: actor(), max_facts_per_commune: 1)
+
+    for kind <- [:installation, :corroboration] do
+      raw = "%PDF-1.7 municipal-installation-fixture:forest:#{kind}"
+      hash = BrusselsWtf.Digest.sha256(raw)
+      assert_received {:native_bytes, ^hash, ^raw}
+    end
+
+    assert [relationship] = Identity.list_public_relationships!()
+    assert relationship.subject_name == "Chloé Exemple"
+    assert {:ok, _profile} = Identity.get_public_person_profile(relationship.subject_id)
+  end
+
   test "all four communes admit multiple people and distinct municipal office labels" do
     for slug <- ~w(ixelles uccle forest city-of-brussels), do: load!(slug)
 
@@ -584,7 +650,7 @@ defmodule BrusselsWtf.MunicipalInstallationTest do
 
   defp actor, do: %BrusselsWtf.Review.Actor{id: "rico", role: :reviewer}
 
-  defp load!(slug, transform \\ &Function.identity/1) do
+  defp load!(slug, transform \\ &Function.identity/1, before_extract \\ fn _, _ -> :ok end) do
     {:ok, contract} = Source.contract(slug)
     config = BrusselsWtf.Communes.configuration!(slug)
 
@@ -676,6 +742,7 @@ defmodule BrusselsWtf.MunicipalInstallationTest do
         )
 
       BrusselsWtf.Processors.Stub.put(version.sha256, %{extract: %{"page_texts" => pages}})
+      before_extract.(commune, version)
       :ok = Ingestion.Pipeline.extract(version.id)
     end
 

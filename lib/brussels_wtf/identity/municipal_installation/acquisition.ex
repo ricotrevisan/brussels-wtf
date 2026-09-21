@@ -137,7 +137,8 @@ defmodule BrusselsWtf.Identity.MunicipalInstallation.Acquisition do
         Enum.any?(locator.observations, fn observation ->
           observation.status in [:success, :unchanged] and
             observation.source_version_id == version.id and observation.sha256 == source.sha256 and
-            valid_origin?(observation.final_url || source.url, source.url) and
+            observation.final_url == source.url and
+            valid_origin?(observation.final_url, source.url) and
             valid_redirects?(observation.redirect_chain, source.url)
         end)
     end)
@@ -248,6 +249,9 @@ defmodule BrusselsWtf.Identity.MunicipalInstallation.Acquisition do
       not valid_origin?(response.final_url, locator.url) or
           not valid_redirects?(response.redirect_chain, locator.url) ->
         {:error, :redirect_origin_rejected}
+
+      locator.role != :index and response.final_url != locator.url ->
+        {:error, :source_redirect_rejected}
 
       response.status != 200 ->
         {:error, :http_status_rejected}

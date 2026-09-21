@@ -118,7 +118,7 @@ defmodule BrusselsWtf.Identity.MunicipalInstallation.Evidence do
           AND r.status = 'succeeded' AND r.completed_at IS NOT NULL
           AND r.processor_name = $2 AND r.processor_version = $3 AND r.config_hash = $4
           AND r.quality_measurements ->> 'accepted' = 'true'
-          AND a.source_version_id = r.source_version_id AND a.input_sha256 = $5
+          AND a.input_sha256 = $5
           AND a.processor_name = r.processor_name AND a.processor_version = r.processor_version
           AND a.config_hash = r.config_hash AND a.output_kind = 'native-text'
           AND a.media_type = 'text/plain; charset=utf-8' AND a.quality_measurements = r.quality_measurements

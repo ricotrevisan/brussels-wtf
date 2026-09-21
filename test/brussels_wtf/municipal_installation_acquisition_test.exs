@@ -121,6 +121,52 @@ defmodule BrusselsWtf.Identity.MunicipalInstallation.AcquisitionTest do
     assert {:error, _} = Ingestion.get_source_record_by_origin(commune.id, source.url)
   end
 
+  test "a same-origin PDF alias is a classified failure, never extraction or publication readiness" do
+    {:ok, contract} = Source.contract("city-of-brussels")
+    source = contract.installation
+    redirected = "https://www.brussels.be/sites/default/files/alias.pdf"
+    HTTP.Stub.put(source.parent_index_url, %{body: city_index(source)})
+
+    HTTP.Stub.put(source.url, %{
+      body: "%PDF-1.7 synthetic report",
+      final_url: redirected,
+      redirect_chain: [%{"url" => source.url, "location" => redirected, "status" => 302}]
+    })
+
+    assert {:ok, %{queued: 0, reused: 0, sources: [failure, _]}} =
+             Acquisition.acquire([contract.slug], actor: @actor, http: HTTP.Stub)
+
+    assert failure.reason == :source_redirect_rejected
+
+    assert Oban.Testing.all_enqueued(
+             worker: BrusselsWtf.Workers.ExtractSource,
+             repo: BrusselsWtf.Repo
+           ) == []
+
+    commune = Ingestion.get_commune_by_slug!(contract.slug)
+
+    assert [
+             %{
+               observations: [
+                 %{
+                   status: :failure,
+                   error_kind: "source_redirect_rejected",
+                   final_url: ^redirected
+                 }
+               ]
+             }
+           ] =
+             Ingestion.locator_history!(commune.id, source.url)
+
+    assert {:ok, [%{published_new: 0, error: _}]} =
+             BrusselsWtf.Identity.MunicipalInstallation.publish([contract.slug],
+               actor: @actor,
+               max_facts_per_commune: 1
+             )
+
+    assert BrusselsWtf.Identity.list_public_relationships!() == []
+  end
+
   test "default transport retains same-origin redirects and archives the actual parent response" do
     {:ok, contract} = Source.contract("city-of-brussels")
     source = contract.installation
@@ -271,6 +317,114 @@ defmodule BrusselsWtf.Identity.MunicipalInstallation.AcquisitionTest do
 
       assert HTTP.Stub.requests(source.url) == []
     end
+  end
+
+  @tag :external
+  test "redirected archived PDF lineage cannot report ready or publish until an exact leaf retrieval succeeds" do
+    dir = System.fetch_env!("ISSUE104_SOURCE_DIR")
+    {:ok, contract} = Source.contract("city-of-brussels")
+    {installation, corroboration} = BrusselsWtf.MunicipalInstallationFixture.pair(contract.slug)
+    BrusselsWtf.Processors.Stub.reset()
+
+    for {source, filename, text} <- [
+          {contract.installation, "city-install", installation},
+          {contract.corroboration, "city-report", corroboration}
+        ] do
+      HTTP.Stub.put(source.parent_index_url, %{body: city_index(source)})
+      HTTP.Stub.put(source.url, %{body: File.read!(Path.join(dir, filename))})
+
+      pages =
+        text
+        |> String.split("\f")
+        |> Enum.map(
+          &(&1 <>
+              "\n" <>
+              String.duplicate(
+                "Le conseil communal examine les documents de la séance publique. ",
+                4
+              ))
+        )
+
+      BrusselsWtf.Processors.Stub.put(source.sha256, %{extract: %{"page_texts" => pages}})
+    end
+
+    assert {:ok, %{queued: 2, failures: 0, sources: queued}} =
+             Acquisition.acquire([contract.slug], actor: @actor, http: HTTP.Stub)
+
+    for source <- queued do
+      assert :ok =
+               Oban.Testing.perform_job(
+                 BrusselsWtf.Workers.ExtractSource,
+                 %{source_version_id: source.source_version_id, generation_kind: "backfill"},
+                 repo: BrusselsWtf.Repo
+               )
+    end
+
+    assert {:ok, %{reused: 2, failures: 0}} =
+             Acquisition.acquire([contract.slug], actor: @actor, http: HTTP.Stub)
+
+    # Simulate historical observations from the shared, less restrictive HTTP lane.
+    # Raw bytes, accepted runs, artifact links and checksums remain valid.
+    for {source, result, filename} <- [
+          {contract.installation, hd(queued), "city-install"},
+          {contract.corroboration, List.last(queued), "city-report"}
+        ] do
+      redirected = source.url <> "?alias=1"
+      chain = [%{"url" => source.url, "location" => redirected, "status" => 302}]
+
+      Repo.query!(
+        "UPDATE retrieval_observations SET final_url = $1, redirect_chain = $2 WHERE source_version_id = $3::text::uuid",
+        [redirected, chain, result.source_version_id]
+      )
+
+      HTTP.Stub.put(source.url, %{
+        body: File.read!(Path.join(dir, filename)),
+        final_url: redirected,
+        redirect_chain: chain
+      })
+    end
+
+    jobs_before =
+      Oban.Testing.all_enqueued(worker: BrusselsWtf.Workers.ExtractSource, repo: BrusselsWtf.Repo)
+      |> Enum.map(& &1.id)
+
+    assert {:ok, %{reused: 0, queued: 0, failures: 2, sources: failures}} =
+             Acquisition.acquire([contract.slug], actor: @actor, http: HTTP.Stub)
+
+    assert Enum.all?(failures, &(&1.reason == :source_redirect_rejected))
+
+    assert Oban.Testing.all_enqueued(
+             worker: BrusselsWtf.Workers.ExtractSource,
+             repo: BrusselsWtf.Repo
+           )
+           |> Enum.map(& &1.id) == jobs_before
+
+    assert {:ok, [%{published_new: 0, error: _}]} =
+             BrusselsWtf.Identity.MunicipalInstallation.publish([contract.slug],
+               actor: @actor,
+               max_facts_per_commune: 1
+             )
+
+    assert BrusselsWtf.Identity.list_public_relationships!() == []
+
+    # Append genuine exact-leaf observations; do not rewrite the rejected history.
+    for {source, filename} <- [
+          {contract.installation, "city-install"},
+          {contract.corroboration, "city-report"}
+        ] do
+      HTTP.Stub.put(source.url, %{body: File.read!(Path.join(dir, filename))})
+    end
+
+    assert {:ok, %{reused: 2, queued: 0, failures: 0}} =
+             Acquisition.acquire([contract.slug], actor: @actor, http: HTTP.Stub)
+
+    assert {:ok, [%{published_new: 1, rejected: []}]} =
+             BrusselsWtf.Identity.MunicipalInstallation.publish([contract.slug],
+               actor: @actor,
+               max_facts_per_commune: 1
+             )
+
+    assert length(BrusselsWtf.Identity.list_public_relationships!()) == 1
   end
 
   @tag :external

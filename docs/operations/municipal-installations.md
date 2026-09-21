@@ -108,6 +108,15 @@ authorization for those jobs, not an unrestricted resume/drain. Rerun acquisitio
 after those jobs complete; require all selected documents reused and no failures
 before proceeding. Four communes should yield eight ready PDFs.
 
+**Exact PDF leaf policy (v1):** a PDF retrieval's final URL must equal its approved
+source URL exactly. Even a same-origin redirect to another path or query is
+rejected as `source_redirect_rejected`, is recorded as a failed observation, and
+cannot queue extraction or count as ready. Reuse likewise requires at least one
+successful exact-leaf observation for the pinned version; redirected-only history
+is insufficient. Do not broaden verification or substitute an alias to bypass
+this gate. Bounded same-origin redirects for parent **indexes** remain allowed
+and retain their actual redirect history.
+
 ### 2. Preview privately, with count-only output
 
 ```elixir
