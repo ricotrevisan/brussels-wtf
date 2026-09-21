@@ -18,9 +18,10 @@ defmodule BrusselsWtf.Release do
     {:ok, _, _} = Ecto.Migrator.with_repo(repo, &Ecto.Migrator.run(&1, :down, to: version))
   end
 
-  @doc "Fails the release unless every migration is up and the private archive contract passes."
+  @doc "Checks migrations, the selected CBE index, the private archive, and processor safety."
   def validate do
     validate_database()
+    validate_cbe_index()
     validate_archive()
     validate_pdf_toolchain()
     validate_transcription_disabled()
@@ -101,6 +102,67 @@ defmodule BrusselsWtf.Release do
       {:error, _reason} ->
         raise "source archive validation failed"
     end
+  end
+
+  @doc "Requires the app role's explicitly selected index to be ready; never imports or falls back."
+  def validate_cbe_index do
+    load_app()
+
+    if Application.get_env(@app, :process_role, :app) != :ocr and
+         Application.get_env(@app, :cbe_source) == BrusselsWtf.CBE.Indexed do
+      unless with_cbe_repo(fn -> BrusselsWtf.CBE.Indexed.ready?() end) == :ok do
+        raise "CBE index readiness validation failed"
+      end
+
+      IO.puts("CBE index readiness validation passed")
+    end
+
+    :ok
+  end
+
+  @doc """
+  Explicitly imports a trusted, at-most-1-MiB JSON manifest and private CSV directory.
+  Starts only index dependencies and Repo, not the application, web server, or Oban.
+  Returns a content-free summary; importing never changes the selected release.
+  Options are passed to `BrusselsWtf.CBE.Index.import_release/3`.
+  """
+  def import_cbe_index(directory, manifest_path, options \\ []) do
+    load_app()
+
+    with {:ok, manifest} <- read_cbe_manifest(manifest_path) do
+      with_cbe_repo(fn ->
+        BrusselsWtf.CBE.Index.import_release(directory, manifest, options)
+      end)
+    end
+  end
+
+  defp read_cbe_manifest(path) do
+    # Read one byte beyond the limit rather than allocating an unbounded file.
+    case File.open(path, [:read, :binary], fn file -> IO.binread(file, 1_048_577) end) do
+      {:ok, bytes} when is_binary(bytes) and byte_size(bytes) <= 1_048_576 ->
+        case Jason.decode(bytes) do
+          {:ok, manifest} when is_map(manifest) -> {:ok, manifest}
+          _ -> {:error, :invalid_cbe_index_manifest}
+        end
+
+      _ ->
+        {:error, :invalid_cbe_index_manifest}
+    end
+  rescue
+    _ -> {:error, :invalid_cbe_index_manifest}
+  end
+
+  defp with_cbe_repo(fun) do
+    with {:ok, _} <- Application.ensure_all_started(:ash_postgres),
+         {:ok, result, _} <- Ecto.Migrator.with_repo(BrusselsWtf.Repo, fn _ -> fun.() end) do
+      result
+    else
+      _ -> {:error, :cbe_index_unavailable}
+    end
+  rescue
+    _ -> {:error, :cbe_index_unavailable}
+  catch
+    :exit, _ -> {:error, :cbe_index_unavailable}
   end
 
   defp repos, do: Application.fetch_env!(@app, :ecto_repos)
