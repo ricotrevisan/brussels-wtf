@@ -12,12 +12,24 @@ defmodule BrusselsWtf.Discovery do
   """
   use Ash.Domain, otp_app: :brussels_wtf
   require Ash.Query
-  alias BrusselsWtf.Discovery.{Input, Job}
+  alias BrusselsWtf.Discovery.{Input, Job, Sweep}
   alias BrusselsWtf.{Clock, Digest, Identity, Ingestion, Repo}
 
   resources do
     resource Job
+    resource BrusselsWtf.Discovery.SweepState
+    resource BrusselsWtf.Discovery.SweepRun
+    resource BrusselsWtf.Discovery.SweepEvent
   end
+
+  @doc "Explicit reviewer opt-in; limits can only be lowered from the hard ceilings. Never clears a hold."
+  def enable_sweep(opts \\ []), do: Sweep.enable(opts)
+
+  @doc "Safe private progress, recent audit receipts and durable failures; run pages use cursor."
+  def sweep_status(opts \\ []), do: Sweep.status(opts)
+
+  @doc false
+  def sweep_tick, do: Sweep.tick()
 
   @doc """
   Lists extraction candidates, not eligibility decisions; use `preview/2` next.
@@ -139,23 +151,13 @@ defmodule BrusselsWtf.Discovery do
         serialized(fn ->
           batch_id = Ash.UUID.generate()
 
-          jobs =
-            Enum.map(preview.jobs, fn attrs ->
-              job =
-                Job
-                |> Ash.Changeset.for_create(
-                  :enqueue,
-                  Map.merge(attrs, %{
-                    batch_ids: [batch_id],
-                    requested_by: opts[:actor].id
-                  })
-                )
-                |> Ash.create!(authorize?: false)
+          {jobs, new_count} = Sweep.admit!(preview.jobs, batch_id, opts[:actor].id)
 
-              if batch_id in job.batch_ids,
-                do: job,
-                else: transition(job, %{batch_ids: job.batch_ids ++ [batch_id]})
-            end)
+          Sweep.record("enqueue", opts[:actor].id, %{
+            batch_id: batch_id,
+            new_jobs: new_count,
+            existing_jobs: length(jobs) - new_count
+          })
 
           %{batch_id: batch_id, job_ids: Enum.map(jobs, & &1.id), runs: preview.runs}
         end)
@@ -208,13 +210,17 @@ defmodule BrusselsWtf.Discovery do
 
   def pause(opts \\ []) do
     with :ok <- reviewer(opts) do
-      serialized(fn -> pause_jobs("operator_pause") end)
+      serialized(fn ->
+        Sweep.hold("operator_pause", opts[:actor].id)
+        pause_jobs("operator_pause")
+      end)
     end
   end
 
   def resume(opts \\ []) do
     with :ok <- reviewer(opts) do
       serialized(fn ->
+        Sweep.release(opts[:actor].id)
         jobs = Job |> Ash.Query.filter(state == :paused) |> read_jobs()
 
         Enum.each(jobs, fn job ->
@@ -259,7 +265,7 @@ defmodule BrusselsWtf.Discovery do
           |> Ash.Query.limit(1)
           |> read_jobs()
 
-        if busy != [] do
+        if Sweep.paused?() or busy != [] do
           nil
         else
           job =
@@ -363,6 +369,11 @@ defmodule BrusselsWtf.Discovery do
                 completed_at: now()
               })
 
+            Sweep.record("complete", "machine", %{
+              job_id: job.id,
+              mention_count: job.mention_count
+            })
+
             acknowledgment(job)
         end
       end)
@@ -395,6 +406,7 @@ defmodule BrusselsWtf.Discovery do
           true ->
             updated =
               if payload["reason"] == "quota" do
+                Sweep.hold("quota", "machine")
                 pause_jobs("quota")
                 get(id)
               else
@@ -411,6 +423,13 @@ defmodule BrusselsWtf.Discovery do
             }
 
             transition(updated, %{failure_receipts: job.failure_receipts ++ [receipt]})
+
+            Sweep.record("failure", "machine", %{
+              job_id: job.id,
+              reason: payload["reason"],
+              state: updated.state
+            })
+
             ack
         end
       end)
@@ -501,7 +520,8 @@ defmodule BrusselsWtf.Discovery do
     end
   end
 
-  defp reviewer(opts) do
+  @doc false
+  def reviewer(opts) do
     case opts[:actor] do
       %BrusselsWtf.Review.Actor{id: id, role: :reviewer} when is_binary(id) and id != "" -> :ok
       _ -> {:error, :reviewer_required}
@@ -526,7 +546,8 @@ defmodule BrusselsWtf.Discovery do
 
   # All writers share one PostgreSQL lock; the partial unique index independently
   # prevents multiple active leases. No transport state or in-memory mutex owns it.
-  defp serialized(fun) do
+  @doc false
+  def serialized(fun) do
     quiet(fn ->
       Repo.transaction(fn ->
         Repo.query!("SELECT pg_advisory_xact_lock(184321, 1)", [], log: false)

@@ -307,6 +307,9 @@ defmodule BrusselsWtf.PrivateDiscoveryTest do
 
     assert {:ok, %{resumed: 0}} = Discovery.resume(actor: @actor)
     assert request("/internal/discovery/claim", %{}) |> response(204)
+
+    assert {:ok, %{counts: %{failed: 1}, failures: [%{failure_reason: "timeout", attempts: 3}]}} =
+             Discovery.sweep_status(actor: @actor)
   end
 
   test "ambiguous occurrences, partial names, invalid processor and excess keys are rejected without logging payloads" do
@@ -375,7 +378,9 @@ defmodule BrusselsWtf.PrivateDiscoveryTest do
     pages = Ash.read!(BrusselsWtf.Council.MeetingPage)
     assert Enum.any?(pages, &(&1.publication_status == :published))
     revisions = Ash.read!(BrusselsWtf.Council.PublicationRevision)
-    {:ok, _} = Discovery.enqueue([run.id], actor: @actor, max_jobs: 8)
+    isolate_sweep_run!(run)
+    {:ok, _} = Discovery.enable_sweep(actor: @actor)
+    assert {:ok, %{new_jobs: 1}} = Discovery.sweep_tick()
     claim = request("/internal/discovery/claim", %{}) |> json_response(200)
 
     assert request("/internal/discovery/#{claim["id"]}/result", result(claim))
@@ -799,6 +804,398 @@ defmodule BrusselsWtf.PrivateDiscoveryTest do
 
     assert Ash.count!(Discovery.Job, authorize?: false) == 0
     assert Ash.count!(Identity.Mention) == 0
+  end
+
+  test "sweep is opt-in, bounded, audited and manual holds survive an empty queue" do
+    run = source!()
+    assert {:ok, %{reason: :disabled, new_jobs: 0}} = Discovery.sweep_tick()
+    assert {:error, :reviewer_required} = Discovery.enable_sweep()
+
+    for options <- [
+          [max_runs: 5],
+          [max_jobs: 9],
+          [max_unfinished: 65],
+          [daily_jobs: 501],
+          [daily_jobs: 0]
+        ] do
+      assert {:error, :invalid_sweep_limits} = Discovery.enable_sweep([actor: @actor] ++ options)
+    end
+
+    assert {:ok, _} = Discovery.pause(actor: @actor)
+    assert {:ok, _} = Discovery.enable_sweep(actor: @actor)
+    assert {:ok, %{reason: :paused}} = Discovery.sweep_tick()
+    assert {:error, :discovery_paused} = Discovery.enqueue([run.id], actor: @actor, max_jobs: 8)
+    assert {:ok, nil} = Discovery.claim(@token)
+    assert {:ok, %{control: %{hold: "operator_pause"}}} = Discovery.sweep_status(actor: @actor)
+    assert {:ok, _} = Discovery.resume(actor: @actor)
+    assert {:ok, %{examined: 1, new_jobs: 1}} = Discovery.sweep_tick()
+    assert {:ok, report} = Discovery.sweep_status(actor: @actor)
+    assert report.control.daily_jobs == 12
+    assert report.control.day_used == 1
+    assert report.counts.eligible == 1
+    assert report.counts.queued == 1
+    assert Enum.any?(report.events, &(&1.operation == "pause" and &1.actor_id == "rico"))
+    assert {:error, :reviewer_required} = Discovery.sweep_status()
+  end
+
+  test "sweep resumes absolute chunk progress, counts only new jobs and retains UTC budget" do
+    text = Enum.map_join(1..900, "\n", &"Élodie D’Haene présente le projet numéro #{&1}.")
+    run = source!("ixelles/proposal", :agenda, :native_extraction, text)
+    isolate_sweep_run!(run)
+    assert {:ok, _} = Discovery.enable_sweep(actor: @actor)
+    assert {:ok, %{new_jobs: 8}} = Discovery.sweep_tick()
+    assert {:ok, %{new_jobs: 4}} = Discovery.sweep_tick()
+    assert {:ok, %{reason: :daily_budget, new_jobs: 0}} = Discovery.sweep_tick()
+    assert {:ok, report} = Discovery.sweep_status(actor: @actor)
+    assert [%{next_chunk: 12, total_chunks: 15}] = report.runs
+    assert report.control.day_used == 12
+    Discovery.pause(actor: @actor)
+    Discovery.resume(actor: @actor)
+    assert {:ok, %{reason: :daily_budget}} = Discovery.sweep_tick()
+
+    assert {:error, :daily_budget} =
+             Discovery.enqueue([run.id], actor: @actor, max_jobs: 8, chunk_offset: 12)
+
+    advance(86_400)
+    assert {:ok, %{new_jobs: 3}} = Discovery.sweep_tick()
+    assert {:ok, %{new_jobs: 0}} = Discovery.sweep_tick()
+    assert Ash.count!(Discovery.Job, authorize?: false) == 15
+
+    for _ <- 1..15 do
+      claim = request("/internal/discovery/claim", %{}) |> json_response(200)
+
+      assert request("/internal/discovery/#{claim["id"]}/result", result(claim))
+             |> json_response(200)
+    end
+
+    assert {:ok, %{new_jobs: 0}} = Discovery.sweep_tick()
+    assert {:ok, report} = Discovery.sweep_status(actor: @actor)
+    assert report.counts.completed == 15
+    assert report.counts.mention_occurrences == 15
+    assert report.counts.unique_mention_names == 1
+    assert report.counts.repeated_mention_names == 14
+    assert Ash.count!(Identity.Person) == 0
+    assert Ash.count!(Identity.SourcedFact) == 0
+  end
+
+  test "bounded cycles pass twenty runs and revisit an old newly accepted generation" do
+    first = source!()
+    isolate_sweep_run!(first)
+    old = copy_generation!(first, :queued)
+    for _ <- 1..23, do: copy_generation!(first)
+    Discovery.enable_sweep(actor: @actor, daily_jobs: 100)
+
+    for _ <- 1..26 do
+      assert {:ok, %{examined: examined, new_jobs: jobs}} = Discovery.sweep_tick()
+      assert examined <= 4 and jobs <= 8
+    end
+
+    assert Ash.count!(Discovery.Job, authorize?: false) == 24
+
+    Ingestion.complete_processing_run!(old, %{
+      status: :succeeded,
+      quality_measurements: first.quality_measurements
+    })
+
+    for _ <- 1..26, do: Discovery.sweep_tick()
+    assert Ash.count!(Discovery.Job, authorize?: false) == 25
+    assert {:ok, report} = Discovery.sweep_status(actor: @actor)
+    assert length(report.runs) == 25
+    assert Enum.all?(report.runs, &(&1.next_chunk == 1))
+  end
+
+  test "sweep exclusions and quality failures remain durable and empty quota holds block admission" do
+    run = source!()
+    version = Ingestion.get_source_version!(run.source_version_id)
+    record = Ingestion.get_source_record!(version.source_record_id)
+
+    Repo.query!("UPDATE source_locators SET scheduled_on = NULL WHERE url = $1", [
+      record.origin_url
+    ])
+
+    Discovery.enable_sweep(actor: @actor)
+    assert {:ok, %{excluded: 1, new_jobs: 0}} = Discovery.sweep_tick()
+    assert {:ok, report} = Discovery.sweep_status(actor: @actor)
+    assert [%{skip_reason: "uncertain_meeting_context"}] = report.runs
+
+    Repo.query!("UPDATE source_locators SET scheduled_on = '2024-01-01' WHERE url = $1", [
+      record.origin_url
+    ])
+
+    assert {:ok, %{new_jobs: 1}} = Discovery.sweep_tick()
+    claim = request("/internal/discovery/claim", %{}) |> json_response(200)
+
+    assert request("/internal/discovery/#{claim["id"]}/fail", %{
+             "lease_token" => claim["lease_token"],
+             "reason" => "quota"
+           })
+           |> json_response(200)
+
+    Repo.query!("DELETE FROM discovery_jobs")
+    assert {:ok, %{reason: :paused}} = Discovery.sweep_tick()
+    assert {:error, :discovery_paused} = Discovery.enqueue([run.id], actor: @actor, max_jobs: 8)
+    assert {:ok, nil} = Discovery.claim(@token)
+    assert {:ok, %{control: %{hold: "quota"}}} = Discovery.sweep_status(actor: @actor)
+  end
+
+  test "one run per commune is examined per tick, with rotating admission priority" do
+    text = Enum.map_join(1..600, "\n", &"Élodie D’Haene présente le projet numéro #{&1}.")
+
+    {runs, _archive} =
+      Enum.reduce(
+        [
+          {"ixelles/proposal", :agenda, :native_extraction},
+          {"uccle/end-to-end", :explanatory_note, :ocr},
+          {"forest/end-to-end", :agenda, :native_extraction},
+          {"city_of_brussels/end-to-end", :agenda, :native_extraction}
+        ],
+        {[], %{}},
+        fn {scenario, name, role}, {runs, archive} ->
+          run = source!(scenario, name, role, text)
+          archive = Map.merge(archive, Agent.get(BrusselsWtf.Archive.Memory, & &1))
+          Agent.update(BrusselsWtf.Archive.Memory, fn _ -> archive end)
+          {[run | runs], archive}
+        end
+      )
+
+    ids = Enum.map(runs, &Ecto.UUID.dump!(&1.id))
+    Repo.query!("UPDATE processing_runs SET status = 'failed' WHERE NOT (id = ANY($1))", [ids])
+    Discovery.enable_sweep(actor: @actor, daily_jobs: 100)
+
+    for _ <- 1..4 do
+      assert {:ok, %{examined: 4, new_jobs: count}} = Discovery.sweep_tick()
+      assert count <= 8
+    end
+
+    jobs = Ash.read!(Discovery.Job, authorize?: false)
+
+    assert jobs |> Enum.map(& &1.source_context["commune"]) |> Enum.uniq() |> Enum.sort() ==
+             ~w(city-of-brussels forest ixelles uccle)
+
+    for _ <- 1..4, do: Discovery.sweep_tick()
+    assert Ash.count!(Discovery.Job, authorize?: false) == 40
+    assert {:ok, report} = Discovery.sweep_status(actor: @actor)
+    assert report.counts.fully_admitted == 4
+    assert Ash.count!(Identity.Person) == 0
+    assert Ash.count!(BrusselsWtf.Council.PublicationRevision) == 0
+  end
+
+  test "64 unfinished jobs is a global bound including a leased job, and completion frees one slot" do
+    text = Enum.map_join(1..4800, "\n", &"Élodie D’Haene présente le projet numéro #{&1}.")
+    run = source!("ixelles/proposal", :agenda, :native_extraction, text)
+    isolate_sweep_run!(run)
+    Discovery.enable_sweep(actor: @actor, daily_jobs: 100)
+    for _ <- 1..8, do: assert({:ok, %{new_jobs: 8}} = Discovery.sweep_tick())
+    _claim = request("/internal/discovery/claim", %{}) |> json_response(200)
+    assert {:ok, %{reason: :backpressure}} = Discovery.sweep_tick()
+
+    assert {:error, :backpressure} =
+             Discovery.enqueue([run.id], actor: @actor, max_jobs: 8, chunk_offset: 64)
+
+    Discovery.pause(actor: @actor)
+
+    assert {:ok, %{control: %{day_used: 64}, counts: %{paused: 64}}} =
+             Discovery.sweep_status(actor: @actor)
+
+    Discovery.resume(actor: @actor)
+    assert {:ok, %{reason: :backpressure}} = Discovery.sweep_tick()
+    claim = request("/internal/discovery/claim", %{}) |> json_response(200)
+
+    assert request("/internal/discovery/#{claim["id"]}/result", result(claim))
+           |> json_response(200)
+
+    assert {:ok, %{new_jobs: 1}} = Discovery.sweep_tick()
+    assert {:ok, %{reason: :backpressure}} = Discovery.sweep_tick()
+    assert Ash.count!(Discovery.Job, authorize?: false) == 65
+  end
+
+  for {scenario, name, role} <- [
+        {"ixelles/proposal", :agenda, :native_extraction},
+        {"uccle/end-to-end", :explanatory_note, :ocr}
+      ] do
+    test "sweep rejects malformed #{role} quality on both run and authoritative artifact" do
+      run = source!(unquote(scenario), unquote(name), unquote(role))
+      isolate_sweep_run!(run)
+
+      artifact =
+        Ash.load!(run, :derived_artifacts).derived_artifacts
+        |> Enum.find(&(&1.output_kind in ["native-text", "ocr-text"]))
+
+      Discovery.enable_sweep(actor: @actor)
+
+      for malformed <- [%{}, %{"accepted" => "true"}, %{"accepted" => 1}, %{"accepted" => false}] do
+        Repo.query!("UPDATE processing_runs SET quality_measurements = $1 WHERE id = $2", [
+          malformed,
+          Ecto.UUID.dump!(run.id)
+        ])
+
+        assert {:ok, %{excluded: 1, new_jobs: 0}} = Discovery.sweep_tick()
+      end
+
+      Repo.query!("UPDATE processing_runs SET quality_measurements = $1 WHERE id = $2", [
+        run.quality_measurements,
+        Ecto.UUID.dump!(run.id)
+      ])
+
+      Repo.query!("UPDATE derived_artifacts SET quality_measurements = $1 WHERE id = $2", [
+        %{"accepted" => "true"},
+        Ecto.UUID.dump!(artifact.id)
+      ])
+
+      assert {:ok, %{excluded: 1, new_jobs: 0}} = Discovery.sweep_tick()
+
+      assert {:ok, %{runs: [%{skip_reason: "missing_authoritative_text"}]}} =
+               Discovery.sweep_status(actor: @actor)
+
+      assert Ash.count!(Discovery.Job, authorize?: false) == 0
+    end
+  end
+
+  test "all-private text and old meeting dates retain exclusions without creating jobs" do
+    text =
+      "HUIS CLOS\n" <>
+        String.duplicate("Le conseil examine la demande de soutien communal.\n", 20)
+
+    run = source!("ixelles/proposal", :agenda, :native_extraction, text)
+    isolate_sweep_run!(run)
+    Discovery.enable_sweep(actor: @actor)
+    assert {:ok, %{excluded: 1, new_jobs: 0}} = Discovery.sweep_tick()
+
+    assert {:ok, %{runs: [%{skip_reason: "no_eligible_lines", measurements: measurements}]}} =
+             Discovery.sweep_status(actor: @actor)
+
+    assert measurements["excluded_lines"]["private_session"] > 0
+    Repo.query!("UPDATE source_locators SET scheduled_on = '2023-12-31'")
+    assert {:ok, %{excluded: 1, new_jobs: 0}} = Discovery.sweep_tick()
+
+    assert {:ok, %{runs: [%{skip_reason: "ineligible_date"}]}} =
+             Discovery.sweep_status(actor: @actor)
+
+    assert Ash.count!(Discovery.Job, authorize?: false) == 0
+  end
+
+  test "stored lower limits govern ticks and maintenance never changes another queue" do
+    run = source!()
+    isolate_sweep_run!(run)
+    copy_generation!(run)
+    queued = Repo.query!("SELECT id, state FROM oban_jobs ORDER BY id").rows
+    assert :ok = BrusselsWtf.Workers.SweepPrivateDiscovery.perform(%Oban.Job{})
+    assert Ash.count!(Discovery.Job, authorize?: false) == 0
+
+    Discovery.enable_sweep(
+      actor: @actor,
+      max_runs: 1,
+      max_jobs: 1,
+      max_unfinished: 1,
+      daily_jobs: 2
+    )
+
+    Discovery.enable_sweep(actor: @actor)
+    assert :ok = BrusselsWtf.Workers.SweepPrivateDiscovery.perform(%Oban.Job{})
+    assert {:ok, %{reason: :backpressure}} = Discovery.sweep_tick()
+
+    assert {:ok,
+            %{control: %{max_runs: 1, max_jobs: 1, max_unfinished: 1, daily_jobs: 2, day_used: 1}}} =
+             Discovery.sweep_status(actor: @actor)
+
+    assert Repo.query!("SELECT id, state FROM oban_jobs ORDER BY id").rows == queued
+    assert Ash.read!(Discovery.SweepState) == []
+    assert Ash.read!(Discovery.SweepRun) == []
+    assert Ash.read!(Discovery.SweepEvent) == []
+    assert {:error, :invalid_cursor} = Discovery.sweep_status(actor: @actor, cursor: "bad")
+  end
+
+  defmodule WaitingArchive do
+    def get(key) do
+      send(
+        Application.fetch_env!(:brussels_wtf, :discovery_archive_test_owner),
+        {:archive_read, self()}
+      )
+
+      receive do
+        :continue -> BrusselsWtf.Archive.Memory.get(key)
+      after
+        5_000 -> {:error, :test_timeout}
+      end
+    end
+  end
+
+  @tag :independent_connections
+  test "pause commits during archive IO and invalidates the prepared cursor; restart and racing ticks converge" do
+    run = source!()
+    isolate_sweep_run!(run)
+    Discovery.enable_sweep(actor: @actor)
+    repo = Repo.get_dynamic_repo()
+    previous = Application.get_env(:brussels_wtf, :archive)
+    Application.put_env(:brussels_wtf, :archive, WaitingArchive)
+    Application.put_env(:brussels_wtf, :discovery_archive_test_owner, self())
+
+    on_exit(fn ->
+      Application.put_env(:brussels_wtf, :archive, previous)
+      Application.delete_env(:brussels_wtf, :discovery_archive_test_owner)
+    end)
+
+    task =
+      Task.async(fn ->
+        Repo.put_dynamic_repo(repo)
+        Discovery.sweep_tick()
+      end)
+
+    assert_receive {:archive_read, reader}, 2_000
+    assert {:ok, %{paused: 0}} = Discovery.pause(actor: @actor)
+    send(reader, :continue)
+    assert {:ok, %{reason: :stale_plan}} = Task.await(task)
+
+    assert {:ok, %{control: %{cursors: %{}}, counts: %{examined: 0}}} =
+             Discovery.sweep_status(actor: @actor)
+
+    Application.put_env(:brussels_wtf, :archive, previous)
+    Discovery.resume(actor: @actor)
+
+    tasks =
+      for _ <- 1..3,
+          do:
+            Task.async(fn ->
+              Repo.put_dynamic_repo(repo)
+              Discovery.sweep_tick()
+            end)
+
+    results = Task.await_many(tasks)
+    assert Enum.sum(Enum.map(results, fn {:ok, report} -> report.new_jobs end)) == 1
+    assert Ash.count!(Discovery.Job, authorize?: false) == 1
+
+    assert {:ok, %{control: %{day_used: 1}, runs: [%{next_chunk: 1}]}} =
+             Discovery.sweep_status(actor: @actor)
+  end
+
+  defp isolate_sweep_run!(run) do
+    Repo.query!("UPDATE processing_runs SET status = 'failed' WHERE id != $1", [
+      Ecto.UUID.dump!(run.id)
+    ])
+  end
+
+  defp copy_generation!(run, status \\ :succeeded) do
+    copy =
+      Ingestion.record_processing_run!(%{
+        source_version_id: run.source_version_id,
+        generation_key: Ash.UUID.generate(),
+        processor_name: run.processor_name,
+        processor_version: run.processor_version,
+        config_hash: run.config_hash,
+        processor_role: run.processor_role,
+        status: status,
+        quality_measurements: run.quality_measurements
+      })
+
+    [artifact] = Ash.load!(run, :derived_artifacts).derived_artifacts
+
+    Ingestion.link_processing_run_artifact!(%{
+      processing_run_id: copy.id,
+      derived_artifact_id: artifact.id,
+      role: :native_output
+    })
+
+    copy
   end
 
   test "disabled credential fails closed" do

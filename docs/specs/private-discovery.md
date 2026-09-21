@@ -17,6 +17,35 @@ The user-approved principal seam is archived municipal text → queued analysis 
 - Model output is strictly versioned JSON containing only input_hash and textual mentions (kind, text, line_id, quote). Validate exact keys, count/length limits, input hash and exact unambiguous quote/name presence in the pinned source line. Require exactly two unique, Unicode-word-bounded spans: the quote occurs once in the pinned line, and the name occurs once within that quote. The same name elsewhere on the line is allowed because the quote identifies the evidence occurrence. Duplicate `(line_id, text)` entries remain invalid, even with different quotes or kinds. Minimum lengths count Unicode code points (JSON Schema semantics); maximum lengths remain UTF-8 byte caps. Server-derived occurrence IDs and provenance prevent duplicate mentions. No fuzzy source matching.
 - Retain result/provenance privately; no new Person, LegalEntity, SourcedFact, feed or public route is created by discovery. Discovery failure must not block ordinary meeting publication.
 
+## Durable bounded admission — issue #105
+
+Automatic archive traversal is a separate opt-in, default-disabled control. The
+maintenance tick runs every 60 seconds, examining at most four succeeded
+native/OCR runs (one per available commune), admitting at most eight new jobs and
+never exceeding 64 unfinished jobs globally. The initial UTC-day allowance is
+12 new jobs, explicitly configurable within 1..500; the other ceilings may only
+be lowered. Limits, reviewer enable/pause/resume audits, global manual/quota
+holds, per-commune cycling cursors, per-run absolute chunk progress and skips
+survive restart in Ash/PostgreSQL. Explicit enqueue shares the holds and budget.
+Enabling does not clear a hold; resuming does not opt in or reset allowances.
+
+Repeated bounded run-ID cycles discover accepted generations completed behind
+the cursor and reconsider exclusions after source-context corrections. All text
+passes the existing linked-artifact, checksum, provenance and minimization seam.
+Preparing archive inputs holds no discovery transaction lock; commit checks the
+expected control revision and atomically writes jobs and cursor progress under
+the existing writer serialization. Existing input/contract identities never
+create another model job. Completed and terminally failed jobs remain durable;
+a fully admitted document may still have queued or failed analysis chunks.
+
+Safe paginated progress distinguishes unique examined runs and repeated
+examinations, eligible/excluded/fully-admitted runs, job execution states, unique
+mention names and repeated evidence occurrences. Exact names are not resolved
+identities. Receipts and failures are independent of Oban history. This adds no
+inference consumer, paid fallback, publication, identity resolution, normalization
+poll or coverage action. See the operational guide for exact interfaces and the
+limits of local verification; no production activation is implied.
+
 ## Worker protocol v1
 
 `POST /internal/discovery/claim` with `{}` returns 204 when idle, or JSON:

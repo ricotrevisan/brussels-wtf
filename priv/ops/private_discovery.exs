@@ -2,7 +2,8 @@
 # Default lists safe candidate metadata; full eligibility is checked by preview.
 # Code.eval_string(File.read!(Application.app_dir(:brussels_wtf,
 #   "priv/ops/private_discovery.exs")), [operation: :preview, run_ids: [...], max_jobs: 8])
-# Operations: :candidates, :preview, :enqueue, :status, :pause, :resume.
+# Operations: :candidates, :preview, :enqueue, :status, :pause, :resume,
+# :enable_sweep, :sweep_status. Sweep is disabled until explicit enable.
 # Preview never prints source text. Enqueue requires explicit IDs and max_jobs.
 options = Map.new(binding())
 operation = Map.get(options, :operation, :candidates)
@@ -36,6 +37,14 @@ result =
         {:ok, report} -> {:ok, Map.drop(report, [:jobs])}
         error -> error
       end
+
+    :enable_sweep ->
+      limits = Map.take(options, [:max_runs, :max_jobs, :max_unfinished, :daily_jobs])
+      BrusselsWtf.Discovery.enable_sweep(opts ++ Map.to_list(limits))
+
+    :sweep_status ->
+      cursors = Map.take(options, [:cursor, :failure_cursor, :event_cursor])
+      BrusselsWtf.Discovery.sweep_status(opts ++ Map.to_list(cursors))
 
     :status ->
       BrusselsWtf.Discovery.status(Map.fetch!(options, :batch_id), opts)
