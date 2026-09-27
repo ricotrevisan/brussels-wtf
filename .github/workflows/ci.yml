@@ -5,9 +5,17 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+env:
+  ERL_FLAGS: "+S 2:2"
+
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Fork PRs stay on GitHub-hosted runners; lab only runs trusted repository code.
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || fromJSON('["self-hosted", "Linux", "X64", "lab", "ubuntu24", "brussels-wtf"]') }}
+    timeout-minutes: 60
 
     services:
       postgres:
@@ -26,6 +34,7 @@ jobs:
 
     env:
       MIX_ENV: test
+      ImageOS: ubuntu24
       PGHOST: localhost
       PGPORT: "5432"
       PGUSER: brussels
@@ -49,8 +58,8 @@ jobs:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
-          restore-keys: ${{ runner.os }}-mix-
+          key: lab-ubuntu24-${{ runner.arch }}-otp28-elixir1.19.5-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: lab-ubuntu24-${{ runner.arch }}-otp28-elixir1.19.5-mix-
 
       - name: Install PDF citation verifier
         run: sudo apt-get update && sudo apt-get install -y poppler-utils
