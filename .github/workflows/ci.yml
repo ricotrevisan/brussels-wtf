@@ -43,6 +43,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Node for browser-local unit tests
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          package-manager-cache: false
+
       - uses: erlef/setup-beam@v1
         with:
           elixir-version: "1.19.5"
