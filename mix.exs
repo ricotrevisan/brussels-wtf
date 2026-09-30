@@ -50,7 +50,7 @@ defmodule BrusselsWtf.MixProject do
       {:nimble_csv, "~> 1.2"},
       {:req, "~> 0.7"},
       {:req_s3, "~> 0.2.5"},
-      {:dstar, github: "ricotrevisan/dstar", tag: "v0.3.0"},
+      {:dstar, "~> 0.3.0"},
       {:phoenix, "~> 1.8.9"},
       {:phoenix_ecto, "~> 4.5"},
       {:ecto_sql, "~> 3.13"},
