@@ -22,7 +22,16 @@ defmodule BrusselsWtfWeb.IxellesFinalPrincipalSeamTest do
 
     initial = conn |> get("/?lang=en") |> html_response(200)
     assert initial =~ "Coming up"
-    assert initial =~ "#{scenario.expected.path}?lang=en##{stable_anchor}"
+
+    hrefs =
+      initial |> LazyHTML.from_document() |> Access.get("article a") |> LazyHTML.attribute("href")
+
+    assert Enum.any?(hrefs, fn href ->
+             uri = URI.parse(href)
+
+             uri.path == scenario.expected.path and uri.fragment == stable_anchor and
+               Plug.Conn.Query.decode(uri.query)["lang"] == "en"
+           end)
 
     assert :ok = BrusselsWtf.Test.Harness.advance("final")
     assert :ok = BrusselsWtf.Ingestion.poll_now("ixelles")

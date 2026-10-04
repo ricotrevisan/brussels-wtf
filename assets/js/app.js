@@ -52,8 +52,10 @@ window.liveSocket = liveSocket
 
 
 // Commune filters progressively enhance the server-rendered GET form.
-enhanceCommuneSelection(window, document, localStorage)
-enhancePersonalFeed(window, document, localStorage)
+let readerStorage
+try { readerStorage = window.localStorage } catch (_) { /* Storage may be disabled. */ }
+enhanceCommuneSelection(window, document, readerStorage)
+enhancePersonalFeed(window, document, readerStorage)
 
 // The lines below enable quality of life phoenix_live_reload
 // development features:

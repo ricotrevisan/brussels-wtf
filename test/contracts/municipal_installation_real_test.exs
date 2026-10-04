@@ -492,8 +492,8 @@ defmodule BrusselsWtf.Contracts.MunicipalInstallationRealTest do
         "formatted official PDF page citation"
       )
 
-      home_response = get(build_conn(), "/?lang=#{locale}")
-      check!(home_response.status == 200, "localized public homepage")
+      home_response = get(build_conn(), "/mandates?lang=#{locale}")
+      check!(home_response.status == 200, "localized public mandate directory")
       home = LazyHTML.from_document(home_response.resp_body)
 
       check!(
@@ -511,7 +511,7 @@ defmodule BrusselsWtf.Contracts.MunicipalInstallationRealTest do
 
       check!(
         citation in LazyHTML.attribute(home[~s(a[rel="external"])], "href"),
-        "homepage exact page citation"
+        "directory exact page citation"
       )
 
       for body <- [response.resp_body, home_response.resp_body],

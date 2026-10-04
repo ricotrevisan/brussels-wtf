@@ -29,7 +29,7 @@ defmodule BrusselsWtfWeb.MunicipalInstallationPageTest do
     assert {:ok, previews} = MunicipalInstallation.preview(@slugs, actor: actor)
     assert Enum.all?(previews, &(&1.eligible >= 2))
     assert Identity.list_public_relationships!() == []
-    before = conn |> get("/?lang=en") |> html_response(200)
+    before = conn |> get("/mandates?lang=en") |> html_response(200)
     refute before =~ "Installation documented"
     refute before =~ "Léa Exemple"
 
@@ -41,7 +41,10 @@ defmodule BrusselsWtfWeb.MunicipalInstallationPageTest do
     assert length(roles) == 8
 
     for {locale, {history, wording}} <- @copy do
-      homepage = conn |> recycle() |> get("/?lang=#{locale}") |> html_response(200)
+      homepage = conn |> recycle() |> get("/mandates?lang=#{locale}") |> html_response(200)
+      overview = conn |> recycle() |> get("/?lang=#{locale}") |> html_response(200)
+      refute overview =~ "Léa Exemple"
+      refute overview =~ "Installation document"
       home = LazyHTML.from_document(homepage)
       assert length(LazyHTML.to_tree(home["#verified-mandates + ul > li"])) == 8
       assert LazyHTML.text(home["#verified-mandates + ul"]) =~ wording
@@ -104,7 +107,7 @@ defmodule BrusselsWtfWeb.MunicipalInstallationPageTest do
       html =
         conn
         |> recycle()
-        |> get("/?lang=en&communes_submitted=1&commune[]=#{slug}")
+        |> get("/mandates?lang=en&communes_submitted=1&commune[]=#{slug}")
         |> html_response(200)
 
       home = LazyHTML.from_document(html)
@@ -116,7 +119,9 @@ defmodule BrusselsWtfWeb.MunicipalInstallationPageTest do
       end
     end
 
-    empty = conn |> recycle() |> get("/?lang=en&communes_submitted=1") |> html_response(200)
+    empty =
+      conn |> recycle() |> get("/mandates?lang=en&communes_submitted=1") |> html_response(200)
+
     refute empty =~ ~s(id="verified-mandates")
   end
 

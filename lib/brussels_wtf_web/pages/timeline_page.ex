@@ -10,80 +10,76 @@ defmodule BrusselsWtfWeb.TimelinePage do
     {"city-of-brussels", "City of Brussels"}
   ]
   @slugs Enum.map(@communes, &elem(&1, 0))
-  @real_corpus_meeting_count 8
 
   @impl Dstar.Page
   def mount(conn, params) do
     locale = BrusselsWtfWeb.Locale.resolve(conn, params)
     selected = selected_communes(params)
 
-    pages =
-      Council.list_published_meeting_pages!()
-      |> prefer_real_corpus()
-      |> Enum.filter(&(&1.council_meeting.commune.slug in selected))
+    path = "/" <> String.trim(conn.request_path, "/")
+    homepage? = path == "/"
+    directory? = path == "/mandates"
+    category = Enum.find(categories(), &(&1.path == path))
 
-    entries =
-      pages
-      |> Enum.flat_map(fn page ->
-        page.council_meeting.agenda_items
-        |> Enum.filter(& &1.published?)
-        |> Enum.map(&entry(page, &1, locale))
-      end)
-
-    q = String.slice(params["q"] || "", 0, 200)
-    show = selected_sections(params)
-    needle = String.downcase(q)
+    q = if homepage?, do: "", else: search_query(params["q"])
 
     matching =
-      Enum.filter(entries, fn entry ->
-        needle == "" or String.contains?(String.downcase(entry.search_text), needle)
-      end)
+      if directory? do
+        %{}
+      else
+        Council.list_public_timeline!(
+          communes: selected,
+          locale: locale,
+          commune_names:
+            Map.new(@communes, fn {slug, name} -> {slug, commune_name(locale, slug, name)} end),
+          search: q,
+          groups: if(homepage?, do: [:coming, :awaiting, :decided], else: [category.group]),
+          limit: if(homepage?, do: 5)
+        )
+      end
 
     assign(BrusselsWtfWeb.FollowControl.load(conn),
-      page_title: "brussels.wtf",
+      page_title:
+        text(
+          locale,
+          if(directory?, do: :verified_mandates, else: (category && category.label) || :title)
+        ),
       html_lang: locale,
-      resource_path: "/",
+      resource_path: path,
+      homepage?: homepage?,
+      directory?: directory?,
+      title:
+        text(
+          locale,
+          if(directory?, do: :verified_mandates, else: (category && category.label) || :title)
+        ),
+      home_path: selection_path("/", locale, selected),
+      directory_path: selection_path("/mandates", locale, selected),
+      reset_path: selection_path(path, locale, selected),
       locale: locale,
       communes:
         Enum.map(@communes, fn {slug, name} -> {slug, commune_name(locale, slug, name)} end),
       selected_communes: selected,
-      mandates: public_mandates(selected, needle),
+      mandates:
+        if(directory?, do: BrusselsWtf.Identity.list_public_mandates!(selected, q), else: []),
       q: q,
-      show: show,
-      language_path:
-        "/?" <> Plug.Conn.Query.encode(Map.take(params, ~w(q show commune communes_submitted))),
-      coming: matching |> Enum.filter(&(&1.group == :coming)) |> newest_first(),
-      awaiting: matching |> Enum.filter(&(&1.group == :awaiting)) |> newest_first(),
-      previously: matching |> Enum.filter(&(&1.group == :decided)) |> newest_first()
+      language_path: selection_path(path, nil, selected, q),
+      categories:
+        categories()
+        |> Enum.filter(&(homepage? or &1 == category))
+        |> Enum.map(fn category ->
+          entries = Map.fetch!(matching, category.group) |> Enum.map(&entry(&1, locale, selected))
+
+          Map.merge(category, %{
+            entries: entries,
+            href: selection_path(category.path, locale, selected)
+          })
+        end)
     )
   end
 
-  defp public_mandates(selected, needle) do
-    names = Enum.map(selected, &BrusselsWtf.Communes.configuration!(&1).name)
-
-    BrusselsWtf.Identity.list_public_relationships!(%{object_type: :commune})
-    |> Enum.filter(fn fact ->
-      (fact.mandate_declaration != nil or fact.state == :documented) and
-        fact.object_name in names and
-        (needle == "" or String.contains?(String.downcase(fact.subject_name), needle))
-    end)
-    |> Enum.sort_by(&{&1.subject_name, &1.fact_id})
-  end
-
-  defp prefer_real_corpus(pages) do
-    real_pages = Enum.filter(pages, &real_page?/1)
-    if length(real_pages) >= @real_corpus_meeting_count, do: real_pages, else: pages
-  end
-
-  defp real_page?(page) do
-    Enum.any?(page.council_meeting.agenda_items, fn item ->
-      proposal = loaded_or_nil(item.published_proposal)
-      decision = loaded_or_nil(item.published_decision)
-      real_proposal? = proposal && not proposal.synthetic
-      real_decision? = decision && Enum.any?(decision.evidence, &(not &1.synthetic))
-      real_proposal? || real_decision?
-    end)
-  end
+  defp search_query(value) when is_binary(value), do: String.slice(value, 0, 200)
+  defp search_query(_value), do: ""
 
   @impl Dstar.Page
   def render(assigns) do
@@ -93,197 +89,196 @@ defmodule BrusselsWtfWeb.TimelinePage do
     </a>
     <header class="border-b border-base-300">
       <div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4">
-        <Layouts.brand_link href={"/?lang=" <> @locale} />
+        <Layouts.brand_link href={@home_path} />
         <.language_nav locale={@locale} path={@language_path} />
       </div>
     </header>
 
-    <main id="content" class="mx-auto max-w-6xl px-4 py-8 text-base-content" tabindex="-1">
-      <div class="grid gap-8 md:grid-cols-[15rem_minmax(0,1fr)]">
-        <aside class="md:sticky md:top-4 md:self-start">
-          <h1 class="text-xl font-semibold tracking-tight">{text(@locale, :title)}</h1>
-          <p class="mt-2 text-sm text-base-content/70">{text(@locale, :intro)}</p>
-          <form
-            :for={{slug, _name} <- @communes}
-            id={"follow-commune-#{slug}"}
-            method="post"
-            action={BrusselsWtfWeb.FollowControl.action(BrusselsWtfWeb.FollowControl.find(@citizen_follows, "commune", slug)) <> "?lang=" <> @locale}
-          >
-            <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
-            <input type="hidden" name="target_type" value="commune" />
-            <input type="hidden" name="target_identifier" value={slug} />
-          </form>
-          <p :if={map_size(@citizen_follows) > 0} class="mt-2 text-sm">
-            {BrusselsWtfWeb.FollowControl.text(@locale, :history)}
-          </p>
-          <form method="get" action="/" data-reader-communes class="mt-5 space-y-4">
-            <input type="hidden" name="lang" value={@locale} />
-            <input type="hidden" name="communes_submitted" value="1" />
-            <label class="block text-sm font-medium">
-              {text(@locale, :search)}
-              <input type="search" name="q" value={@q} class="input input-bordered mt-1 w-full" />
-            </label>
-            <details class="reader-filters">
-              <summary class="cursor-pointer text-sm font-medium">{text(@locale, :filters)}</summary>
-              <fieldset class="mt-3 space-y-2 text-sm">
-                <legend class="font-medium">{text(@locale, :sections)}</legend>
-                <label class="flex items-center gap-2">
+    <main
+      id="content"
+      class="reader-coverage mx-auto max-w-4xl px-4 py-6 sm:py-8 text-base-content"
+      tabindex="-1"
+    >
+      <a :if={not @homepage?} href={@home_path} class="mb-5 inline-block underline underline-offset-2">{text(
+        @locale,
+        :back
+      )}</a>
+      <h1 id="coverage-title" class="text-2xl sm:text-3xl font-semibold tracking-tight">{@title}</h1>
+      <p :if={@homepage?} class="mt-2 max-w-prose text-sm text-base-content/80">
+        {text(@locale, :intro)}
+      </p>
+      <div class="mt-5">
+        <form
+          :for={{slug, _name} <- if(@homepage?, do: [], else: @communes)}
+          id={"follow-commune-#{slug}"}
+          method="post"
+          action={BrusselsWtfWeb.FollowControl.action(BrusselsWtfWeb.FollowControl.find(@citizen_follows, "commune", slug)) <> "?lang=" <> @locale}
+        >
+          <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+          <input type="hidden" name="target_type" value="commune" />
+          <input type="hidden" name="target_identifier" value={slug} />
+        </form>
+        <p :if={not @homepage? and map_size(@citizen_follows) > 0} class="mt-2 text-sm">
+          {BrusselsWtfWeb.FollowControl.text(@locale, :history)}
+        </p>
+        <form method="get" action={@resource_path} data-reader-communes class="space-y-4">
+          <input type="hidden" name="lang" value={@locale} />
+          <input type="hidden" name="communes_submitted" value="1" />
+          <label :if={not @homepage?} class="block text-sm font-medium">
+            {text(@locale, :search)}
+            <input type="search" name="q" value={@q} class="input input-bordered mt-1 w-full" />
+          </label>
+          <fieldset class="text-sm">
+            <legend class="mb-2 font-semibold">{text(@locale, :communes)}</legend>
+            <div class="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4">
+              <div :for={{slug, name} <- @communes} class="min-w-0">
+                <label class="flex min-h-11 items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
-                    name="show[]"
-                    value="coming"
-                    checked={"coming" in @show}
-                    class="checkbox checkbox-sm"
+                    name="commune[]"
+                    value={slug}
+                    checked={slug in @selected_communes}
+                    class="checkbox checkbox-sm shrink-0"
                   />
-                  {text(@locale, :coming)} ({length(@coming)})
+                  <span>{name}</span>
                 </label>
-                <label class="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    name="show[]"
-                    value="awaiting"
-                    checked={"awaiting" in @show}
-                    class="checkbox checkbox-sm"
-                  />
-                  {text(@locale, :awaiting)} ({length(@awaiting)})
-                </label>
-                <label class="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    name="show[]"
-                    value="previously"
-                    checked={"previously" in @show}
-                    class="checkbox checkbox-sm"
-                  />
-                  {text(@locale, :previously)} ({length(@previously)})
-                </label>
-              </fieldset>
-              <fieldset class="space-y-2 text-sm">
-                <legend class="font-medium">{text(@locale, :communes)}</legend>
-                <div :for={{slug, name} <- @communes} class="flex items-center justify-between gap-2">
-                  <label class="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      name="commune[]"
-                      value={slug}
-                      checked={slug in @selected_communes}
-                      class="checkbox checkbox-sm"
-                    />
-                    <span>{name}</span>
-                  </label>
-                  <button
-                    type="submit"
-                    form={"follow-commune-#{slug}"}
-                    class="btn btn-ghost btn-xs"
-                    data-follow-control
-                    data-unfollow-control={
-                      !!BrusselsWtfWeb.FollowControl.find(@citizen_follows, "commune", slug)
-                    }
-                  >{if BrusselsWtfWeb.FollowControl.find(@citizen_follows, "commune", slug),
-                    do: BrusselsWtfWeb.FollowControl.text(@locale, :unfollow),
-                    else: text(@locale, :follow)}</button>
-                  <span
-                    :if={BrusselsWtfWeb.FollowControl.find(@citizen_follows, "commune", slug)}
-                    class="text-sm"
-                    data-followed-state
-                  >{BrusselsWtfWeb.FollowControl.text(@locale, :following)}</span>
-                </div>
-              </fieldset>
-            </details>
-            <button type="submit" class="btn btn-sm w-full">{text(@locale, :apply)}</button>
-          </form>
-          <section
-            :if={@mandates != []}
-            class="mt-8 border-t border-base-300 pt-5"
-            aria-labelledby="verified-mandates"
-          >
-            <h2 id="verified-mandates" class="font-semibold">{text(@locale, :verified_mandates)}</h2>
-            <ul class="mt-3 space-y-3 text-sm">
-              <li :for={mandate <- @mandates}>
-                <a
-                  class="underline underline-offset-2"
-                  href={"/people/#{mandate.subject_id}?lang=#{@locale}#fact-#{mandate.fact_id}"}
+              </div>
+            </div>
+          </fieldset>
+          <div class="flex flex-wrap items-center gap-4">
+            <button type="submit" class="btn btn-primary min-h-11">{text(@locale, :apply)}</button>
+            <a
+              :if={not @homepage?}
+              data-reader-reset
+              href={@reset_path}
+              class="inline-flex min-h-11 items-center underline underline-offset-2"
+            >{text(@locale, :reset)}</a>
+          </div>
+        </form>
+        <details :if={not @homepage?} class="reader-filters mt-4">
+          <summary class="cursor-pointer py-2 text-sm underline underline-offset-2">
+            {text(@locale, :follow_communes)}
+          </summary>
+          <div class="mt-2 grid gap-3 sm:grid-cols-2">
+            <div :for={{slug, name} <- @communes} class="flex items-center justify-between gap-2">
+              <span>{name}</span>
+              <button
+                type="submit"
+                form={"follow-commune-#{slug}"}
+                class="btn btn-ghost btn-xs"
+                data-follow-control
+                data-unfollow-control={
+                  !!BrusselsWtfWeb.FollowControl.find(@citizen_follows, "commune", slug)
+                }
+              >{if BrusselsWtfWeb.FollowControl.find(@citizen_follows, "commune", slug),
+                do: BrusselsWtfWeb.FollowControl.text(@locale, :unfollow),
+                else: text(@locale, :follow)}</button>
+              <span
+                :if={BrusselsWtfWeb.FollowControl.find(@citizen_follows, "commune", slug)}
+                class="text-sm"
+                data-followed-state
+              >{BrusselsWtfWeb.FollowControl.text(@locale, :following)}</span>
+            </div>
+          </div>
+        </details>
+        <section
+          :if={@directory? and @mandates != []}
+          class="mt-8 border-t border-base-300 pt-5"
+          aria-labelledby="verified-mandates"
+        >
+          <h2 id="verified-mandates" class="sr-only">{text(@locale, :verified_mandates)}</h2>
+          <ul class="mt-3 space-y-3 text-sm">
+            <li :for={mandate <- @mandates}>
+              <a
+                class="underline underline-offset-2"
+                href={"/people/#{mandate.subject_id}?lang=#{@locale}#fact-#{mandate.fact_id}"}
+              >
+                {mandate.subject_name}
+              </a>
+              <p class="mt-1">{BrusselsWtfWeb.PublicMandate.role_label(@locale, mandate)}</p>
+              <p class="mt-1">{mandate.object_name}</p>
+              <BrusselsWtfWeb.PublicMandate.installation_period
+                :if={mandate.state == :documented}
+                relationship={mandate}
+                locale={@locale}
+              />
+              <p :if={mandate.state != :documented} class="mt-1 text-base-content/70">
+                <time
+                  :if={mandate.effective_from}
+                  datetime={Date.to_iso8601(mandate.effective_from)}
                 >
-                  {mandate.subject_name}
-                </a>
-                <p class="mt-1">{BrusselsWtfWeb.PublicMandate.role_label(@locale, mandate)}</p>
-                <p class="mt-1">{mandate.object_name}</p>
-                <BrusselsWtfWeb.PublicMandate.installation_period
-                  :if={mandate.state == :documented}
-                  relationship={mandate}
-                  locale={@locale}
-                />
-                <p :if={mandate.state != :documented} class="mt-1 text-base-content/70">
-                  <time
-                    :if={mandate.effective_from}
-                    datetime={Date.to_iso8601(mandate.effective_from)}
-                  >
-                    {Date.to_iso8601(mandate.effective_from)}
-                  </time>
-                  <span :if={mandate.effective_from && mandate.effective_to}> – </span>
-                  <time :if={mandate.effective_to} datetime={Date.to_iso8601(mandate.effective_to)}>
-                    {Date.to_iso8601(mandate.effective_to)}
-                  </time>
-                </p>
-                <a
-                  class="mt-1 inline-block underline underline-offset-2"
-                  rel="external"
-                  href={
-                    BrusselsWtfWeb.PublicEvidence.citation_href(%{
-                      citation_url: mandate.authoritative_url,
-                      location: mandate.evidence_location
-                    })
-                  }
-                >
-                  {text(@locale, :source)}
-                </a>
-              </li>
-            </ul>
-          </section>
-        </aside>
-
-        <div class="min-w-0">
-          <section
-            :if={"coming" in @show}
-            aria-labelledby="coming-up"
-            class="border-t border-base-300 pt-4"
-          >
-            <h2 id="coming-up" class="text-2xl font-semibold">{text(@locale, :coming)}</h2>
-            <p :if={@coming == []} class="mt-3 text-base-content/70">{text(@locale, :none_coming)}</p>
-            <div class="mt-3">
-              <.timeline_entry :for={entry <- @coming} entry={entry} locale={@locale} />
-            </div>
-          </section>
-
-          <section
-            :if={"awaiting" in @show}
-            aria-labelledby="awaiting-outcome"
-            class="mt-8 border-t border-base-300 pt-4"
-          >
-            <h2 id="awaiting-outcome" class="text-2xl font-semibold">{text(@locale, :awaiting)}</h2>
-            <p :if={@awaiting == []} class="mt-3 text-base-content/70">
-              {text(@locale, :none_awaiting)}
-            </p>
-            <div class="mt-3">
-              <.timeline_entry :for={entry <- @awaiting} entry={entry} locale={@locale} />
-            </div>
-          </section>
-
-          <section
-            :if={"previously" in @show}
-            aria-labelledby="previously"
-            class="mt-8 border-t border-base-300 pt-4"
-          >
-            <h2 id="previously" class="text-2xl font-semibold">{text(@locale, :previously)}</h2>
-            <p :if={@previously == []} class="mt-3 text-base-content/70">
-              {text(@locale, :none_decided)}
-            </p>
-            <div class="mt-3">
-              <.timeline_entry :for={entry <- @previously} entry={entry} locale={@locale} />
-            </div>
-          </section>
-        </div>
+                  {Date.to_iso8601(mandate.effective_from)}
+                </time>
+                <span :if={mandate.effective_from && mandate.effective_to}> – </span>
+                <time :if={mandate.effective_to} datetime={Date.to_iso8601(mandate.effective_to)}>
+                  {Date.to_iso8601(mandate.effective_to)}
+                </time>
+              </p>
+              <a
+                class="mt-1 inline-block underline underline-offset-2"
+                rel="external"
+                href={
+                  BrusselsWtfWeb.PublicEvidence.citation_href(%{
+                    citation_url: mandate.authoritative_url,
+                    location: mandate.evidence_location
+                  })
+                }
+              >
+                {text(@locale, :source)}
+              </a>
+            </li>
+          </ul>
+        </section>
+        <p :if={@directory? and @mandates == []} class="mt-8 text-base-content/80">
+          {text(@locale, :none_mandates)}
+        </p>
       </div>
+
+      <section
+        :for={category <- @categories}
+        aria-labelledby={if @homepage?, do: category.id, else: "coverage-title"}
+        class="mt-8 border-t border-base-300 pt-4"
+      >
+        <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <h2 :if={@homepage?} id={category.id} class="text-xl sm:text-2xl font-semibold">
+            {text(@locale, category.label)}
+          </h2>
+          <a
+            :if={@homepage?}
+            href={category.href}
+            class="inline-flex min-h-11 items-center text-sm underline underline-offset-2"
+            aria-label={text(@locale, :view_all) <> ": " <> text(@locale, category.label)}
+          >{text(@locale, :view_all)}</a>
+        </div>
+        <p :if={category.entries == []} class="mt-3 text-base-content/80">
+          {text(@locale, category.empty)}
+        </p>
+        <div class="mt-2">
+          <.timeline_entry :for={entry <- category.entries} entry={entry} locale={@locale} />
+        </div>
+      </section>
+      <nav class="mt-8 border-t border-base-300 pt-4 text-sm" aria-label={text(@locale, :explore)}>
+        <ul class="flex flex-wrap gap-x-6 gap-y-2">
+          <li :if={not @directory?}>
+            <a
+              class="inline-flex min-h-11 items-center underline underline-offset-2"
+              href={@directory_path}
+            >{text(@locale, :verified_mandates)}</a>
+          </li>
+          <li>
+            <a
+              class="inline-flex min-h-11 items-center underline underline-offset-2"
+              href={"/feed?lang=" <> @locale}
+            >{text(@locale, :your_follows)}</a>
+          </li>
+          <li :for={category <- categories()} :if={not @homepage?}>
+            <a
+              class="inline-flex min-h-11 items-center underline underline-offset-2"
+              href={selection_path(category.path, @locale, @selected_communes)}
+            >{text(@locale, category.label)}</a>
+          </li>
+        </ul>
+      </nav>
 
       <BrusselsWtfWeb.PublicationComponents.footer locale={@locale} />
     </main>
@@ -320,14 +315,14 @@ defmodule BrusselsWtfWeb.TimelinePage do
   defp language_nav(assigns) do
     ~H"""
     <nav aria-label="Language">
-      <ul class="flex gap-3 text-sm">
+      <ul class="flex gap-1 text-sm">
         <li :for={{code, label} <- [{"fr", "FR"}, {"nl", "NL"}, {"en", "EN"}]}>
           <a
             href={@path <> if(String.ends_with?(@path, "?"), do: "lang=", else: "&lang=") <> code}
             lang={code}
             hreflang={code}
             aria-current={if code == @locale, do: "page"}
-            class="underline underline-offset-2"
+            class="inline-flex min-h-11 min-w-9 items-center justify-center underline underline-offset-2"
           >{label}</a>
         </li>
       </ul>
@@ -335,13 +330,9 @@ defmodule BrusselsWtfWeb.TimelinePage do
     """
   end
 
-  defp entry(page, item, locale) do
-    variant =
-      Enum.find(item.coverage_variants, &(&1.locale == locale)) ||
-        unavailable_coverage_variant(locale)
-
+  defp entry(%{page: page, item: item, variant: variant, state: state}, locale, selected) do
+    variant = variant || unavailable_coverage_variant(locale)
     decision = loaded_or_nil(item.published_decision)
-    state = display_state(item, decision)
 
     %{
       commune:
@@ -359,22 +350,11 @@ defmodule BrusselsWtfWeb.TimelinePage do
       evidences: BrusselsWtfWeb.PublicEvidence.for_item(item),
       dossiers: Enum.map(item.dossier_links, & &1.dossier),
       href:
-        "/meetings/#{page.council_meeting.commune.slug}/#{page.council_meeting.municipal_identifier}" <>
-          "?lang=#{locale}##{item.stable_anchor}",
-      search_text:
-        [
-          variant.title,
-          variant.summary,
-          commune_name(
-            locale,
-            page.council_meeting.commune.slug,
-            page.council_meeting.commune.name
-          ),
-          item.published_item_number || item.item_number,
-          Date.to_iso8601(page.council_meeting.scheduled_on)
-        ]
-        |> Enum.reject(&is_nil/1)
-        |> Enum.join(" ")
+        selection_path(
+          "/meetings/#{page.council_meeting.commune.slug}/#{page.council_meeting.municipal_identifier}",
+          locale,
+          selected
+        ) <> "##{item.stable_anchor}"
     }
   end
 
@@ -388,24 +368,43 @@ defmodule BrusselsWtfWeb.TimelinePage do
     }
   end
 
-  defp display_state(_item, decision) when not is_nil(decision), do: :decision
-  defp display_state(%{published_procedural_state: :decision}, nil), do: :unknown
-  defp display_state(item, nil), do: item.published_procedural_state || :unknown
-
   defp localized_summary(variant, :decision, locale),
     do: variant.decision_summary || text(locale, :decision_copy_unavailable)
 
   defp localized_summary(variant, _state, _locale),
     do: variant.proposal_summary || variant.summary
 
-  defp selected_sections(params) do
-    selected =
-      params
-      |> Map.get("show")
-      |> List.wrap()
-      |> Enum.filter(&(&1 in ~w(coming awaiting previously)))
+  defp categories do
+    [
+      %{
+        path: "/coverage/coming-up",
+        id: "coming-up",
+        group: :coming,
+        label: :coming,
+        empty: :none_coming
+      },
+      %{
+        path: "/coverage/awaiting-outcome",
+        id: "awaiting-outcome",
+        group: :awaiting,
+        label: :awaiting,
+        empty: :none_awaiting
+      },
+      %{
+        path: "/coverage/decisions",
+        id: "previously",
+        group: :decided,
+        label: :previously,
+        empty: :none_decided
+      }
+    ]
+  end
 
-    if selected == [], do: ~w(coming awaiting previously), else: selected
+  defp selection_path(path, locale, selected, q \\ "") do
+    params = %{"communes_submitted" => "1", "commune" => selected}
+    params = if locale, do: Map.put(params, "lang", locale), else: params
+    params = if q == "", do: params, else: Map.put(params, "q", q)
+    path <> "?" <> Plug.Conn.Query.encode(params)
   end
 
   defp selected_communes(%{"communes_submitted" => _} = params),
@@ -420,8 +419,6 @@ defmodule BrusselsWtfWeb.TimelinePage do
     |> Enum.filter(&(&1 in @slugs))
     |> Enum.uniq()
   end
-
-  defp newest_first(entries), do: Enum.sort_by(entries, & &1.date, {:desc, Date})
 
   defp loaded_or_nil(%Ash.NotLoaded{}), do: nil
   defp loaded_or_nil(value), do: value
@@ -446,7 +443,14 @@ defmodule BrusselsWtfWeb.TimelinePage do
       synthetic_reference: "Demonstration reference — not evidence of council activity",
       dossiers: "Dossiers",
       verified_mandates: "Verified public mandates",
-      title: "Council coverage",
+      title: "What’s happening in your commune?",
+      view_all: "View all",
+      back: "Back to overview",
+      reset: "Reset search",
+      follow_communes: "Follow commune updates",
+      your_follows: "Your follows",
+      explore: "Explore coverage",
+      none_mandates: "No verified public mandates in this selection.",
       intro:
         "Upcoming proposals, unresolved outcomes, and documented decisions from four Brussels communes.",
       communes: "Communes",
@@ -485,7 +489,14 @@ defmodule BrusselsWtfWeb.TimelinePage do
       synthetic_reference:
         "Référence de démonstration — ne constitue pas une preuve d’activité communale",
       dossiers: "Dossiers",
-      title: "Actualité des conseils communaux",
+      title: "Que se passe-t-il dans votre commune ?",
+      view_all: "Tout voir",
+      back: "Retour à l’aperçu",
+      reset: "Réinitialiser la recherche",
+      follow_communes: "Suivre les nouvelles des communes",
+      your_follows: "Vos suivis",
+      explore: "Explorer l’actualité",
+      none_mandates: "Aucun mandat public vérifié dans cette sélection.",
       intro:
         "Propositions à venir, résultats non documentés et décisions officielles de quatre communes bruxelloises.",
       communes: "Communes",
@@ -523,7 +534,14 @@ defmodule BrusselsWtfWeb.TimelinePage do
       decision_copy_unavailable: "De beslissingstekst is niet beschikbaar in het Nederlands.",
       synthetic_reference: "Demonstratiereferentie — geen bewijs van gemeentelijke activiteit",
       dossiers: "Dossiers",
-      title: "Nieuws uit de gemeenteraden",
+      title: "Wat gebeurt er in uw gemeente?",
+      view_all: "Alles bekijken",
+      back: "Terug naar het overzicht",
+      reset: "Zoekopdracht wissen",
+      follow_communes: "Gemeentenieuws volgen",
+      your_follows: "Uw gevolgde updates",
+      explore: "Berichtgeving verkennen",
+      none_mandates: "Geen geverifieerde openbare mandaten in deze selectie.",
       intro:
         "Komende voorstellen, niet-gedocumenteerde resultaten en officiële besluiten uit vier Brusselse gemeenten.",
       communes: "Gemeenten",

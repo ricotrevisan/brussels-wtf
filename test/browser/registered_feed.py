@@ -33,15 +33,15 @@ with sync_playwright() as pw:
         ]
         for path,label in pages:
             page.goto(a.base+path); page.get_by_role("button",name=label,exact=True).click(); page.wait_for_url("**/feed?lang=fr")
-        page.goto(a.base+"/?lang=fr")
+        page.goto(a.base+"/coverage/coming-up?lang=fr")
         page.locator("details.reader-filters > summary").click()
         page.locator(f'button[form="follow-commune-{data["commune"]}"]').click(); page.wait_for_url("**/feed?lang=fr")
     elif a.phase=="unfollow":
-        paths=[f'/dossiers/{data["dossier"]}', f'/people/{data["person"]}', f'/companies/{data["company"]}', '/']
+        paths=[f'/dossiers/{data["dossier"]}', f'/people/{data["person"]}', f'/companies/{data["company"]}', '/coverage/coming-up']
         for locale,label in [("fr","Ne plus suivre"),("nl","Niet meer volgen"),("en","Unfollow")]:
             for path in paths:
                 page.goto(a.base+path+"?lang="+locale)
-                if path=="/": page.locator("details.reader-filters > summary").click()
+                if path=="/coverage/coming-up": page.locator("details.reader-filters > summary").click()
                 expect(page.get_by_role("button", name=label, exact=True)).to_be_visible()
                 assert page.locator("[data-followed-state]").count()==1
                 if locale=="en" and path==paths[0]:
@@ -73,7 +73,7 @@ with sync_playwright() as pw:
         for index,path in enumerate(paths):
             page.set_viewport_size({"width":390 if index%2 else 1280,"height":900})
             page.goto(a.base+path+"?lang=en")
-            if path=="/":
+            if path=="/coverage/coming-up":
                 # Exercise removal from the registered feed for the final target.
                 page.goto(a.base+"/feed?lang=en")
             button=page.get_by_role("button",name="Unfollow",exact=True)
@@ -91,12 +91,12 @@ with sync_playwright() as pw:
         assert "12-month expiry" in page.locator('body').inner_text()
         # Following again preserves previously received history; the commune's
         # own control also removes its durable follow.
-        page.goto(a.base+"/?lang=en")
+        page.goto(a.base+"/coverage/coming-up?lang=en")
         page.locator("details.reader-filters > summary").click()
         page.locator(f'button[form="follow-commune-{data["commune"]}"]').click()
         page.wait_for_url("**/feed?lang=en")
         assert page.locator('[data-registered-feed] li[data-read="true"]').count()==4
-        page.goto(a.base+"/?lang=en")
+        page.goto(a.base+"/coverage/coming-up?lang=en")
         page.locator("details.reader-filters > summary").click()
         page.get_by_role("button",name="Unfollow",exact=True).click()
         page.wait_for_url("**/feed?lang=en")

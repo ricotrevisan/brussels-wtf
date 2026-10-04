@@ -179,6 +179,9 @@ defmodule BrusselsWtf.IdentityMandateDeclarationTest do
           {"nl", "Geverifieerde feiten", "Gedateerde geschiedenis"}
         ] do
       html = build_conn() |> get("/people/#{ctx.person.id}?lang=#{locale}") |> html_response(200)
+      document = LazyHTML.from_document(html)
+      assert Enum.count(document["a[data-reader-back]"]) == 1
+      assert LazyHTML.attribute(document["a[data-reader-back]"], "href") == ["/?lang=#{locale}"]
       assert html =~ heading
       assert html =~ history
       assert html =~ "Premier Echevin et Officier de l&#39;Etat Civil"
@@ -359,6 +362,9 @@ defmodule BrusselsWtf.IdentityMandateDeclarationTest do
       assert html =~ "#page=14"
       assert html =~ "2024-12-01"
       assert html =~ "2024-12-31"
+      document = LazyHTML.from_document(html)
+      assert Enum.count(document["a[data-reader-back]"]) == 1
+      assert LazyHTML.attribute(document["a[data-reader-back]"], "href") == ["/?lang=#{locale}"]
 
       for private <- [
             "source_version_id",
@@ -370,8 +376,25 @@ defmodule BrusselsWtf.IdentityMandateDeclarationTest do
         refute html =~ private
       end
 
-      homepage = build_conn() |> get("/?lang=#{locale}") |> html_response(200)
+      homepage = build_conn() |> get("/mandates?lang=#{locale}") |> html_response(200)
       assert homepage =~ "/people/#{person.id}?lang=#{locale}#fact-#{fact.id}"
+
+      query =
+        Plug.Conn.Query.encode(%{
+          lang: locale,
+          q: person.legal_name,
+          commune: ["ixelles"],
+          communes_submitted: "1"
+        })
+
+      searched = build_conn() |> get("/mandates?" <> query) |> html_response(200)
+      assert searched =~ "/people/#{person.id}?lang=#{locale}#fact-#{fact.id}"
+
+      empty =
+        build_conn() |> get("/mandates?lang=#{locale}&q=no-matching-name") |> html_response(200)
+
+      refute empty =~ person.id
+      refute build_conn() |> get("/?lang=#{locale}") |> html_response(200) =~ person.legal_name
     end
 
     if System.get_env("MANDATE_BROWSER") == "1",
@@ -387,7 +410,7 @@ defmodule BrusselsWtf.IdentityMandateDeclarationTest do
 
     assert {:error, :not_found} = Identity.get_public_person_profile(person.id)
     assert feed_updates(person.id, "en") == []
-    refute build_conn() |> get("/?lang=en") |> html_response(200) =~ person.id
+    refute build_conn() |> get("/mandates?lang=en") |> html_response(200) =~ person.id
   end
 
   test "a same-name private identity without independent official evidence remains unresolved",
@@ -410,7 +433,7 @@ defmodule BrusselsWtf.IdentityMandateDeclarationTest do
              BrusselsWtf.Identity.MandateIdentity.resolve(doc, ctx.commune.id)
 
     assert {:error, :not_found} = Identity.get_public_person_profile(person.id)
-    refute build_conn() |> get("/?lang=en") |> html_response(200) =~ person.id
+    refute build_conn() |> get("/mandates?lang=en") |> html_response(200) =~ person.id
   end
 
   test "reverted index bytes are evaluated from this observation instead of the newest version",

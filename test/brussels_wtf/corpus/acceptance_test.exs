@@ -363,15 +363,30 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
 
     timeline = conn |> recycle() |> get("/?lang=en") |> html_response(200)
     timeline_document = LazyHTML.from_document(timeline)
-    timeline_entries = timeline_document["article[data-commune]"]
 
-    assert Enum.count(timeline_entries) == 24
+    for section <- timeline_document["main section"] do
+      assert Enum.count(section["article[data-commune]"]) <= 5
+    end
 
-    assert MapSet.new(LazyHTML.attribute(timeline_entries, "data-commune")) ==
+    category_pages =
+      for category <- ~w(coming-up awaiting-outcome decisions) do
+        conn |> recycle() |> get("/coverage/#{category}?lang=en") |> html_response(200)
+      end
+
+    timeline_entries =
+      Enum.flat_map(category_pages, fn html ->
+        html |> LazyHTML.from_document() |> Access.get("article[data-commune]") |> Enum.to_list()
+      end)
+
+    assert length(timeline_entries) == 24
+
+    assert MapSet.new(Enum.flat_map(timeline_entries, &LazyHTML.attribute(&1, "data-commune"))) ==
              MapSet.new(~w(ixelles uccle forest city-of-brussels))
 
-    refute timeline =~ "demo-"
-    refute timeline =~ "Demonstration reference"
+    for html <- [timeline | category_pages] do
+      refute html =~ "demo-"
+      refute html =~ "Demonstration reference"
+    end
 
     for meeting <- contract["meetings"], locale <- ~w(fr nl en) do
       html =
