@@ -61,7 +61,19 @@ defmodule BrusselsWtfWeb.CityOfBrusselsPrincipalSeamTest do
     timeline = conn |> get("/?lang=en") |> html_response(200)
     assert timeline =~ "City of Brussels"
     assert timeline =~ "Coming up"
-    assert timeline =~ "#{scenario.expected.path}?lang=en##{item.stable_anchor}"
+
+    hrefs =
+      timeline
+      |> LazyHTML.from_document()
+      |> Access.get("article a")
+      |> LazyHTML.attribute("href")
+
+    assert Enum.any?(hrefs, fn href ->
+             uri = URI.parse(href)
+
+             uri.path == scenario.expected.path and uri.fragment == item.stable_anchor and
+               Plug.Conn.Query.decode(uri.query)["lang"] == "en"
+           end)
 
     page =
       build_conn()

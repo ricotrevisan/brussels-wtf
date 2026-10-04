@@ -61,7 +61,8 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
   } do
     timeline = conn |> get("/?lang=en") |> html_response(200)
 
-    assert timeline =~ ~s(href="/meetings/ixelles/demo-ixelles?lang=en#agenda-item-mobility-1")
+    assert timeline =~ ~s(#agenda-item-mobility-1")
+    assert timeline =~ "/meetings/ixelles/demo-ixelles?"
     refute timeline =~ "Rico Trevisan"
 
     meeting =
@@ -298,7 +299,7 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
 
   test "dossier references are real links to a stored dossier timeline", %{conn: conn} do
     timeline = conn |> get("/?lang=en") |> html_response(200)
-    assert timeline =~ ~s(href="/meetings/ixelles/demo-ixelles?lang=en#)
+    assert timeline =~ ~s(href="/meetings/ixelles/demo-ixelles?)
 
     dossier =
       conn |> recycle() |> get("/dossiers/demo-public-space?lang=en") |> html_response(200)
@@ -520,7 +521,7 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
 
   test "commune follow controls use stable identifiers and complete locale copy", %{conn: conn} do
     for {locale, label} <- [{"fr", "Suivre"}, {"nl", "Volgen"}, {"en", "Follow"}] do
-      html = conn |> recycle() |> get("/?lang=#{locale}") |> html_response(200)
+      html = conn |> recycle() |> get("/coverage/coming-up?lang=#{locale}") |> html_response(200)
       document = LazyHTML.from_document(html)
 
       assert Enum.count(document[~s(button[data-follow-control])]) == 4

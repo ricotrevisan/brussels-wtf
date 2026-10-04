@@ -132,7 +132,19 @@ defmodule BrusselsWtfWeb.PrincipalSeamTest do
     timeline = conn |> get("/?lang=en") |> html_response(200)
     assert timeline =~ scenario.expected.title_en
     assert timeline =~ "Coming up"
-    assert timeline =~ "#{scenario.expected.path}?lang=en#agenda-item-4"
+
+    hrefs =
+      timeline
+      |> LazyHTML.from_document()
+      |> Access.get("article a")
+      |> LazyHTML.attribute("href")
+
+    assert Enum.any?(hrefs, fn href ->
+             uri = URI.parse(href)
+
+             uri.path == scenario.expected.path and uri.fragment == item.stable_anchor and
+               Plug.Conn.Query.decode(uri.query)["lang"] == "en"
+           end)
 
     for {locale, title} <- [
           {"fr", "Subvention proposée pour une projection de « La venue de l’avenir »"},

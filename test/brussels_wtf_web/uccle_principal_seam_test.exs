@@ -80,7 +80,16 @@ defmodule BrusselsWtfWeb.UcclePrincipalSeamTest do
     html = conn |> get("/?lang=en") |> html_response(200)
     assert html =~ "Uccle"
     assert html =~ "What they decided"
-    assert html =~ "#{scenario.expected.path}?lang=en##{item1.stable_anchor}"
+
+    hrefs =
+      html |> LazyHTML.from_document() |> Access.get("article a") |> LazyHTML.attribute("href")
+
+    assert Enum.any?(hrefs, fn href ->
+             uri = URI.parse(href)
+
+             uri.path == scenario.expected.path and uri.fragment == item1.stable_anchor and
+               Plug.Conn.Query.decode(uri.query)["lang"] == "en"
+           end)
 
     meeting = conn |> recycle() |> get(scenario.expected.path <> "?lang=en") |> html_response(200)
     assert meeting =~ "Decision: approved"

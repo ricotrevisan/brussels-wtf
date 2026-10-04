@@ -143,6 +143,9 @@ defmodule BrusselsWtf.Council do
     end
   end
 
+  @doc "Lists public category entries with filtering and search applied before any preview limit."
+  def list_public_timeline!(opts), do: BrusselsWtf.Council.PublicTimeline.list!(opts)
+
   @doc false
   def coverage_batch_allows?(batch_id, meeting_id)
       when is_binary(batch_id) and is_binary(meeting_id) do

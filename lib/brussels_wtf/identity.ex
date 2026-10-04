@@ -58,6 +58,20 @@ defmodule BrusselsWtf.Identity do
     end
   end
 
+  @doc "Lists only verified public mandates for the selected communes and name search."
+  def list_public_mandates!(communes, search \\ "") do
+    names = Enum.map(communes, &BrusselsWtf.Communes.configuration!(&1).name)
+    needle = String.downcase(search)
+
+    list_public_relationships!(%{object_type: :commune})
+    |> Enum.filter(fn fact ->
+      (fact.mandate_declaration != nil or fact.state == :documented) and
+        fact.object_name in names and
+        (needle == "" or String.contains?(String.downcase(fact.subject_name), needle))
+    end)
+    |> Enum.sort_by(&{&1.subject_name, &1.fact_id})
+  end
+
   def request_cbe_enrichment!(mention_id, enterprise_number, generation \\ "automatic") do
     mention = get_mention!(mention_id)
     enterprise_number = normalize_enterprise_number!(enterprise_number)

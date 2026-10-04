@@ -61,6 +61,13 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
     </header>
 
     <main id="content" class="mx-auto max-w-4xl px-4 py-8 text-base-content" tabindex="-1">
+      <a
+        data-reader-back
+        href={"/?lang=" <> @locale}
+        class="mb-5 inline-block underline underline-offset-2"
+      >
+        {text(@locale, :back)}
+      </a>
       <p class="text-sm text-base-content/70">{profile_label(@locale, @profile)}</p>
       <h1 class="mt-2 text-3xl font-semibold tracking-tight">{profile_name(@profile)}</h1>
       <BrusselsWtfWeb.FollowControl.control
@@ -407,6 +414,7 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
   defp en_text do
     %{
       skip: "Skip to content",
+      back: "Back to coverage",
       follow: "Follow updates about this profile",
       language: "Language",
       company_profile: "Company profile",
@@ -439,6 +447,7 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
   defp fr_text do
     %{
       skip: "Aller au contenu",
+      back: "Retour à l’actualité",
       follow: "Suivre les mises à jour de ce profil",
       language: "Langue",
       company_profile: "Profil d’entreprise",
@@ -471,6 +480,7 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
   defp nl_text do
     %{
       skip: "Naar inhoud",
+      back: "Terug naar berichtgeving",
       follow: "Updates over dit profiel volgen",
       language: "Taal",
       company_profile: "Bedrijfsprofiel",
