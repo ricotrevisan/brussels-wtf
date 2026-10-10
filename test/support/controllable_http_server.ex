@@ -18,6 +18,7 @@ defmodule BrusselsWtf.Test.ControllableHTTPServer do
 
           request = %{
             path: path,
+            query_string: conn.query_string,
             number: count,
             headers: Map.new(conn.req_headers)
           }
@@ -42,9 +43,27 @@ defmodule BrusselsWtf.Test.ControllableHTTPServer do
 
       body = Map.get(response, :body, "")
 
-      conn
-      |> Elixir.Plug.Conn.put_resp_header("x-request-number", Integer.to_string(request_number))
-      |> Elixir.Plug.Conn.send_resp(Map.get(response, :status, 200), body)
+      conn =
+        Elixir.Plug.Conn.put_resp_header(
+          conn,
+          "x-request-number",
+          Integer.to_string(request_number)
+        )
+
+      case Map.fetch(response, :chunks) do
+        {:ok, chunks} ->
+          conn = Elixir.Plug.Conn.send_chunked(conn, Map.get(response, :status, 200))
+
+          Enum.reduce_while(chunks, conn, fn bytes, conn ->
+            case Elixir.Plug.Conn.chunk(conn, bytes) do
+              {:ok, conn} -> {:cont, conn}
+              {:error, _reason} -> {:halt, conn}
+            end
+          end)
+
+        :error ->
+          Elixir.Plug.Conn.send_resp(conn, Map.get(response, :status, 200), body)
+      end
     end
 
     defp pop_response([response]), do: {response, [response]}

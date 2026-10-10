@@ -2,12 +2,16 @@ defmodule BrusselsWtf.Archive do
   @moduledoc """
   Private content-addressed store for immutable source bytes.
 
-  `store/1` is the acceptance boundary: it derives the identity from the raw
-  bytes and verifies a read-after-write before returning an object key.
+  `store/1` and `store_file/1` derive the identity from the raw bytes and
+  verify a read-after-write before returning an object key. File callers keep
+  their source unchanged until acceptance and own its cleanup.
   """
 
   @callback put(namespace :: :raw | :derived, sha256 :: String.t(), bytes :: binary()) ::
               {:ok, object_key :: String.t()} | {:error, term()}
+  @callback put_file(:raw | :derived, String.t(), Path.t(), non_neg_integer()) ::
+              {:ok, String.t()} | {:error, term()}
+  @callback verify_file(String.t(), String.t(), non_neg_integer()) :: :ok | {:error, term()}
   @callback get(object_key :: String.t()) :: {:ok, binary()} | {:error, :not_found | term()}
   @callback ready?() :: :ok | {:error, term()}
 
@@ -21,6 +25,18 @@ defmodule BrusselsWtf.Archive do
          actual <- BrusselsWtf.Digest.sha256(archived_bytes),
          :ok <- verify_hash(sha256, actual) do
       {:ok, %{sha256: sha256, object_key: object_key}}
+    end
+  end
+
+  @doc "Stores a caller-owned file and verifies the archived bytes without loading the file."
+  @spec store_file(Path.t(), :raw | :derived) ::
+          {:ok, %{sha256: String.t(), object_key: String.t(), byte_size: non_neg_integer()}}
+          | {:error, term()}
+  def store_file(path, namespace \\ :raw) when namespace in [:raw, :derived] do
+    with {:ok, %{sha256: sha256, byte_size: size}} <- BrusselsWtf.Digest.sha256_file(path),
+         {:ok, object_key} <- impl().put_file(namespace, sha256, path, size),
+         :ok <- impl().verify_file(object_key, sha256, size) do
+      {:ok, %{sha256: sha256, object_key: object_key, byte_size: size}}
     end
   end
 

@@ -168,7 +168,7 @@ config :brussels_wtf, Oban,
   queues: [
     poll: 1,
     corpus: 1,
-    fetch: 2,
+    fetch: 1,
     extract: 1,
     ocr: 1,
     normalize: 1,

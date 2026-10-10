@@ -18,6 +18,12 @@ defmodule BrusselsWtf.Archive.Unconfigured do
   def put(_namespace, _sha256, _bytes), do: {:error, :source_archive_not_configured}
 
   @impl true
+  def put_file(_namespace, _sha256, _path, _size), do: {:error, :source_archive_not_configured}
+
+  @impl true
+  def verify_file(_object_key, _sha256, _size), do: {:error, :source_archive_not_configured}
+
+  @impl true
   def get(_object_key), do: {:error, :source_archive_not_configured}
 
   @impl true

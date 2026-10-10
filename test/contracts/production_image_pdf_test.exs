@@ -46,7 +46,7 @@ defmodule BrusselsWtf.Contracts.ProductionImagePdfTest do
 
     assert ixelles["process_queues"] == %{
              "poll" => 1,
-             "fetch" => 2,
+             "fetch" => 1,
              "extract" => 1,
              "normalize" => 1,
              "enrich" => 1,

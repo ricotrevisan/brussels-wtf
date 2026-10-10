@@ -56,7 +56,9 @@ defmodule BrusselsWtfWeb.ReviewCasePage do
       end
 
     previews =
-      Map.new(source_versions, fn version ->
+      source_versions
+      |> Enum.filter(&Ingestion.SourceLimits.processing_allowed?/1)
+      |> Map.new(fn version ->
         {version.id,
          "/review/artifacts/source-versions/#{version.id}?token=#{BrusselsWtfWeb.ReviewPreview.sign_source_version(version.id)}"}
       end)
@@ -90,14 +92,22 @@ defmodule BrusselsWtfWeb.ReviewCasePage do
         suggestion && BrusselsWtf.Suggestions.approval_available?(suggestion.kind),
       locators: locators,
       source_versions: source_versions,
+      oversized_source: oversized_source?(review_case),
       previews: previews,
       derived_artifacts: derived_artifacts,
       artifact_previews: artifact_previews,
       actions:
         case review_case.kind do
-          :suggestion -> []
-          :link_correction -> @dossier_actions
-          _ -> @actions
+          :suggestion ->
+            []
+
+          :link_correction ->
+            @dossier_actions
+
+          _ ->
+            Enum.reject(@actions, fn {action, _} ->
+              action == "retry" and oversized_source?(review_case)
+            end)
         end,
       csrf_token: Plug.CSRFProtection.get_csrf_token()
     )
@@ -255,13 +265,23 @@ defmodule BrusselsWtfWeb.ReviewCasePage do
           <dt>Media type</dt><dd>{source_value(@review_case, :media_type)}</dd>
           <dt>Byte size</dt><dd>{source_value(@review_case, :byte_size)}</dd>
         </dl>
+        <p :if={@oversized_source} class="mt-4">
+          Extraction is deferred because this source exceeds the processing limit.
+          Retry and private preview of this version are unavailable; use the authoritative origin link above.
+        </p>
         <h3 class="mt-5 font-semibold">Source versions</h3>
         <ul class="mt-2 space-y-2">
           <li :for={version <- @source_versions}>
             <time>{DateTime.to_iso8601(version.first_retrieved_at)}</time>
             · SHA-256 <code class="break-all">{version.sha256}</code>
             ·
-            <a data-private-artifact href={@previews[version.id]} class="underline">Private preview (expires in 60 seconds)</a>
+            <a
+              :if={@previews[version.id]}
+              data-private-artifact
+              href={@previews[version.id]}
+              class="underline"
+            >Private preview (expires in 60 seconds)</a>
+            <span :if={!@previews[version.id]}>Private preview unavailable; use the authoritative origin.</span>
           </li>
         </ul>
         <h3 class="mt-5 font-semibold">Derived artifacts</h3>
@@ -488,6 +508,12 @@ defmodule BrusselsWtfWeb.ReviewCasePage do
     </section>
     """
   end
+
+  defp oversized_source?(%{source_version: %Ash.NotLoaded{}}), do: false
+  defp oversized_source?(%{source_version: nil}), do: false
+
+  defp oversized_source?(%{source_version: version}),
+    do: not Ingestion.SourceLimits.processing_allowed?(version)
 
   defp source_url(%{source_record: %Ash.NotLoaded{}}), do: nil
   defp source_url(%{source_record: nil}), do: nil

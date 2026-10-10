@@ -102,6 +102,289 @@ defmodule BrusselsWtf.Archive.S3Test do
     assert {:ok, %{object_key: ^object_key}} = Archive.store(bytes)
   end
 
+  test "file upload is reopenable, signed unsigned-payload, and verified by streamed GET", %{
+    objects: objects
+  } do
+    bytes = :binary.copy("source bytes\n", 10_000)
+    path = source_file(bytes)
+    sha256 = BrusselsWtf.Digest.sha256(bytes)
+    test_pid = self()
+
+    config = Application.fetch_env!(:brussels_wtf, S3)
+    options = Keyword.fetch!(config, :req_options)
+
+    adapter = fn request ->
+      send(test_pid, {:archive_request, request.method})
+
+      if request.method == :put do
+        assert %File.Stream{} = request.body
+
+        assert Req.Request.get_header(request, "content-length") == [
+                 Integer.to_string(byte_size(bytes))
+               ]
+
+        assert Req.Request.get_header(request, "x-amz-content-sha256") == ["UNSIGNED-PAYLOAD"]
+        assert Req.Request.get_header(request, "x-amz-meta-sha256") == [sha256]
+        assert Enum.to_list(request.body) |> IO.iodata_to_binary() == bytes
+        assert Enum.to_list(request.body) |> IO.iodata_to_binary() == bytes
+      end
+
+      if request.method == :get, do: assert(is_function(request.into, 2))
+      run_stub(request)
+    end
+
+    Application.put_env(
+      :brussels_wtf,
+      S3,
+      Keyword.put(
+        config,
+        :req_options,
+        options |> Keyword.delete(:plug) |> Keyword.put(:adapter, adapter)
+      )
+    )
+
+    assert {:ok, %{sha256: ^sha256, byte_size: size, object_key: key}} = Archive.store_file(path)
+    assert size == byte_size(bytes)
+    assert Agent.get(objects, &Map.fetch!(&1, key)) == bytes
+    assert_received {:archive_request, :put}
+    assert_received {:archive_request, :head}
+    assert_received {:archive_request, :get}
+    assert {:ok, %{object_key: ^key}} = Archive.store_file(path)
+  end
+
+  test "file verification rejects a colliding object even when HEAD metadata lies" do
+    path = source_file("source")
+    sha256 = BrusselsWtf.Digest.sha256("source")
+    stub_file_object(sha256, 6, ["oth", "ers"], 412)
+    assert {:error, :content_address_collision} = Archive.store_file(path)
+  end
+
+  test "new file writes require actual bytes, not matching HEAD metadata" do
+    path = source_file("source")
+    sha256 = BrusselsWtf.Digest.sha256("source")
+    stub_file_object(sha256, 6, ["oth", "ers"])
+    assert {:error, {:hash_mismatch, ^sha256, _}} = Archive.store_file(path)
+  end
+
+  test "streamed verification caps actual bytes before hashing and rejects short bodies" do
+    sha256 = BrusselsWtf.Digest.sha256("source")
+    key = Archive.object_key(sha256)
+    stub_file_object(sha256, 6, ["source", "extra"])
+    assert {:error, {:size_mismatch, 6, 11}} = S3.verify_file(key, sha256, 6)
+
+    stub_file_object(sha256, 6, ["sou"])
+    assert {:error, {:size_mismatch, 6, 3}} = S3.verify_file(key, sha256, 6)
+  end
+
+  test "verification rejects an encoded representation instead of expanding it" do
+    sha256 = BrusselsWtf.Digest.sha256("source")
+
+    Req.Test.stub(S3, fn conn ->
+      conn
+      |> Plug.Conn.put_resp_header("content-encoding", "gzip")
+      |> Plug.Conn.send_resp(200, :zlib.gzip("source"))
+    end)
+
+    assert {:error, :unexpected_content_encoding} =
+             S3.verify_file(Archive.object_key(sha256), sha256, 6)
+  end
+
+  test "a partial upload retry reopens the file from its beginning" do
+    bytes = :binary.copy("source bytes\n", 10_000)
+    path = source_file(bytes)
+    {:ok, attempts} = Agent.start_link(fn -> 0 end)
+    config = Application.fetch_env!(:brussels_wtf, S3)
+    options = Keyword.fetch!(config, :req_options)
+
+    adapter = fn request ->
+      if request.method == :put and Agent.get_and_update(attempts, &{&1, &1 + 1}) == 0 do
+        assert [_first_chunk] = Enum.take(request.body, 1)
+        {request, %Req.TransportError{reason: :timeout}}
+      else
+        run_stub(request)
+      end
+    end
+
+    options =
+      options
+      |> Keyword.delete(:plug)
+      |> Keyword.put(:adapter, adapter)
+      |> Keyword.put(:retry_delay, fn _ -> 0 end)
+
+    Application.put_env(:brussels_wtf, S3, Keyword.put(config, :req_options, options))
+    assert {:ok, %{byte_size: size}} = Archive.store_file(path)
+    assert size == byte_size(bytes)
+    assert Agent.get(attempts, & &1) == 2
+  end
+
+  test "verification retries reset the incremental hash after a partial response" do
+    bytes = "source"
+    sha256 = BrusselsWtf.Digest.sha256(bytes)
+    {:ok, attempts} = Agent.start_link(fn -> 0 end)
+    config = Application.fetch_env!(:brussels_wtf, S3)
+    options = Keyword.fetch!(config, :req_options)
+
+    adapter = fn request ->
+      if Agent.get_and_update(attempts, &{&1, &1 + 1}) == 0 do
+        response = Req.Response.new(status: 200)
+        {:cont, {request, _response}} = request.into.({:data, "sou"}, {request, response})
+        {request, %Req.TransportError{reason: :timeout}}
+      else
+        run_stub(request)
+      end
+    end
+
+    options =
+      options
+      |> Keyword.delete(:plug)
+      |> Keyword.put(:adapter, adapter)
+      |> Keyword.put(:retry_delay, fn _ -> 0 end)
+
+    Application.put_env(:brussels_wtf, S3, Keyword.put(config, :req_options, options))
+    stub_file_object(sha256, 6, ["sou", "rce"])
+
+    assert :ok = S3.verify_file(Archive.object_key(sha256), sha256, 6)
+    assert Agent.get(attempts, & &1) == 2
+  end
+
+  test "changing the file after hashing cannot be accepted as the original snapshot" do
+    path = source_file("source")
+    config = Application.fetch_env!(:brussels_wtf, S3)
+    options = Keyword.fetch!(config, :req_options)
+
+    adapter = fn request ->
+      if request.method == :put, do: File.write!(path, "others")
+      run_stub(request)
+    end
+
+    options = options |> Keyword.delete(:plug) |> Keyword.put(:adapter, adapter)
+    Application.put_env(:brussels_wtf, S3, Keyword.put(config, :req_options, options))
+
+    Req.Test.stub(S3, fn conn ->
+      case conn.method do
+        "PUT" ->
+          Plug.Conn.send_resp(conn, 200, "")
+
+        "HEAD" ->
+          conn
+          |> Plug.Conn.put_resp_header("content-length", "6")
+          |> Plug.Conn.put_resp_header("x-amz-meta-sha256", BrusselsWtf.Digest.sha256("source"))
+          |> Plug.Conn.send_resp(200, "")
+
+        "GET" ->
+          Plug.Conn.send_resp(conn, 200, File.read!(path))
+      end
+    end)
+
+    assert {:error, {:hash_mismatch, _, _}} = Archive.store_file(path)
+  end
+
+  test "an early closed immutable PUT requires streamed bytes but not HEAD metadata" do
+    path = source_file("source")
+    sha256 = BrusselsWtf.Digest.sha256("source")
+    config = Application.fetch_env!(:brussels_wtf, S3)
+    options = Keyword.fetch!(config, :req_options)
+
+    adapter = fn request ->
+      if request.method == :put do
+        {request, %Req.TransportError{reason: :closed}}
+      else
+        run_stub(request)
+      end
+    end
+
+    options =
+      options
+      |> Keyword.delete(:plug)
+      |> Keyword.put(:adapter, adapter)
+      |> Keyword.put(:retry, false)
+
+    Application.put_env(:brussels_wtf, S3, Keyword.put(config, :req_options, options))
+
+    Req.Test.stub(S3, fn conn ->
+      assert conn.method == "GET"
+      Plug.Conn.send_resp(conn, 200, "source")
+    end)
+
+    assert {:ok, %{sha256: ^sha256, byte_size: 6}} = Archive.store_file(path)
+
+    Req.Test.stub(S3, fn conn -> Plug.Conn.send_resp(conn, 200, "others") end)
+    assert {:error, {:hash_mismatch, ^sha256, _}} = Archive.store_file(path)
+
+    Req.Test.stub(S3, fn conn -> Plug.Conn.send_resp(conn, 200, "short") end)
+    assert {:error, {:size_mismatch, 6, 5}} = Archive.store_file(path)
+
+    Req.Test.stub(S3, fn conn -> Plug.Conn.send_resp(conn, 404, "") end)
+    assert {:error, :archive_unavailable} = Archive.store_file(path)
+
+    Req.Test.stub(S3, fn conn -> Req.Test.transport_error(conn, :timeout) end)
+    assert {:error, :archive_unavailable} = Archive.store_file(path)
+  end
+
+  test "file upload rejects incorrect size and malformed SHA before sending" do
+    path = source_file("source")
+    sha256 = BrusselsWtf.Digest.sha256("source")
+    assert {:error, {:size_mismatch, 5, 6}} = S3.put_file(:raw, sha256, path, 5)
+    assert {:error, :invalid_sha256} = S3.put_file(:raw, "not-a-sha", path, 6)
+  end
+
+  test "verification reports remote failures without accepting a file" do
+    path = source_file("source")
+    sha256 = BrusselsWtf.Digest.sha256("source")
+
+    Req.Test.stub(S3, fn conn ->
+      case conn.method do
+        "PUT" ->
+          Plug.Conn.send_resp(conn, 200, "")
+
+        "HEAD" ->
+          conn
+          |> Plug.Conn.put_resp_header("content-length", "6")
+          |> Plug.Conn.put_resp_header("x-amz-meta-sha256", sha256)
+          |> Plug.Conn.send_resp(200, "")
+
+        "GET" ->
+          Plug.Conn.send_resp(conn, 403, "private error")
+      end
+    end)
+
+    assert {:error, {:archive_http_error, 403}} = Archive.store_file(path)
+  end
+
+  defp run_stub(request) do
+    Req.Plug.run(%{request | options: Map.put(request.options, :plug, {Req.Test, S3})})
+  end
+
+  defp stub_file_object(sha256, size, chunks, put_status \\ 200) do
+    Req.Test.stub(S3, fn conn ->
+      case conn.method do
+        "PUT" ->
+          Plug.Conn.send_resp(conn, put_status, "")
+
+        "HEAD" ->
+          conn
+          |> Plug.Conn.put_resp_header("content-length", Integer.to_string(size))
+          |> Plug.Conn.put_resp_header("x-amz-meta-sha256", sha256)
+          |> Plug.Conn.send_resp(200, "")
+
+        "GET" ->
+          conn = Plug.Conn.send_chunked(conn, 200)
+
+          Enum.reduce(chunks, conn, fn chunk, conn ->
+            {:ok, conn} = Plug.Conn.chunk(conn, chunk)
+            conn
+          end)
+      end
+    end)
+  end
+
+  defp source_file(bytes) do
+    path = Path.join(System.tmp_dir!(), "archive-s3-file-#{System.unique_integer([:positive])}")
+    File.write!(path, bytes)
+    on_exit(fn -> File.rm(path) end)
+    path
+  end
+
   test "returns not_found without exposing the endpoint or credentials" do
     missing_sha = String.duplicate("0", 64)
     assert {:error, :not_found} = S3.get("raw/sha256/00/#{missing_sha}")

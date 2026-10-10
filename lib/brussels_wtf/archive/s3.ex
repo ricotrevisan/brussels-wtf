@@ -24,6 +24,31 @@ defmodule BrusselsWtf.Archive.S3 do
   end
 
   @impl true
+  def put_file(namespace, sha256, path, size)
+      when namespace in [:raw, :derived] and is_binary(sha256) and is_integer(size) and size >= 0 do
+    safely(fn ->
+      with true <- Regex.match?(@sha256_pattern, sha256),
+           {:ok, %{size: ^size}} <- File.stat(path) do
+        put_file_once(Archive.object_key(sha256, namespace), sha256, path, size)
+      else
+        false -> {:error, :invalid_sha256}
+        {:ok, %{size: actual}} -> {:error, {:size_mismatch, size, actual}}
+        {:error, reason} -> {:error, {:file_read, reason}}
+      end
+    end)
+  end
+
+  @impl true
+  def verify_file(object_key, sha256, size)
+      when is_binary(object_key) and is_binary(sha256) and is_integer(size) and size >= 0 do
+    safely(fn ->
+      with :ok <- validate_object_key(object_key) do
+        verify_file_object(object_key, sha256, size)
+      end
+    end)
+  end
+
+  @impl true
   def get(object_key) when is_binary(object_key) do
     safely(fn ->
       with :ok <- validate_object_key(object_key) do
@@ -155,6 +180,140 @@ defmodule BrusselsWtf.Archive.S3 do
     prefix = config |> Keyword.fetch!(:validation_prefix) |> String.trim("/")
     suffix = 16 |> :crypto.strong_rand_bytes() |> Base.encode16(case: :lower)
     "#{prefix}/#{suffix}"
+  end
+
+  defp put_file_once(object_key, sha256, path, size) do
+    # File.Stream reopens the file for every enumeration, including a transport retry.
+    case Req.put(request(redirect: false),
+           url: object_url(object_key),
+           body: File.stream!(path, 64 * 1_024),
+           headers: [
+             {"content-type", "application/octet-stream"},
+             {"content-length", Integer.to_string(size)},
+             {"if-none-match", "*"},
+             {"x-amz-meta-sha256", sha256}
+           ]
+         ) do
+      {:ok, %{status: status}} when status in 200..299 ->
+        verify_stored_metadata(object_key, sha256, size)
+
+      {:ok, %{status: status}} when status in [409, 412] ->
+        verify_existing_file(object_key, sha256, size)
+
+      {:ok, %{status: status}} ->
+        {:error, {:archive_http_error, status}}
+
+      {:error, %Req.TransportError{reason: :closed}} ->
+        # rustFS may close an immutable PUT before Finch receives its early 412.
+        # Only an existing, byte-verified object can resolve that ambiguous write.
+        case verify_file(object_key, sha256, size) do
+          :ok -> {:ok, object_key}
+          {:error, :not_found} -> {:error, :archive_unavailable}
+          {:error, reason} -> {:error, reason}
+        end
+
+      {:error, _reason} ->
+        {:error, :archive_unavailable}
+    end
+  end
+
+  defp verify_existing_file(object_key, sha256, size) do
+    case verify_file(object_key, sha256, size) do
+      :ok ->
+        verify_stored_metadata(object_key, sha256, size)
+
+      {:error, {mismatch, _, _}} when mismatch in [:hash_mismatch, :size_mismatch] ->
+        {:error, :content_address_collision}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp verify_file_object(object_key, sha256, size) do
+    into = fn {:data, chunk}, {req, response} ->
+      cond do
+        response.status not in 200..299 ->
+          {:halt, {req, response}}
+
+        Req.Response.get_header(response, "content-encoding") not in [[], ["identity"]] ->
+          response =
+            Req.Response.put_private(response, :brussels_file_error, :unexpected_content_encoding)
+
+          {:halt, {req, response}}
+
+        true ->
+          {context, count} =
+            Req.Response.get_private(
+              response,
+              :brussels_file_hash,
+              {:crypto.hash_init(:sha256), 0}
+            )
+
+          actual = count + byte_size(chunk)
+
+          if actual > size do
+            response =
+              Req.Response.put_private(
+                response,
+                :brussels_file_error,
+                {:size_mismatch, size, actual}
+              )
+
+            {:halt, {req, response}}
+          else
+            response =
+              Req.Response.put_private(
+                response,
+                :brussels_file_hash,
+                {:crypto.hash_update(context, chunk), actual}
+              )
+
+            {:cont, {req, response}}
+          end
+      end
+    end
+
+    case Req.get(request(redirect: false),
+           url: object_url(object_key),
+           headers: [{"accept-encoding", "identity"}],
+           into: into
+         ) do
+      {:ok, %{status: status} = response} when status in 200..299 ->
+        verify_file_response(response, sha256, size)
+
+      {:ok, %{status: 404}} ->
+        {:error, :not_found}
+
+      {:ok, %{status: status}} ->
+        {:error, {:archive_http_error, status}}
+
+      {:error, _reason} ->
+        {:error, :archive_unavailable}
+    end
+  end
+
+  defp verify_file_response(response, sha256, size) do
+    {context, actual_size} =
+      Req.Response.get_private(response, :brussels_file_hash, {:crypto.hash_init(:sha256), 0})
+
+    cond do
+      error = Req.Response.get_private(response, :brussels_file_error) ->
+        {:error, error}
+
+      Req.Response.get_header(response, "content-encoding") not in [[], ["identity"]] ->
+        {:error, :unexpected_content_encoding}
+
+      actual_size != size ->
+        {:error, {:size_mismatch, size, actual_size}}
+
+      true ->
+        actual_sha256 = Base.encode16(:crypto.hash_final(context), case: :lower)
+
+        if actual_sha256 == sha256,
+          do: :ok,
+          else: {:error, {:hash_mismatch, sha256, actual_sha256}}
+    end
   end
 
   defp put_once(object_key, sha256, bytes) do

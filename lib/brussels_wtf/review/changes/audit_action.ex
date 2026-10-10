@@ -34,6 +34,12 @@ defmodule BrusselsWtf.Review.Changes.AuditAction do
             message: "is required to retry processing"
           )
 
+        action == :retry and not processing_allowed?(changeset.data.source_version_id) ->
+          Ash.Changeset.add_error(changeset,
+            field: :source_version_id,
+            message: "source exceeds the processing limit; extraction is deferred"
+          )
+
         true ->
           changeset
       end
@@ -74,6 +80,11 @@ defmodule BrusselsWtf.Review.Changes.AuditAction do
       append_effect!(result, audit, action, note, details, context.actor)
       {:ok, result}
     end)
+  end
+
+  defp processing_allowed?(version_id) do
+    version = BrusselsWtf.Ingestion.get_source_version!(version_id)
+    BrusselsWtf.Ingestion.SourceLimits.processing_allowed?(version)
   end
 
   defp action_details(changeset, :retry) do
