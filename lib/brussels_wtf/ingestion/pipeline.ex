@@ -57,7 +57,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
 
     case BrusselsWtf.HTTP.get(commune.index_url, conditional_options(index_locator)) do
       {:ok, %{status: 304} = response} ->
-        case existing_record(commune.id, commune.index_url) |> latest_version() do
+        case current_version(index_locator) do
           nil ->
             record_observation(index_locator, poll_run.id, response, check_key,
               status: :failure,
@@ -212,7 +212,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     result =
       case BrusselsWtf.HTTP.get(locator.url, conditional_options(locator)) do
         {:ok, %{status: 304} = response} ->
-          case existing_record(locator.commune_id, locator.url) |> latest_version() do
+          case current_version(locator) do
             nil ->
               record_observation(locator, poll_run_id, response, check_key,
                 status: :failure,
@@ -1517,12 +1517,16 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     end
   end
 
-  defp latest_version(nil), do: nil
+  defp current_version(locator) do
+    observation =
+      locator.id
+      |> Ingestion.list_observations!()
+      |> Enum.reverse()
+      |> Enum.find(fn observation ->
+        observation.status in [:success, :unchanged] and not is_nil(observation.source_version_id)
+      end)
 
-  defp latest_version(record) do
-    Enum.max_by(record.versions, &DateTime.to_unix(&1.first_retrieved_at, :microsecond), fn ->
-      nil
-    end)
+    if observation, do: Ingestion.get_source_version!(observation.source_version_id)
   end
 
   defp processed?(version) do
@@ -1542,7 +1546,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
   defp scheduled_check_key(check_key, locator_id), do: "#{check_key}:locator:#{locator_id}"
 
   defp conditional_options(locator) do
-    version = existing_record(locator.commune_id, locator.url) |> latest_version()
+    version = current_version(locator)
 
     observation =
       if version do

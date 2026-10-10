@@ -203,6 +203,58 @@ defmodule BrusselsWtf.Ingestion.HTTPPipelineTest do
     assert [_version] = history.versions
   end
 
+  test "restored index and document bytes remain current across conditional checks", context do
+    %{server: server, commune: commune, actor: actor} = context
+    index_a = File.read!("test/support/fixtures/ixelles/proposal/index.html")
+
+    for {path, bytes_a, bytes_b, target_type} <- [
+          {"/restored.pdf", "document A", "document B", :locator},
+          {"/index", index_a, index_a <> "<!-- changed -->", :commune}
+        ] do
+      url = server.base_url <> path
+      target_id = if target_type == :locator, do: locator!(commune, url).id, else: commune.id
+
+      ControllableHTTPServer.put_sequence(server, path, [
+        %{status: 200, headers: %{"etag" => "version-a"}, body: bytes_a},
+        %{status: 200, headers: %{"etag" => "version-b"}, body: bytes_b},
+        %{status: 200, headers: %{"etag" => "restored-a"}, body: bytes_a},
+        %{status: 304}
+      ])
+
+      for check <- 1..4 do
+        BrusselsWtf.Clock.Controlled.set(DateTime.add(~U[2026-08-20 12:00:00Z], check, :second))
+        run = Ingestion.request_poll_now!(%{type: target_type, id: target_id}, actor: actor)
+
+        if target_type == :locator do
+          assert :ok =
+                   perform_job(FetchLocator, %{
+                     locator_id: target_id,
+                     poll_run_id: run.id,
+                     check_key: run.check_key,
+                     attempt: 1
+                   })
+        else
+          assert :ok =
+                   BrusselsWtf.Ingestion.Pipeline.discover_and_enqueue(
+                     commune.id,
+                     run.id,
+                     run.check_key
+                   )
+        end
+      end
+
+      assert List.last(ControllableHTTPServer.requests(server, path)).headers["if-none-match"] ==
+               "restored-a"
+
+      history = Ingestion.source_history!(commune.id, url)
+      assert length(history.versions) == 2
+      [first, _changed, restored, unchanged] = history.observations
+      assert restored.source_version_id == first.source_version_id
+      assert unchanged.source_version_id == first.source_version_id
+      assert unchanged.sha256 == BrusselsWtf.Digest.sha256(bytes_a)
+    end
+  end
+
   defp locator!(commune, url) do
     Ingestion.upsert_locator!(%{
       commune_id: commune.id,
