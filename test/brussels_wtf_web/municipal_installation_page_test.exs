@@ -125,6 +125,124 @@ defmodule BrusselsWtfWeb.MunicipalInstallationPageTest do
     refute empty =~ ~s(id="verified-mandates")
   end
 
+  test "the mandates directory shows one bounded page and clamps page params", %{conn: conn} do
+    for slug <- @slugs, do: Fixture.load!(slug)
+    actor = %BrusselsWtf.Review.Actor{id: "rico", role: :reviewer}
+
+    assert {:ok, reports} =
+             MunicipalInstallation.publish(@slugs, actor: actor, max_facts_per_commune: 2)
+
+    assert Enum.all?(reports, &(&1.published_new == 2))
+
+    for query <- [
+          "lang=en",
+          "lang=en&page=abc",
+          "lang=en&page=0",
+          "lang=en&page=-4",
+          "lang=en&page[]=2",
+          "lang=en&page[deep]=2"
+        ] do
+      home =
+        conn
+        |> recycle()
+        |> get("/mandates?#{query}")
+        |> html_response(200)
+        |> LazyHTML.from_document()
+
+      assert length(LazyHTML.to_tree(home["#verified-mandates + ul > li"])) == 8
+      assert LazyHTML.attribute(home[~s(a[rel="next"])], "href") == []
+      assert LazyHTML.attribute(home[~s(nav[aria-label="Mandate pages"] a)], "href") == []
+    end
+
+    beyond =
+      conn
+      |> recycle()
+      |> get("/mandates?lang=en&page=2")
+      |> html_response(200)
+      |> LazyHTML.from_document()
+
+    assert LazyHTML.to_tree(beyond["#verified-mandates + ul > li"]) == []
+    assert beyond |> LazyHTML.raw_html() |> String.contains?("No verified public mandates")
+
+    prev_href =
+      LazyHTML.attribute(beyond[~s(nav[aria-label="Mandate pages"] a[rel="prev"])], "href")
+      |> List.first()
+
+    params = URI.parse(prev_href) |> Map.fetch!(:query) |> Plug.Conn.Query.decode()
+
+    assert params == %{
+             "lang" => "en",
+             "communes_submitted" => "1",
+             "commune" => ["ixelles", "uccle", "forest", "city-of-brussels"],
+             "page" => "1"
+           }
+
+    assert LazyHTML.attribute(beyond[~s(a[rel="next"])], "href") == []
+  end
+
+  test "the mandate pager preserves language, search, and commune selection" do
+    import Phoenix.LiveViewTest
+
+    pager =
+      render_component(&BrusselsWtfWeb.TimelinePage.mandates_pager/1,
+        page: 2,
+        more?: true,
+        locale: "en",
+        selected: ["ixelles", "forest"],
+        q: "dupont",
+        path: "/mandates"
+      )
+      |> LazyHTML.from_document()
+
+    for {side, page} <- [{"prev", nil}, {"next", 3}] do
+      href = LazyHTML.attribute(pager[~s(a[rel="#{side}"])], "href") |> List.first()
+      assert href
+      params = URI.parse(href) |> Map.fetch!(:query) |> Plug.Conn.Query.decode()
+
+      assert params ==
+               %{
+                 "lang" => "en",
+                 "communes_submitted" => "1",
+                 "commune" => ["ixelles", "forest"],
+                 "q" => "dupont"
+               }
+               |> then(&if(page, do: Map.put(&1, "page", "#{page}"), else: &1))
+    end
+
+    french =
+      render_component(&BrusselsWtfWeb.TimelinePage.mandates_pager/1,
+        page: 1,
+        more?: true,
+        locale: "fr",
+        selected: ["ixelles"],
+        q: "",
+        path: "/mandates"
+      )
+      |> LazyHTML.from_document()
+
+    assert LazyHTML.text(french[~s(a[rel="next"])]) == "Page suivante"
+
+    assert LazyHTML.attribute(french[~s(a[rel="prev"])], "href") == []
+
+    last =
+      render_component(&BrusselsWtfWeb.TimelinePage.mandates_pager/1,
+        page: 3,
+        more?: false,
+        locale: "nl",
+        selected: [],
+        q: "",
+        path: "/mandates"
+      )
+      |> LazyHTML.from_document()
+
+    assert LazyHTML.attribute(last[~s(a[rel="next"])], "href") == []
+    assert LazyHTML.text(last[~s(a[rel="prev"])]) == "Vorige pagina"
+    prev_href = LazyHTML.attribute(last[~s(a[rel="prev"])], "href") |> List.first()
+    params = URI.parse(prev_href) |> Map.fetch!(:query) |> Plug.Conn.Query.decode()
+
+    assert params == %{"lang" => "nl", "communes_submitted" => "1", "page" => "2"}
+  end
+
   test "installation period never invents a term end but can display an explicit end" do
     import Phoenix.LiveViewTest
 

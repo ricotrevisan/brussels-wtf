@@ -139,6 +139,14 @@ defmodule BrusselsWtf.Identity.SourcedFact do
     end
   end
 
+  calculations do
+    # Global directory ordering needs the subject's name without loading people;
+    # facts always reference an existing person row.
+    calculate :subject_person_name,
+              :string,
+              expr(fragment("(SELECT legal_name FROM people WHERE people.id = ?)", subject_id))
+  end
+
   identities do
     identity :unique_evidence_fact, [
       :subject_type,

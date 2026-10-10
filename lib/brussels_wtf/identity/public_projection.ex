@@ -24,6 +24,55 @@ defmodule BrusselsWtf.Identity.PublicProjection do
     |> Enum.flat_map(&project/1)
   end
 
+  @doc """
+  Lists one page of commune mandates that can pass projection, with paging
+  applied in the database.
+
+  The SQL filters mirror the projection gate's candidate checks (verified
+  commune facts, active people, and the mandate or documented-installation
+  sources the directory publishes) so a page returns only rows that project.
+  The projected relationships remain the publishable output; these filters
+  never publish anything on their own.
+  """
+  def mandate_page!(commune_ids, search, offset, limit) do
+    commune_ids = Enum.uniq(commune_ids)
+
+    facts =
+      SourcedFact
+      |> Ash.Query.filter(
+        verification_status == :verified and subject_type == :person and
+          object_type == :commune and object_id in ^commune_ids and
+          ((verified_by == "municipal_installation_v1" and is_nil(effective_to)) or
+             not is_nil(mandate_declaration)) and
+          fragment("(SELECT status FROM people WHERE people.id = ?)", subject_id) == "active"
+      )
+      |> search_filter(search)
+      |> Ash.Query.sort(subject_person_name: :asc, id: :asc)
+      |> Ash.Query.offset(offset)
+      |> Ash.Query.limit(limit + 1)
+      |> Ash.read!(authorize?: false, domain: Identity)
+
+    more? = length(facts) > limit
+
+    %{mandates: facts |> Enum.take(limit) |> Enum.flat_map(&project/1), more?: more?}
+  end
+
+  defp search_filter(query, ""), do: query
+
+  defp search_filter(query, needle) do
+    pattern =
+      needle
+      |> String.replace("\\", "\\\\")
+      |> String.replace("%", "\\%")
+      |> String.replace("_", "\\_")
+
+    Ash.Query.filter(
+      query,
+      fragment("(SELECT legal_name FROM people WHERE people.id = ?)", subject_id)
+      |> ilike(^"%#{pattern}%")
+    )
+  end
+
   def history!(filter) do
     reject_unknown_filters!(filter)
 
