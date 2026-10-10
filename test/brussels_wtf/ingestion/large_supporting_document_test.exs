@@ -6,6 +6,34 @@ defmodule BrusselsWtf.Ingestion.LargeSupportingDocumentTest do
   alias BrusselsWtf.Ingestion.Pipeline
   @actor %Review.Actor{id: "rico", role: :reviewer}
 
+  defmodule PartialDownloadHTTP do
+    @behaviour BrusselsWtf.HTTP
+
+    @impl true
+    defdelegate get(url, opts), to: BrusselsWtf.HTTP.Stub
+
+    @impl true
+    def download(url, path, opts) do
+      File.write!(path, "partial source bytes")
+      BrusselsWtf.HTTP.Stub.get(url, opts)
+    end
+  end
+
+  defmodule FailedVerificationArchive do
+    @behaviour BrusselsWtf.Archive
+
+    @impl true
+    defdelegate put(namespace, sha256, bytes), to: BrusselsWtf.Archive.Memory
+    @impl true
+    defdelegate put_file(namespace, sha256, path, size), to: BrusselsWtf.Archive.Memory
+    @impl true
+    defdelegate get(key), to: BrusselsWtf.Archive.Memory
+    @impl true
+    defdelegate ready?(), to: BrusselsWtf.Archive.Memory
+    @impl true
+    def verify_file(_key, _sha256, _size), do: {:error, :verification_failed}
+  end
+
   setup do
     BrusselsWtf.HTTP.Stub.reset()
     Archive.Memory.reset()
@@ -134,6 +162,100 @@ defmodule BrusselsWtf.Ingestion.LargeSupportingDocumentTest do
 
     assert [%{status: :failure, source_version_id: nil}] =
              Ingestion.list_observations!(locator.id)
+  end
+
+  test "partial interrupted and size-rejected downloads clean files and retain failures", %{
+    commune: commune,
+    locator: locator,
+    temporary_root: temporary_root
+  } do
+    original_http = Application.fetch_env!(:brussels_wtf, :http)
+    on_exit(fn -> Application.put_env(:brussels_wtf, :http, original_http) end)
+    Application.put_env(:brussels_wtf, :http, PartialDownloadHTTP)
+
+    for reason <- [
+          %Req.TransportError{reason: :closed},
+          {:body_too_large, Ingestion.SourceLimits.supporting_document_limit()}
+        ] do
+      BrusselsWtf.HTTP.Stub.put_error(locator.url, %{
+        reason: reason,
+        final_url: "https://example.test/redirected.pdf",
+        response_headers: %{"etag" => ["unarchived"]},
+        redirect_chain: [%{"status" => 302, "url" => locator.url}]
+      })
+
+      run = Ingestion.request_poll_now!(%{type: :locator, id: locator.id}, actor: @actor)
+      result = Pipeline.retrieve(locator.id, run.id, run.check_key)
+
+      if is_struct(reason, Req.TransportError),
+        do: assert(match?({:retry, _}, result)),
+        else: assert(result == {:review, :invalid_content})
+
+      assert File.ls!(temporary_root) == []
+      assert {:error, _} = Ingestion.get_source_record_by_origin(commune.id, locator.url)
+      refute_enqueued(worker: BrusselsWtf.Workers.ExtractSource)
+      refute_enqueued(worker: BrusselsWtf.Workers.OCRSource)
+      observation = List.last(Ingestion.list_observations!(locator.id))
+      assert observation.status == :failure
+      assert observation.source_version_id == nil
+      assert observation.final_url == "https://example.test/redirected.pdf"
+      assert observation.response_headers["etag"] == ["unarchived"]
+      assert observation.redirect_chain == [%{"status" => 302, "url" => locator.url}]
+    end
+
+    failures = Ingestion.list_observations!(locator.id)
+    Application.put_env(:brussels_wtf, :http, original_http)
+    BrusselsWtf.HTTP.Stub.put(locator.url, %{status: 200, body: "%PDF small"})
+    retry = Ingestion.request_poll_now!(%{type: :locator, id: locator.id}, actor: @actor)
+    assert :ok = Pipeline.retrieve(locator.id, retry.id, retry.check_key)
+    assert File.ls!(temporary_root) == []
+    assert Enum.take(Ingestion.list_observations!(locator.id), 2) == failures
+    assert [%{headers: headers} | _] = Enum.reverse(BrusselsWtf.HTTP.Stub.requests(locator.url))
+    refute Map.has_key?(headers, "if-none-match")
+    assert [_version] = Ingestion.source_history!(commune.id, locator.url).versions
+  end
+
+  test "archive verification failure cleans downloaded files without committing a version", %{
+    commune: commune,
+    locator: locator,
+    temporary_root: temporary_root
+  } do
+    original_archive = Application.fetch_env!(:brussels_wtf, :archive)
+    on_exit(fn -> Application.put_env(:brussels_wtf, :archive, original_archive) end)
+    Application.put_env(:brussels_wtf, :archive, FailedVerificationArchive)
+    bytes = "%PDF-1.7 " <> String.duplicate("x", 32)
+    BrusselsWtf.HTTP.Stub.put(locator.url, %{status: 200, body: bytes})
+    run = Ingestion.request_poll_now!(%{type: :locator, id: locator.id}, actor: @actor)
+
+    assert {:review, :corruption} = Pipeline.retrieve(locator.id, run.id, run.check_key)
+    assert File.ls!(temporary_root) == []
+    assert {:error, _} = Ingestion.get_source_record_by_origin(commune.id, locator.url)
+
+    assert [
+             %{
+               status: :failure,
+               source_version_id: nil,
+               error_kind: "archive_verification_failed"
+             } = failure
+           ] =
+             Ingestion.list_observations!(locator.id)
+
+    refute_enqueued(worker: BrusselsWtf.Workers.ExtractSource)
+    refute_enqueued(worker: BrusselsWtf.Workers.OCRSource)
+    assert Review.list_review_cases!(%{kind: :extraction}, actor: @actor) == []
+
+    Application.put_env(:brussels_wtf, :archive, original_archive)
+    retry = Ingestion.request_poll_now!(%{type: :locator, id: locator.id}, actor: @actor)
+    assert :ok = Pipeline.retrieve(locator.id, retry.id, retry.check_key)
+    assert File.ls!(temporary_root) == []
+    assert hd(Ingestion.list_observations!(locator.id)) == failure
+    assert [version] = Ingestion.source_history!(commune.id, locator.url).versions
+    assert version.sha256 == BrusselsWtf.Digest.sha256(bytes)
+
+    assert [%{source_version_id: version_id}] =
+             Review.list_review_cases!(%{kind: :extraction}, actor: @actor)
+
+    assert version_id == version.id
   end
 
   test "queued native extraction rejects large metadata before fetching archive bytes", %{

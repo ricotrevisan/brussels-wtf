@@ -45,3 +45,7 @@ known September Brussels supporting PDFs. Do not use historical backfill or chan
 standing schedule. Verify success observations, source-version hashes and byte counts,
 private archive verification, and extraction-deferral review cases. Resolve prior acquisition
 cases only after those receipts exist. Check the next scheduled cycle too.
+A prior terminal scheduled failure may have cleared `next_fetch_at`. A locator
+`poll now` success does not itself rearm scheduled fetches. Verify the locator's
+schedule and the parent listing's rediscovery; do not claim automatic recovery
+from a manual success alone.
