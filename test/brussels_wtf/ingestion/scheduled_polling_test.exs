@@ -339,6 +339,155 @@ defmodule BrusselsWtf.Ingestion.ScheduledPollingTest do
            |> Enum.all?(&match?(%DateTime{}, &1.next_fetch_at))
   end
 
+  test "scheduled current indexes dispatch known due nested work for 200 and 304", %{
+    commune: commune
+  } do
+    index = File.read!("test/support/fixtures/ixelles/proposal/index.html")
+    BrusselsWtf.HTTP.Stub.put(commune.index_url, %{status: 200, body: index})
+    nested = nested_locator!(commune, "nested", ~U[2026-08-20 11:59:59Z])
+    future = nested_locator!(commune, "future-nested", ~U[2026-08-20 12:00:01Z])
+    stopped = nested_locator!(commune, "stopped-nested", nil)
+    disappeared = nested_locator!(commune, "gone-nested", ~U[2026-08-20 11:59:59Z])
+
+    unsupported =
+      Ingestion.upsert_locator!(%{
+        commune_id: commune.id,
+        url: "https://example.test/recording",
+        parent_index_url: "https://example.test/old-item",
+        meeting_identifier: "old",
+        role: :recording,
+        language: :fr,
+        discovered_at: ~U[2026-08-20 10:00:00Z],
+        next_fetch_at: ~U[2026-08-20 11:59:59Z]
+      })
+
+    for status <- [200, 304] do
+      run = Ingestion.request_scheduled_poll!(commune.slug)
+
+      Ingestion.record_observation!(%{
+        source_locator_id: disappeared.id,
+        poll_run_id: run.id,
+        check_key: "gone:#{run.id}",
+        observed_at: ~U[2026-08-20 12:00:00Z],
+        status: :disappeared,
+        final_url: disappeared.url
+      })
+
+      BrusselsWtf.HTTP.Stub.put(commune.index_url, %{status: status, body: index})
+
+      assert :ok =
+               BrusselsWtf.Ingestion.Pipeline.discover_and_enqueue(
+                 commune.id,
+                 run.id,
+                 run.check_key
+               )
+
+      assert :ok =
+               BrusselsWtf.Ingestion.Pipeline.discover_and_enqueue(
+                 commune.id,
+                 run.id,
+                 run.check_key
+               )
+
+      jobs =
+        all_enqueued(worker: BrusselsWtf.Workers.FetchLocator)
+        |> Enum.filter(&(&1.args["poll_run_id"] == run.id))
+
+      assert Enum.count(jobs, &(&1.args["locator_id"] == nested.id)) == 1
+
+      for excluded <- [future, stopped, disappeared, unsupported] do
+        refute Enum.any?(jobs, &(&1.args["locator_id"] == excluded.id))
+      end
+    end
+  end
+
+  test "scheduled nested dispatch and parent replay share one fetch identity", %{commune: commune} do
+    index = File.read!("test/support/fixtures/ixelles/proposal/index.html")
+    BrusselsWtf.HTTP.Stub.put(commune.index_url, %{status: 200, body: index})
+    nested = nested_locator!(commune, "deduplicated", ~U[2026-08-20 11:59:59Z])
+
+    parent =
+      Ingestion.upsert_locator!(%{
+        commune_id: commune.id,
+        url: nested.parent_index_url,
+        parent_index_url: "https://example.test/old-listing",
+        meeting_identifier: "old",
+        role: :item_listing,
+        language: :fr,
+        discovered_at: ~U[2026-08-20 10:00:00Z],
+        next_fetch_at: ~U[2026-08-20 11:59:59Z]
+      })
+
+    source =
+      Ingestion.upsert_source_record!(%{
+        commune_id: commune.id,
+        origin_url: parent.url,
+        role: :item_listing,
+        original_language: :fr
+      })
+
+    archived = BrusselsWtf.Archive.store("listing") |> elem(1)
+
+    version =
+      Ingestion.upsert_source_version!(%{
+        source_record_id: source.id,
+        sha256: archived.sha256,
+        object_key: archived.object_key,
+        byte_size: 7,
+        media_type: "text/html",
+        first_retrieved_at: ~U[2026-08-20 11:00:00Z]
+      })
+
+    run = Ingestion.request_scheduled_poll!(commune.slug)
+
+    Ingestion.record_observation!(%{
+      source_locator_id: parent.id,
+      source_version_id: version.id,
+      poll_run_id: run.id,
+      check_key: "parent-prior",
+      observed_at: ~U[2026-08-20 11:00:00Z],
+      status: :success,
+      final_url: parent.url
+    })
+
+    assert :ok =
+             BrusselsWtf.Ingestion.Pipeline.discover_and_enqueue(
+               commune.id,
+               run.id,
+               run.check_key <> ":index:attempt:1"
+             )
+
+    BrusselsWtf.HTTP.Stub.put(parent.url, %{status: 304})
+
+    assert :ok =
+             perform_job(BrusselsWtf.Workers.FetchLocator, %{
+               locator_id: parent.id,
+               poll_run_id: run.id,
+               check_key: run.check_key,
+               attempt: 1
+             })
+
+    jobs =
+      all_enqueued(worker: BrusselsWtf.Workers.FetchLocator)
+      |> Enum.filter(&(&1.args["poll_run_id"] == run.id))
+
+    assert Enum.count(jobs, &(&1.args["locator_id"] == nested.id)) == 1
+  end
+
+  defp nested_locator!(commune, suffix, next_fetch_at) do
+    Ingestion.upsert_locator!(%{
+      commune_id: commune.id,
+      url: "https://example.test/#{suffix}.pdf",
+      parent_index_url: "https://example.test/old-item",
+      meeting_identifier: "old",
+      scheduled_on: ~D[2026-08-01],
+      role: :supporting_document,
+      language: :fr,
+      discovered_at: ~U[2026-08-20 10:00:00Z],
+      next_fetch_at: next_fetch_at
+    })
+  end
+
   defp locator!(commune, suffix, next_fetch_at) do
     Ingestion.upsert_locator!(%{
       commune_id: commune.id,

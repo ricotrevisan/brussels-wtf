@@ -7,6 +7,7 @@ defmodule BrusselsWtf.Workers.FetchLocator do
     unique: [
       period: :infinity,
       fields: [:worker, :args],
+      keys: [:locator_id, :poll_run_id, :attempt],
       states: :all
     ]
 

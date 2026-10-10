@@ -1117,12 +1117,9 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         {:scheduled, :previous_year, locators} ->
           Enum.filter(locators, &due_now?/1)
 
-        {:scheduled, :current, nil} ->
+        {:scheduled, :current, _discovered} ->
           Ingestion.list_due_locators!(BrusselsWtf.Clock.utc_now())
           |> Enum.filter(&(&1.commune_id == commune_id))
-
-        {:scheduled, :current, locators} ->
-          Enum.filter(locators, &due_now?/1)
 
         {_manual_kind, _scope, nil} ->
           Ingestion.list_document_locators!(commune_id)
@@ -1132,7 +1129,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
       end
 
     locators =
-      if is_nil(discovered) do
+      if is_nil(discovered) and not (poll_run.kind == :scheduled and poll_run.scope == :current) do
         index_url =
           commune_id
           |> Ingestion.get_commune!()
@@ -1146,6 +1143,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
       end
 
     locators
+    |> Enum.reject(&disappeared?/1)
     |> Enum.filter(&(&1.role in (@processable_roles ++ @listing_roles)))
     |> Enum.each(fn locator ->
       %{
