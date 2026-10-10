@@ -210,64 +210,69 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     newly_discovered? = newly_discovered?(locator.id)
 
     result =
-      case BrusselsWtf.HTTP.get(locator.url, conditional_options(locator)) do
-        {:ok, %{status: 304} = response} ->
-          case current_version(locator) do
-            nil ->
-              record_observation(locator, poll_run_id, response, check_key,
-                status: :failure,
-                error_kind: "not_modified_without_version",
-                error_message: "HTTP 304 was observed before any archived source version"
+      with_source_response(locator, fn result ->
+        case result do
+          {:ok, %{status: 304} = response} ->
+            case current_version(locator) do
+              nil ->
+                record_observation(locator, poll_run_id, response, check_key,
+                  status: :failure,
+                  error_kind: "not_modified_without_version",
+                  error_message: "HTTP 304 was observed before any archived source version"
+                )
+
+                {:review, :invalid_content}
+
+              version ->
+                record_observation(locator, poll_run_id, response, check_key,
+                  status: :unchanged,
+                  sha256: version.sha256,
+                  source_version_id: version.id
+                )
+
+                if locator.role in @listing_roles do
+                  enqueue_known_children(locator, poll_run_id, check_key)
+                end
+
+                :ok
+            end
+
+          {:ok, %{status: status, file_path: path} = response} when status in 200..299 ->
+            archive_file_success(locator, poll_run_id, check_key, response, path, now)
+
+          {:ok, %{status: status, body: body} = response} when status in 200..299 ->
+            archive_success(locator, poll_run_id, check_key, response, body, now)
+
+          {:ok, response} ->
+            decision =
+              BrusselsWtf.Ingestion.RetryPolicy.decision(
+                {:http, response.status, Map.get(response, :headers, %{})},
+                attempt,
+                now: now,
+                newly_discovered?: newly_discovered?,
+                jitter_key: check_key
               )
 
-              {:review, :invalid_content}
+            record_observation(locator, poll_run_id, response, check_key,
+              status: if(decision == :disappeared, do: :disappeared, else: :failure),
+              error_kind: http_error_kind(response.status, decision),
+              error_message: "source locator returned HTTP #{response.status}"
+            )
 
-            version ->
-              record_observation(locator, poll_run_id, response, check_key,
-                status: :unchanged,
-                sha256: version.sha256,
-                source_version_id: version.id
-              )
+            decision
 
-              if locator.role in @listing_roles do
-                enqueue_known_children(locator, poll_run_id, check_key)
-              end
+          {:error, failure} ->
+            record_transport_failure(locator, poll_run_id, check_key, failure, now)
 
-              :ok
-          end
-
-        {:ok, %{status: status, body: body} = response} when status in 200..299 ->
-          archive_success(locator, poll_run_id, check_key, response, body, now)
-
-        {:ok, response} ->
-          decision =
             BrusselsWtf.Ingestion.RetryPolicy.decision(
-              {:http, response.status, Map.get(response, :headers, %{})},
+              {:transport, failure.reason},
               attempt,
               now: now,
               newly_discovered?: newly_discovered?,
               jitter_key: check_key
             )
-
-          record_observation(locator, poll_run_id, response, check_key,
-            status: if(decision == :disappeared, do: :disappeared, else: :failure),
-            error_kind: http_error_kind(response.status, decision),
-            error_message: "source locator returned HTTP #{response.status}"
-          )
-
-          decision
-
-        {:error, failure} ->
-          record_transport_failure(locator, poll_run_id, check_key, failure, now)
-
-          BrusselsWtf.Ingestion.RetryPolicy.decision(
-            {:transport, failure.reason},
-            attempt,
-            now: now,
-            newly_discovered?: newly_discovered?,
-            jitter_key: check_key
-          )
-      end
+        end
+      end)
 
     checked_attrs = %{last_checked_at: now}
 
@@ -278,6 +283,54 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
 
     Ingestion.schedule_locator_fetch!(locator, checked_attrs)
     result
+  end
+
+  defp with_source_response(%{role: :supporting_document} = locator, callback) do
+    directory = Path.join(System.tmp_dir!(), "brussels-source-#{Ecto.UUID.generate()}")
+    path = Path.join(directory, "source")
+
+    case File.mkdir(directory) do
+      :ok ->
+        try do
+          with :ok <- File.chmod(directory, 0o700) do
+            options =
+              Keyword.put(
+                conditional_options(locator),
+                :max_body_bytes,
+                Ingestion.SourceLimits.supporting_document_limit()
+              )
+
+            result =
+              case BrusselsWtf.HTTP.download(locator.url, path, options) do
+                {:ok, response} -> {:ok, Map.put(response, :file_path, path)}
+                failure -> failure
+              end
+
+            callback.(result)
+          else
+            {:error, reason} -> callback.(temporary_file_failure(locator, reason))
+          end
+        after
+          File.rm_rf!(directory)
+        end
+
+      {:error, reason} ->
+        callback.(temporary_file_failure(locator, reason))
+    end
+  end
+
+  defp with_source_response(locator, callback) do
+    callback.(BrusselsWtf.HTTP.get(locator.url, conditional_options(locator)))
+  end
+
+  defp temporary_file_failure(locator, reason) do
+    {:error,
+     %{
+       reason: {:file_write, reason},
+       final_url: locator.url,
+       response_headers: %{},
+       redirect_chain: []
+     }}
   end
 
   @spec extract(Ecto.UUID.t()) :: :ok | {:error, term()}
@@ -297,7 +350,8 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     attempt_started_monotonic = System.monotonic_time()
 
     result =
-      with {:ok, bytes} <- BrusselsWtf.Archive.get(version.object_key),
+      with :ok <- Ingestion.SourceLimits.check_processing(version),
+           {:ok, bytes} <- BrusselsWtf.Archive.get(version.object_key),
            actual when actual == version.sha256 <- BrusselsWtf.Digest.sha256(bytes),
            {:ok, extracted} <-
              BrusselsWtf.PDF.Processor.native(
@@ -660,6 +714,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
 
     result =
       with :ok <- verify_processor_provenance(run, :ocr),
+           :ok <- Ingestion.SourceLimits.check_processing(version),
            {:ok, bytes} <- BrusselsWtf.Archive.get(version.object_key),
            actual when actual == version.sha256 <- BrusselsWtf.Digest.sha256(bytes),
            {:ok, extracted} <-
@@ -834,6 +889,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
 
     result =
       with :ok <- verify_processor_provenance(run, :native_extraction),
+           :ok <- Ingestion.SourceLimits.check_processing(version),
            {:ok, bytes} <- BrusselsWtf.Archive.get(version.object_key),
            actual when actual == version.sha256 <- BrusselsWtf.Digest.sha256(bytes),
            {:ok, extracted} <-
@@ -1168,74 +1224,138 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
   end
 
   defp archive_success(locator, poll_run_id, check_key, response, body, now) do
-    existing = existing_record(locator.commune_id, locator.url)
-    sha256 = BrusselsWtf.Digest.sha256(body)
-    existed? = existing && Enum.any?(existing.versions, &(&1.sha256 == sha256))
-
     case BrusselsWtf.Archive.store(body) do
-      {:ok, %{sha256: ^sha256, object_key: object_key}} ->
-        source_record =
-          Ingestion.upsert_source_record!(%{
-            commune_id: locator.commune_id,
-            origin_url: locator.url,
-            role: locator.role,
-            original_language: locator.language
-          })
-
+      {:ok, archived} ->
         version =
-          Ingestion.upsert_source_version!(%{
-            source_record_id: source_record.id,
-            sha256: sha256,
-            byte_size: byte_size(body),
-            media_type: media_type(response, locator.url),
-            object_key: object_key,
-            first_retrieved_at: now
-          })
-
-        unless existed? do
-          BrusselsWtf.Ingestion.Observability.archive_stored(
+          persist_archived_source(
+            locator,
             poll_run_id,
-            locator.id,
-            version.id,
-            byte_size(body)
+            check_key,
+            response,
+            Map.put(archived, :byte_size, byte_size(body)),
+            now
           )
-        end
 
-        record_observation(locator, poll_run_id, response, check_key,
-          status: if(existed?, do: :unchanged, else: :success),
-          sha256: sha256,
-          source_version_id: version.id
-        )
-
-        cond do
-          locator.role in @listing_roles ->
-            discover_nested_and_enqueue(locator, poll_run_id, check_key, body, now)
-
-          locator.role in @processable_roles and not processed?(version) ->
-            poll_run = Ingestion.get_poll_run!(poll_run_id)
-
-            %{
-              source_version_id: version.id,
-              generation_kind: generation_kind(poll_run)
-            }
-            |> Workers.ExtractSource.new()
-            |> Oban.insert!()
-
-            :ok
-
-          true ->
-            :ok
+        if locator.role in @listing_roles do
+          discover_nested_and_enqueue(locator, poll_run_id, check_key, body, now)
+        else
+          enqueue_source_processing(locator, poll_run_id, version)
         end
 
       {:error, reason} ->
-        record_observation(locator, poll_run_id, response, check_key,
-          status: :failure,
-          error_kind: "archive_verification_failed",
-          error_message: safe_error(reason)
-        )
-
-        {:review, :corruption}
+        archive_failure(locator, poll_run_id, check_key, response, reason)
     end
+  end
+
+  defp archive_file_success(locator, poll_run_id, check_key, response, path, now) do
+    case BrusselsWtf.Archive.store_file(path) do
+      {:ok, archived} ->
+        version =
+          persist_archived_source(locator, poll_run_id, check_key, response, archived, now)
+
+        enqueue_source_processing(locator, poll_run_id, version)
+
+      {:error, reason} ->
+        archive_failure(locator, poll_run_id, check_key, response, reason)
+    end
+  end
+
+  defp persist_archived_source(
+         locator,
+         poll_run_id,
+         check_key,
+         response,
+         %{sha256: sha256, object_key: object_key, byte_size: byte_size},
+         now
+       ) do
+    existing = existing_record(locator.commune_id, locator.url)
+    existed? = existing && Enum.any?(existing.versions, &(&1.sha256 == sha256))
+
+    source_record =
+      Ingestion.upsert_source_record!(%{
+        commune_id: locator.commune_id,
+        origin_url: locator.url,
+        role: locator.role,
+        original_language: locator.language
+      })
+
+    version =
+      Ingestion.upsert_source_version!(%{
+        source_record_id: source_record.id,
+        sha256: sha256,
+        byte_size: byte_size,
+        media_type: media_type(response, locator.url),
+        object_key: object_key,
+        first_retrieved_at: now
+      })
+
+    unless existed? do
+      BrusselsWtf.Ingestion.Observability.archive_stored(
+        poll_run_id,
+        locator.id,
+        version.id,
+        byte_size
+      )
+    end
+
+    record_observation(locator, poll_run_id, response, check_key,
+      status: if(existed?, do: :unchanged, else: :success),
+      sha256: sha256,
+      source_version_id: version.id
+    )
+
+    version
+  end
+
+  defp enqueue_source_processing(locator, poll_run_id, version) do
+    cond do
+      not Ingestion.SourceLimits.processing_allowed?(version) ->
+        open_deferred_extraction(version, locator.commune_id)
+        :ok
+
+      locator.role in @processable_roles and not processed?(version) ->
+        poll_run = Ingestion.get_poll_run!(poll_run_id)
+
+        %{source_version_id: version.id, generation_kind: generation_kind(poll_run)}
+        |> Workers.ExtractSource.new()
+        |> Oban.insert!()
+
+        :ok
+
+      true ->
+        :ok
+    end
+  end
+
+  defp open_deferred_extraction(version, commune_id) do
+    BrusselsWtf.Review.open_review_case!(%{
+      kind: :extraction,
+      commune_id: commune_id,
+      affected_record_id: version.id,
+      affected_record_type: "source_version",
+      source_record_id: version.source_record_id,
+      source_version_id: version.id,
+      processing_generation: "large-source-acquisition-v1",
+      urgency: :normal,
+      summary:
+        "Source archived; extraction deferred because it exceeds the processing size limit",
+      diagnostics: %{
+        "classification" => "resource_limit",
+        "byte_size" => version.byte_size,
+        "acquisition_limit" => Ingestion.SourceLimits.supporting_document_limit(),
+        "processing_limit" => Ingestion.SourceLimits.processing_limit()
+      }
+    })
+  end
+
+  defp archive_failure(locator, poll_run_id, check_key, response, reason) do
+    record_observation(locator, poll_run_id, response, check_key,
+      status: :failure,
+      error_kind: "archive_verification_failed",
+      error_message: safe_error(reason)
+    )
+
+    {:review, :corruption}
   end
 
   defp enqueue_known_children(parent, poll_run_id, check_key) do

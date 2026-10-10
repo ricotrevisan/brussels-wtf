@@ -31,6 +31,37 @@ defmodule BrusselsWtf.Archive.Memory do
   end
 
   @impl true
+  def put_file(namespace, sha256, path, size) do
+    with {:ok, bytes} <- File.read(path),
+         :ok <- verify_bytes(bytes, sha256, size) do
+      put(namespace, sha256, bytes)
+    end
+  end
+
+  @impl true
+  def verify_file(object_key, sha256, size) do
+    with {:ok, bytes} <- get(object_key) do
+      verify_bytes(bytes, sha256, size)
+    end
+  end
+
+  defp verify_bytes(bytes, expected_sha256, expected_size) do
+    actual_sha256 = BrusselsWtf.Digest.sha256(bytes)
+    actual_size = byte_size(bytes)
+
+    cond do
+      actual_size != expected_size ->
+        {:error, {:size_mismatch, expected_size, actual_size}}
+
+      actual_sha256 != expected_sha256 ->
+        {:error, {:hash_mismatch, expected_sha256, actual_sha256}}
+
+      true ->
+        :ok
+    end
+  end
+
+  @impl true
   def ready?, do: :ok
 
   @impl true

@@ -5,11 +5,23 @@ defmodule BrusselsWtfWeb.ReviewInterfaceTest do
   alias BrusselsWtf.Review
   alias BrusselsWtf.Review.Actor
 
-  setup %{conn: conn} do
+  defmodule NoBinaryArchiveGet do
+    def get(_key), do: raise("oversized source reached binary archive get")
+  end
+
+  setup %{conn: conn} = tags do
     BrusselsWtf.Archive.Memory.reset()
     BrusselsWtf.Clock.Controlled.set(~U[2026-08-20 12:00:00Z])
     actor = %Actor{id: "rico", role: :reviewer}
-    context = build_context!()
+
+    overrides =
+      cond do
+        tags[:oversized_source] -> [byte_size: Ingestion.SourceLimits.processing_limit() + 1]
+        tags[:processing_boundary] -> [byte_size: Ingestion.SourceLimits.processing_limit()]
+        true -> []
+      end
+
+    context = build_context!(overrides)
     conn = conn |> init_test_session(%{}) |> BrusselsWtfWeb.ReviewAuth.log_in(actor)
     {:ok, conn: conn, actor: actor, context: context}
   end
@@ -83,6 +95,69 @@ defmodule BrusselsWtfWeb.ReviewInterfaceTest do
       )
 
     assert response(denied, 404) == "Not found"
+  end
+
+  @tag :oversized_source
+  test "oversized source detail offers the origin and rejects private preview before binary reads",
+       %{
+         conn: conn,
+         context: context
+       } do
+    detail = get(conn, ~p"/review/cases/#{context.review_case.id}")
+    body = html_response(detail, 200)
+    document = LazyHTML.from_document(body)
+
+    assert LazyHTML.attribute(document["a[href='#{context.url}']"], "href") == [context.url]
+    assert body =~ "Extraction is deferred because this source exceeds the processing limit."
+    assert LazyHTML.attribute(document["form[action$='/actions/retry']"], "action") == []
+
+    assert LazyHTML.attribute(
+             document["a[data-private-artifact]:not([data-artifact-kind])"],
+             "href"
+           ) == []
+
+    [derived_href] = LazyHTML.attribute(document["a[data-artifact-kind='derived']"], "href")
+    derived_preview = get(recycle(detail), derived_href)
+    assert response(derived_preview, 200) == context.derived_bytes
+
+    original_archive = Application.fetch_env!(:brussels_wtf, :archive)
+    on_exit(fn -> Application.put_env(:brussels_wtf, :archive, original_archive) end)
+    Application.put_env(:brussels_wtf, :archive, NoBinaryArchiveGet)
+
+    token = BrusselsWtfWeb.ReviewPreview.sign_source_version(context.version.id)
+    href = ~p"/review/artifacts/source-versions/#{context.version.id}?token=#{token}"
+    preview = get(recycle(detail), href)
+
+    assert response(preview, 413) ==
+             "Source exceeds the private preview limit; use the official source link."
+
+    assert get_resp_header(preview, "cache-control") == ["private, no-store"]
+    assert get_resp_header(preview, "content-type") == ["text/plain; charset=utf-8"]
+
+    denied =
+      get(
+        recycle(detail),
+        ~p"/review/artifacts/source-versions/#{context.version.id}?token=invalid"
+      )
+
+    assert response(denied, 404) == "Not found"
+    assert redirected_to(get(build_conn(), href)) == ~p"/review/login"
+    assert Ingestion.get_source_version!(context.version.id).sha256 == context.version.sha256
+
+    assert Ingestion.get_source_version!(context.version.id).object_key ==
+             context.version.object_key
+  end
+
+  @tag :processing_boundary
+  test "source preview remains available at the processing limit", %{conn: conn, context: context} do
+    detail = get(conn, ~p"/review/cases/#{context.review_case.id}")
+    document = detail |> html_response(200) |> LazyHTML.from_document()
+
+    [href] =
+      LazyHTML.attribute(document["a[data-private-artifact]:not([data-artifact-kind])"], "href")
+
+    preview = get(recycle(detail), href)
+    assert response(preview, 200) == context.bytes
   end
 
   test "CSRF-protected action and note forms retain reviewer history", %{
@@ -239,7 +314,7 @@ defmodule BrusselsWtfWeb.ReviewInterfaceTest do
     assert body =~ "Identifier confirmed"
   end
 
-  defp build_context! do
+  defp build_context!(overrides) do
     now = BrusselsWtf.Clock.utc_now()
 
     commune =
@@ -288,7 +363,7 @@ defmodule BrusselsWtfWeb.ReviewInterfaceTest do
       Ingestion.upsert_source_version!(%{
         source_record_id: record.id,
         sha256: archived.sha256,
-        byte_size: byte_size(bytes),
+        byte_size: Keyword.get(overrides, :byte_size, byte_size(bytes)),
         media_type: "application/pdf",
         object_key: archived.object_key,
         first_retrieved_at: now

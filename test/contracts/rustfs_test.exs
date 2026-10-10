@@ -66,17 +66,26 @@ defmodule BrusselsWtf.Contracts.RustfsTest do
   end
 
   @tag timeout: :timer.minutes(5)
-  test "ReqS3 stores and verifies a representative 64 MiB object" do
-    bytes = :binary.copy(:binary.list_to_bin(Enum.to_list(0..255)), 262_144)
-    assert byte_size(bytes) == 64 * 1_024 * 1_024
+  test "ReqS3 streams and verifies a representative 64 MiB file, including repeat 412" do
+    path =
+      Path.join(System.tmp_dir!(), "rustfs-file-contract-#{System.unique_integer([:positive])}")
 
-    assert {:ok, %{sha256: @large_sha256, object_key: object_key}} = Archive.store(bytes)
-    assert {:ok, ^bytes} = Archive.get(object_key)
+    on_exit(fn -> File.rm(path) end)
+    chunk = :binary.copy(:binary.list_to_bin(Enum.to_list(0..255)), 256)
 
-    assert {:ok, %{sha256: @large_sha256, content_length: content_length}} =
-             S3.metadata(object_key)
+    File.open!(path, [:write, :binary], fn file ->
+      for _ <- 1..1_024, do: IO.binwrite(file, chunk)
+    end)
 
-    assert content_length == 64 * 1_024 * 1_024
+    size = 64 * 1_024 * 1_024
+    assert File.stat!(path).size == size
+
+    assert {:ok, %{sha256: @large_sha256, byte_size: ^size, object_key: object_key}} =
+             Archive.store_file(path)
+
+    assert :ok = S3.verify_file(object_key, @large_sha256, size)
+    assert {:ok, %{object_key: ^object_key, byte_size: ^size}} = Archive.store_file(path)
+    assert {:ok, %{sha256: @large_sha256, content_length: ^size}} = S3.metadata(object_key)
   end
 
   test "validation prefix supports write, metadata, read, and delete" do

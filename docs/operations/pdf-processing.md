@@ -44,6 +44,12 @@ Migrations remain owned by the app role. The production image pins Debian Bookwo
 
 The calibrated defaults are 25 MiB input, 500 pages, 120 seconds wall time, 90 CPU seconds, 1 GiB address space, and one OCRmyPDF job. A 2026-08-19 run of the partial-scan contract in the release image, capped at one CPU and 1 GiB, completed in 8.4 seconds and peaked at about 180 MiB. The defaults provide headroom for representative documents while the separate role, queue concurrency, cgroup limits, `timeout`, and `prlimit` protect the app/database/archive processes. Configure the Coolify OCR container with one CPU and 1 GiB hard memory. Runtime overrides are `PDF_MAX_INPUT_BYTES`, `PDF_MAX_PAGES`, `PDF_OCR_WALL_TIME_MS`, `PDF_OCR_CPU_SECONDS`, and `PDF_OCR_MEMORY_BYTES`.
 
+Supporting-document acquisition may archive files up to 160 MiB through a
+file-backed path. This does not raise the 25 MiB processing default. Oversized
+versions are retained privately and receive an extraction deferral review; native
+extraction, OCR, manual retries, and raw previews do not load them into memory.
+See [large supporting documents](large-supporting-documents.md).
+
 ## Failure and observability
 
 Poor native quality is routing, not a terminal failure. Invalid/malformed input, oversized input, and exhausted CPU/memory/wall limits are classified and converge on one private extraction review case per processing generation. Other executable failures retry at most three times. Reviewer retry appends a generation keyed by its immutable audit action and never mutates raw bytes or prior artifacts, even when the processor/configuration identity is unchanged. Reviewers provide only a note; processor name, executable version, and configuration hash are derived from the deployed processor contract rather than accepted from form input, then verified again at execution. A terminal reviewer retry opens a distinct case keyed to that failed generation. Authenticated case diagnostics include safe run/attempt timing, tool versions, quality, and artifact hashes without archive object keys or source text.

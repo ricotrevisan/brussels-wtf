@@ -4,11 +4,22 @@ defmodule BrusselsWtfWeb.ReviewArtifactController do
   def source_version(conn, %{"id" => id, "token" => token}) do
     with :ok <- BrusselsWtfWeb.ReviewPreview.verify(token, "source-version", id),
          {:ok, version} <- BrusselsWtf.Ingestion.get_source_version(id),
+         :ok <- source_preview_allowed(version),
          {:ok, bytes} <- BrusselsWtf.Archive.get(version.object_key),
          true <- BrusselsWtf.Digest.sha256(bytes) == version.sha256 do
       private_response(conn, version.media_type, "source-#{version.sha256}", bytes)
     else
-      _ -> send_resp(conn, 404, "Not found")
+      {:error, :source_too_large} ->
+        conn
+        |> put_resp_header("cache-control", "private, no-store")
+        |> put_resp_content_type("text/plain")
+        |> send_resp(
+          413,
+          "Source exceeds the private preview limit; use the official source link."
+        )
+
+      _ ->
+        send_resp(conn, 404, "Not found")
     end
   end
 
@@ -31,6 +42,12 @@ defmodule BrusselsWtfWeb.ReviewArtifactController do
   end
 
   def derived_artifact(conn, _params), do: send_resp(conn, 404, "Not found")
+
+  defp source_preview_allowed(version) do
+    if BrusselsWtf.Ingestion.SourceLimits.processing_allowed?(version),
+      do: :ok,
+      else: {:error, :source_too_large}
+  end
 
   defp private_response(conn, media_type, filename, bytes) do
     conn

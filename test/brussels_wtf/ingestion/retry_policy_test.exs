@@ -88,6 +88,16 @@ defmodule BrusselsWtf.Ingestion.RetryPolicyTest do
              {:retry, 30}
   end
 
+  test "invalid downloaded content does not consume transient retries" do
+    for reason <- [
+          {:invalid_content, {:unexpected_success_status, 206}},
+          {:unsupported_content_encoding, ["gzip"]}
+        ] do
+      assert RetryPolicy.decision({:transport, reason}, 1, now: @now) ==
+               {:review, :invalid_content}
+    end
+  end
+
   test "deterministic HTTP adapter limits do not consume transport retries" do
     assert RetryPolicy.decision({:transport, {:body_too_large, 1_024}}, 1, now: @now) ==
              {:review, :invalid_content}

@@ -21,6 +21,16 @@ defmodule BrusselsWtf.ReviewInboxAndActionsTest do
     end
   end
 
+  defmodule NoSourceProcessing do
+    def metadata, do: raise("oversized source reached processor metadata")
+    def native(_meta, _bytes), do: raise("oversized source reached native extraction")
+    def ocr(_meta, _bytes, _pages), do: raise("oversized source reached OCR")
+  end
+
+  defmodule NoBinaryArchiveGet do
+    def get(_key), do: raise("oversized source reached binary archive get")
+  end
+
   setup do
     BrusselsWtf.Archive.Memory.reset()
     BrusselsWtf.Processors.Stub.reset()
@@ -156,6 +166,41 @@ defmodule BrusselsWtf.ReviewInboxAndActionsTest do
     assert unchanged_version.sha256 == original_version.sha256
     assert unchanged_version.object_key == original_version.object_key
     assert BrusselsWtf.Archive.get(unchanged_version.object_key) == {:ok, original_bytes}
+  end
+
+  test "oversized source retry rejects before any audit, run, job, or binary read", %{
+    actor: actor
+  } do
+    context = build_case!(byte_size: Ingestion.SourceLimits.processing_limit() + 1)
+    original_version = Ingestion.get_source_version!(context.version.id)
+    original_archive = Application.fetch_env!(:brussels_wtf, :archive)
+    original_processor = Application.fetch_env!(:brussels_wtf, :pdf_processor)
+
+    on_exit(fn ->
+      Application.put_env(:brussels_wtf, :archive, original_archive)
+      Application.put_env(:brussels_wtf, :pdf_processor, original_processor)
+    end)
+
+    Application.put_env(:brussels_wtf, :archive, NoBinaryArchiveGet)
+    Application.put_env(:brussels_wtf, :pdf_processor, NoSourceProcessing)
+
+    assert {:error, error} =
+             Review.retry_review_case(
+               context.review_case,
+               %{note: "cannot bypass the processing ceiling"},
+               actor: actor
+             )
+
+    assert Exception.message(error) =~ "source exceeds the processing limit"
+    detail = Review.get_review_case!(context.review_case.id, actor: actor)
+    assert detail.status == :open
+    assert detail.disposition == :open
+    assert detail.actions == []
+    assert detail.source_version.processing_runs == []
+    refute_enqueued(worker: BrusselsWtf.Workers.ExtractSource)
+    refute_enqueued(worker: BrusselsWtf.Workers.OcrSource)
+    assert Ingestion.get_source_version!(context.version.id) == original_version
+    assert original_archive.get(original_version.object_key) == {:ok, context.bytes}
   end
 
   test "a retried failed run reconciles a missing terminal review case", %{actor: actor} do
@@ -404,7 +449,7 @@ defmodule BrusselsWtf.ReviewInboxAndActionsTest do
       Ingestion.upsert_source_version!(%{
         source_record_id: record.id,
         sha256: archived.sha256,
-        byte_size: byte_size(bytes),
+        byte_size: Keyword.get(overrides, :byte_size, byte_size(bytes)),
         media_type: "application/pdf",
         object_key: archived.object_key,
         first_retrieved_at: now

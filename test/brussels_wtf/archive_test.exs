@@ -6,6 +6,10 @@ defmodule BrusselsWtf.ArchiveTest do
     def put(namespace, sha256, _bytes),
       do: {:ok, BrusselsWtf.Archive.object_key(sha256, namespace)}
 
+    def put_file(namespace, sha256, _path, _size),
+      do: {:ok, BrusselsWtf.Archive.object_key(sha256, namespace)}
+
+    def verify_file(_key, _sha256, _size), do: {:error, :verification_failed}
     def get(_key), do: {:ok, "different bytes"}
     def ready?, do: :ok
   end
@@ -34,6 +38,49 @@ defmodule BrusselsWtf.ArchiveTest do
              BrusselsWtf.Archive.store("captured authoritative bytes")
 
     assert expected != actual
+  end
+
+  test "file acceptance derives hash and size and keeps the caller's file" do
+    Application.put_env(:brussels_wtf, :archive, BrusselsWtf.Archive.Memory)
+    path = source_file("captured authoritative bytes")
+    sha256 = BrusselsWtf.Digest.sha256("captured authoritative bytes")
+
+    assert {:ok, %{sha256: ^sha256, byte_size: 28, object_key: object_key}} =
+             BrusselsWtf.Archive.store_file(path)
+
+    assert object_key == BrusselsWtf.Archive.object_key(sha256)
+    assert File.read!(path) == "captured authoritative bytes"
+    assert {:ok, %{object_key: ^object_key}} = BrusselsWtf.Archive.store_file(path)
+
+    assert {:ok, %{object_key: "derived/" <> _}} =
+             BrusselsWtf.Archive.store_file(path, :derived)
+  end
+
+  test "an empty file has a verified empty snapshot" do
+    Application.put_env(:brussels_wtf, :archive, BrusselsWtf.Archive.Memory)
+    path = source_file("")
+    sha256 = BrusselsWtf.Digest.sha256("")
+    assert {:ok, %{sha256: ^sha256, byte_size: 0}} = BrusselsWtf.Archive.store_file(path)
+  end
+
+  test "file acceptance requires backend verification, not the binary get path" do
+    Application.put_env(:brussels_wtf, :archive, CorruptArchive)
+    path = source_file("evidence")
+    assert {:error, :verification_failed} = BrusselsWtf.Archive.store_file(path)
+  end
+
+  test "an unreadable source file is not accepted" do
+    Application.put_env(:brussels_wtf, :archive, BrusselsWtf.Archive.Memory)
+    path = source_file("evidence")
+    File.rm!(path)
+    assert {:error, {:file_read, :enoent}} = BrusselsWtf.Archive.store_file(path)
+  end
+
+  defp source_file(bytes) do
+    path = Path.join(System.tmp_dir!(), "archive-file-#{System.unique_integer([:positive])}")
+    File.write!(path, bytes)
+    on_exit(fn -> File.rm(path) end)
+    path
   end
 
   test "an unconfigured production archive refuses startup visibly" do
