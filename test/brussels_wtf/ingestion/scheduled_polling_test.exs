@@ -489,6 +489,81 @@ defmodule BrusselsWtf.Ingestion.ScheduledPollingTest do
     end
   end
 
+  test "scheduled listing rediscovery reactivates only disappeared children" do
+    commune =
+      Ingestion.create_commune!(%{
+        slug: "city-of-brussels",
+        name: "Brussels",
+        index_url: "https://example.test/city"
+      })
+
+    parent =
+      Ingestion.upsert_locator!(%{
+        commune_id: commune.id,
+        url: "https://example.test/item",
+        parent_index_url: "https://example.test/meeting",
+        meeting_identifier: "2026-08-01",
+        scheduled_on: ~D[2026-08-01],
+        role: :item_listing,
+        item_identifier: "003",
+        language: :fr,
+        discovered_at: ~U[2026-08-20 10:00:00Z],
+        next_fetch_at: ~U[2026-08-20 11:59:59Z]
+      })
+
+    child = fn name ->
+      Ingestion.upsert_locator!(%{
+        commune_id: commune.id,
+        url: "https://example.test/#{name}.pdf",
+        parent_index_url: parent.url,
+        meeting_identifier: "2026-08-01",
+        scheduled_on: ~D[2026-08-01],
+        role: :supporting_document,
+        item_identifier: "003",
+        language: :fr,
+        observed_label: "FR",
+        discovered_at: ~U[2026-08-20 10:00:00Z],
+        next_fetch_at: nil
+      })
+    end
+
+    gone = child.("gone")
+    stopped = child.("stopped")
+    run = Ingestion.request_scheduled_poll!(commune.slug)
+
+    Ingestion.record_observation!(%{
+      source_locator_id: gone.id,
+      poll_run_id: run.id,
+      check_key: "gone-before",
+      observed_at: ~U[2026-08-20 11:00:00Z],
+      status: :disappeared,
+      final_url: gone.url
+    })
+
+    BrusselsWtf.HTTP.Stub.put(parent.url, %{
+      status: 200,
+      body: ~s(<a href="/gone.pdf">FR</a><a href="/stopped.pdf">FR</a>)
+    })
+
+    assert :ok =
+             perform_job(BrusselsWtf.Workers.FetchLocator, %{
+               locator_id: parent.id,
+               poll_run_id: run.id,
+               check_key: run.check_key,
+               attempt: 1
+             })
+
+    assert_enqueued(
+      worker: BrusselsWtf.Workers.FetchLocator,
+      args: %{locator_id: gone.id, poll_run_id: run.id}
+    )
+
+    refute_enqueued(
+      worker: BrusselsWtf.Workers.FetchLocator,
+      args: %{locator_id: stopped.id, poll_run_id: run.id}
+    )
+  end
+
   defp nested_locator!(commune, suffix, next_fetch_at) do
     Ingestion.upsert_locator!(%{
       commune_id: commune.id,

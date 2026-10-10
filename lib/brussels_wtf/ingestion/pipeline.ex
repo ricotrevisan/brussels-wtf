@@ -1420,6 +1420,15 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
           })
         end)
 
+      poll_run = Ingestion.get_poll_run!(poll_run_id)
+
+      stored =
+        if poll_run.kind == :scheduled and poll_run.scope == :current do
+          Enum.map(stored, &reactivate_if_rediscovered(&1, now, poll_run.kind, poll_run.scope))
+        else
+          stored
+        end
+
       mark_nested_disappeared(locator, poll_run_id, check_key, stored, now)
 
       Enum.each(scheduled_children(stored, poll_run_id), fn child ->
