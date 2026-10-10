@@ -55,7 +55,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
 
     newly_discovered? = newly_discovered?(index_locator.id)
 
-    case BrusselsWtf.HTTP.get(commune.index_url, conditional_options(index_locator.id)) do
+    case BrusselsWtf.HTTP.get(commune.index_url, conditional_options(index_locator)) do
       {:ok, %{status: 304} = response} ->
         case existing_record(commune.id, commune.index_url) |> latest_version() do
           nil ->
@@ -210,7 +210,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     newly_discovered? = newly_discovered?(locator.id)
 
     result =
-      case BrusselsWtf.HTTP.get(locator.url, conditional_options(locator.id)) do
+      case BrusselsWtf.HTTP.get(locator.url, conditional_options(locator)) do
         {:ok, %{status: 304} = response} ->
           case existing_record(locator.commune_id, locator.url) |> latest_version() do
             nil ->
@@ -1541,26 +1541,37 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
 
   defp scheduled_check_key(check_key, locator_id), do: "#{check_key}:locator:#{locator_id}"
 
-  defp conditional_options(locator_id) do
-    observations = Ingestion.list_observations!(locator_id)
+  defp conditional_options(locator) do
+    version = existing_record(locator.commune_id, locator.url) |> latest_version()
+
+    observation =
+      if version do
+        locator.id
+        |> Ingestion.list_observations!()
+        |> Enum.reverse()
+        |> Enum.find(fn observation ->
+          observation.status in [:success, :unchanged] and
+            observation.source_version_id == version.id and
+            (Map.has_key?(observation.response_headers, "etag") or
+               Map.has_key?(observation.response_headers, "last-modified"))
+        end)
+      end
 
     headers =
       %{}
-      |> put_conditional_header("if-none-match", latest_header(observations, "etag"))
+      |> put_conditional_header("if-none-match", observation_header(observation, "etag"))
       |> put_conditional_header(
         "if-modified-since",
-        latest_header(observations, "last-modified")
+        observation_header(observation, "last-modified")
       )
 
     [headers: headers]
   end
 
-  defp latest_header(observations, name) do
-    observations
-    |> Enum.reverse()
-    |> Enum.find_value(fn observation ->
-      observation.response_headers |> Map.get(name, []) |> List.first()
-    end)
+  defp observation_header(nil, _name), do: nil
+
+  defp observation_header(observation, name) do
+    observation.response_headers |> Map.get(name, []) |> List.first()
   end
 
   defp put_conditional_header(headers, _name, nil), do: headers

@@ -75,6 +75,44 @@ defmodule BrusselsWtf.Ingestion.UccleCurrentPollingTest do
     end
   end
 
+  test "a current poll discovers the October table matching its calendar session and queues its sources",
+       %{commune: commune} do
+    october = File.read!("test/support/fixtures/uccle/current-index-october-2026.html")
+    BrusselsWtf.Clock.Controlled.set(~U[2026-10-10 12:00:00Z])
+    BrusselsWtf.HTTP.Stub.put(@current_url, %{status: 200, body: october})
+
+    poll = Ingestion.request_scheduled_poll!("uccle")
+    assert %{success: 1, failure: 0} = Oban.drain_queue(queue: :poll)
+    assert Ingestion.get_poll_run!(poll.id).status == :dispatched
+
+    locators =
+      commune.id
+      |> Ingestion.list_document_locators!()
+      |> Enum.sort_by(& &1.role)
+
+    assert Enum.map(locators, &{&1.role, &1.url}) == [
+             {:agenda,
+              "https://www.uccle.be/sites/default/files/filemanager/Legal/CC-GR/CC-2026-10-15-ODJ-U1180_fr_nl.pdf"},
+             {:explanatory_note,
+              "https://www.uccle.be/sites/default/files/filemanager/Legal/CC-GR/CC-2026-10-15-NE_U1180_fr_nl.pdf"}
+           ]
+
+    for locator <- locators do
+      assert locator.scheduled_on == ~D[2026-10-15]
+      assert locator.parent_index_url == @current_url
+
+      assert_enqueued(
+        worker: BrusselsWtf.Workers.FetchLocator,
+        args: %{locator_id: locator.id, poll_run_id: poll.id}
+      )
+    end
+
+    history = Ingestion.source_history!(commune.id, @current_url)
+    assert [%{sha256: hash}] = history.versions
+    assert hash == BrusselsWtf.Digest.sha256(october)
+    assert [%{status: :success}] = history.observations
+  end
+
   test "previous-year polls and unchanged replays remain on the archive and preserve current context",
        %{
          commune: commune

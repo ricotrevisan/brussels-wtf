@@ -52,7 +52,7 @@ defmodule BrusselsWtf.Communes.Uccle do
 
           {:ok, _table_count, locators} ->
             if is_nil(next_session) or
-                 Enum.all?(locators, &(Date.compare(&1.scheduled_on, next_session) == :lt)) do
+                 Enum.all?(locators, &(Date.compare(&1.scheduled_on, next_session) in [:lt, :eq])) do
               {:ok, locators}
             else
               {:error, {:invalid_index, :ambiguous_current_year}}

@@ -102,6 +102,107 @@ defmodule BrusselsWtf.Ingestion.HTTPPipelineTest do
     assert [_case] = Review.list_review_cases!(%{kind: :acquisition}, actor: actor)
   end
 
+  test "failed download validators cannot replace an archived version's validators", context do
+    %{server: server, commune: commune, actor: actor} = context
+    url = server.base_url <> "/bounded.pdf"
+    previous_limit = Application.fetch_env!(:brussels_wtf, :http_max_body_bytes)
+    Application.put_env(:brussels_wtf, :http_max_body_bytes, 16)
+    on_exit(fn -> Application.put_env(:brussels_wtf, :http_max_body_bytes, previous_limit) end)
+
+    ControllableHTTPServer.put_sequence(server, "/bounded.pdf", [
+      %{
+        status: 200,
+        headers: %{"etag" => "failed-first", "last-modified" => "Thu, 20 Aug 2026 10:00:00 GMT"},
+        body: String.duplicate("x", 32)
+      },
+      %{
+        status: 200,
+        headers: %{"etag" => "archived", "last-modified" => "Thu, 20 Aug 2026 11:00:00 GMT"},
+        body: "archived bytes"
+      },
+      %{
+        status: 200,
+        headers: %{"etag" => "failed-change", "last-modified" => "Thu, 20 Aug 2026 12:00:00 GMT"},
+        body: String.duplicate("y", 32)
+      },
+      %{status: 304}
+    ])
+
+    locator = locator!(commune, url)
+
+    for _check <- 1..4 do
+      run = Ingestion.request_poll_now!(%{type: :locator, id: locator.id}, actor: actor)
+
+      assert :ok =
+               perform_job(FetchLocator, %{
+                 locator_id: locator.id,
+                 poll_run_id: run.id,
+                 check_key: run.check_key,
+                 attempt: 1
+               })
+    end
+
+    [first, second, third, fourth] = ControllableHTTPServer.requests(server, "/bounded.pdf")
+
+    for request <- [first, second] do
+      refute Map.has_key?(request.headers, "if-none-match")
+      refute Map.has_key?(request.headers, "if-modified-since")
+    end
+
+    for request <- [third, fourth] do
+      assert request.headers["if-none-match"] == "archived"
+      assert request.headers["if-modified-since"] == "Thu, 20 Aug 2026 11:00:00 GMT"
+    end
+
+    history = Ingestion.source_history!(commune.id, url)
+
+    assert Enum.map(history.observations, & &1.status) == [
+             :failure,
+             :success,
+             :failure,
+             :unchanged
+           ]
+
+    assert [version] = history.versions
+    assert version.sha256 == BrusselsWtf.Digest.sha256("archived bytes")
+    assert Enum.at(history.observations, 0).response_headers["etag"] == ["failed-first"]
+    assert Enum.at(history.observations, 2).response_headers["etag"] == ["failed-change"]
+    assert List.last(history.observations).source_version_id == version.id
+  end
+
+  test "index polling ignores validators from a rejected download", context do
+    %{server: server, commune: commune, actor: actor} = context
+    index = File.read!("test/support/fixtures/ixelles/proposal/index.html")
+    previous_limit = Application.fetch_env!(:brussels_wtf, :http_max_body_bytes)
+    Application.put_env(:brussels_wtf, :http_max_body_bytes, byte_size(index))
+    on_exit(fn -> Application.put_env(:brussels_wtf, :http_max_body_bytes, previous_limit) end)
+
+    ControllableHTTPServer.put_sequence(server, "/index", [
+      %{status: 200, headers: %{"etag" => "rejected-index"}, body: index <> "too large"},
+      %{status: 200, headers: %{"etag" => "archived-index"}, body: index},
+      %{status: 304}
+    ])
+
+    for expected <- [{:review, :invalid_content}, :ok, :ok] do
+      run = Ingestion.request_poll_now!(%{type: :commune, id: commune.id}, actor: actor)
+
+      assert BrusselsWtf.Ingestion.Pipeline.discover_and_enqueue(
+               commune.id,
+               run.id,
+               run.check_key
+             ) == expected
+    end
+
+    [first, second, third] = ControllableHTTPServer.requests(server, "/index")
+    refute Map.has_key?(first.headers, "if-none-match")
+    refute Map.has_key?(second.headers, "if-none-match")
+    assert third.headers["if-none-match"] == "archived-index"
+
+    history = Ingestion.source_history!(commune.id, commune.index_url)
+    assert Enum.map(history.observations, & &1.status) == [:failure, :success, :unchanged]
+    assert [_version] = history.versions
+  end
+
   defp locator!(commune, url) do
     Ingestion.upsert_locator!(%{
       commune_id: commune.id,
