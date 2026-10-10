@@ -1371,6 +1371,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     |> Ingestion.list_document_locators!()
     |> Enum.filter(&(&1.parent_index_url == parent.url))
     |> Enum.reject(&disappeared?/1)
+    |> scheduled_children(poll_run_id)
     |> Enum.each(fn child ->
       %{
         locator_id: child.id,
@@ -1381,6 +1382,18 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
       |> Workers.FetchLocator.new()
       |> Oban.insert!()
     end)
+  end
+
+  defp scheduled_children(children, poll_run_id) do
+    run = Ingestion.get_poll_run!(poll_run_id)
+
+    if run.kind == :scheduled and run.scope == :current do
+      Enum.filter(children, fn child ->
+        due_now?(child) and child.role in (@processable_roles ++ @listing_roles)
+      end)
+    else
+      children
+    end
   end
 
   defp discover_nested_and_enqueue(locator, poll_run_id, check_key, body, now) do
@@ -1409,7 +1422,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
 
       mark_nested_disappeared(locator, poll_run_id, check_key, stored, now)
 
-      Enum.each(stored, fn child ->
+      Enum.each(scheduled_children(stored, poll_run_id), fn child ->
         %{
           locator_id: child.id,
           poll_run_id: poll_run_id,

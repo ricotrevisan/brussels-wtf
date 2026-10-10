@@ -414,6 +414,8 @@ defmodule BrusselsWtf.Ingestion.ScheduledPollingTest do
     index = File.read!("test/support/fixtures/ixelles/proposal/index.html")
     BrusselsWtf.HTTP.Stub.put(commune.index_url, %{status: 200, body: index})
     nested = nested_locator!(commune, "deduplicated", ~U[2026-08-20 11:59:59Z])
+    future = nested_locator!(commune, "replay-future", ~U[2026-08-20 12:00:01Z])
+    stopped = nested_locator!(commune, "replay-stopped", nil)
 
     parent =
       Ingestion.upsert_locator!(%{
@@ -481,6 +483,10 @@ defmodule BrusselsWtf.Ingestion.ScheduledPollingTest do
       |> Enum.filter(&(&1.args["poll_run_id"] == run.id))
 
     assert Enum.count(jobs, &(&1.args["locator_id"] == nested.id)) == 1
+
+    for excluded <- [future, stopped] do
+      refute Enum.any?(jobs, &(&1.args["locator_id"] == excluded.id))
+    end
   end
 
   defp nested_locator!(commune, suffix, next_fetch_at) do
