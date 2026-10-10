@@ -34,6 +34,29 @@ defmodule BrusselsWtf.Communes.UccleTest do
     refute Enum.any?(locators, &(&1.scheduled_on == ~D[2026-10-15]))
   end
 
+  test "discovers October agendas and notes when the table matches the next dated calendar session" do
+    index =
+      File.read!(
+        Path.expand("../../support/fixtures/uccle/current-index-october-2026.html", __DIR__)
+      )
+
+    assert {:ok, locators} = BrusselsWtf.Communes.Uccle.discover(index, @current_index_url)
+
+    assert Enum.map(locators, &{&1.role, &1.url}) == [
+             {:agenda,
+              "https://www.uccle.be/sites/default/files/filemanager/Legal/CC-GR/CC-2026-10-15-ODJ-U1180_fr_nl.pdf"},
+             {:explanatory_note,
+              "https://www.uccle.be/sites/default/files/filemanager/Legal/CC-GR/CC-2026-10-15-NE_U1180_fr_nl.pdf"}
+           ]
+
+    assert Enum.all?(locators, fn locator ->
+             locator.scheduled_on == ~D[2026-10-15] and
+               locator.meeting_identifier == "2026-10-15" and
+               locator.parent_index_url == @current_index_url and
+               locator.language == :bilingual
+           end)
+  end
+
   test "current year context cannot come from filenames, the clock, or a mixed-year calendar" do
     index =
       File.read!(Path.expand("../../support/fixtures/uccle/current-index-2026.html", __DIR__))
@@ -50,13 +73,23 @@ defmodule BrusselsWtf.Communes.UccleTest do
     end
   end
 
-  test "current tables cannot be shifted across the next dated calendar session" do
+  test "current tables accept equality with the next dated calendar session" do
+    index =
+      File.read!(Path.expand("../../support/fixtures/uccle/current-index-2026.html", __DIR__))
+
+    matching = String.replace(index, "Jeudi 15 octobre 2026", "Jeudi 10 septembre 2026")
+
+    assert {:ok, locators} = BrusselsWtf.Communes.Uccle.discover(matching, @current_index_url)
+    assert Enum.any?(locators, &(&1.scheduled_on == ~D[2026-09-10]))
+  end
+
+  test "current tables cannot be shifted after the next dated calendar session" do
     index =
       File.read!(Path.expand("../../support/fixtures/uccle/current-index-2026.html", __DIR__))
 
     for {old, replacement} <- [
           {"10 septembre&nbsp;", "10 décembre"},
-          {"Jeudi 15 octobre 2026", "Jeudi 10 septembre 2026"},
+          {"Jeudi 15 octobre 2026", "Jeudi 25 juin 2026"},
           {"Jeudi 15 octobre 2026", "Jeudi 31 septembre 2026"}
         ] do
       ambiguous = String.replace(index, old, replacement)
