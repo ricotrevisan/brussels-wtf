@@ -361,6 +361,15 @@ defmodule BrusselsWtf.Ingestion.ScheduledPollingTest do
         next_fetch_at: ~U[2026-08-20 11:59:59Z]
       })
 
+    other_commune =
+      Ingestion.create_commune!(%{
+        slug: "forest",
+        name: "Forest",
+        index_url: "https://example.test/other-index"
+      })
+
+    other_due = nested_locator!(other_commune, "other-commune", ~U[2026-08-20 11:59:59Z])
+
     for status <- [200, 304] do
       run = Ingestion.request_scheduled_poll!(commune.slug)
 
@@ -395,7 +404,7 @@ defmodule BrusselsWtf.Ingestion.ScheduledPollingTest do
 
       assert Enum.count(jobs, &(&1.args["locator_id"] == nested.id)) == 1
 
-      for excluded <- [future, stopped, disappeared, unsupported] do
+      for excluded <- [future, stopped, disappeared, unsupported, other_due] do
         refute Enum.any?(jobs, &(&1.args["locator_id"] == excluded.id))
       end
     end
