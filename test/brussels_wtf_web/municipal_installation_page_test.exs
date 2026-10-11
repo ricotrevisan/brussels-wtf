@@ -162,7 +162,7 @@ defmodule BrusselsWtfWeb.MunicipalInstallationPageTest do
       |> LazyHTML.from_document()
 
     assert LazyHTML.to_tree(beyond["#verified-mandates + ul > li"]) == []
-    assert beyond |> LazyHTML.raw_html() |> String.contains?("No verified public mandates")
+    assert LazyHTML.text(beyond) =~ "No verified public mandates"
 
     prev_href =
       LazyHTML.attribute(beyond[~s(nav[aria-label="Mandate pages"] a[rel="prev"])], "href")
@@ -173,8 +173,7 @@ defmodule BrusselsWtfWeb.MunicipalInstallationPageTest do
     assert params == %{
              "lang" => "en",
              "communes_submitted" => "1",
-             "commune" => ["ixelles", "uccle", "forest", "city-of-brussels"],
-             "page" => "1"
+             "commune" => ["ixelles", "uccle", "forest", "city-of-brussels"]
            }
 
     assert LazyHTML.attribute(beyond[~s(a[rel="next"])], "href") == []
