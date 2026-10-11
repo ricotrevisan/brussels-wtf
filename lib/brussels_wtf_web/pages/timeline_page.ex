@@ -38,6 +38,15 @@ defmodule BrusselsWtfWeb.TimelinePage do
         )
       end
 
+    page = if directory?, do: page_number(params["page"]), else: 1
+
+    mandates =
+      if directory? do
+        BrusselsWtf.Identity.list_public_mandates!(selected, q, page)
+      else
+        %{mandates: [], more?: false}
+      end
+
     assign(BrusselsWtfWeb.FollowControl.load(conn),
       page_title:
         text(
@@ -60,8 +69,9 @@ defmodule BrusselsWtfWeb.TimelinePage do
       communes:
         Enum.map(@communes, fn {slug, name} -> {slug, commune_name(locale, slug, name)} end),
       selected_communes: selected,
-      mandates:
-        if(directory?, do: BrusselsWtf.Identity.list_public_mandates!(selected, q), else: []),
+      mandates: mandates.mandates,
+      more_mandates?: mandates.more?,
+      page: page,
       q: q,
       language_path: selection_path(path, nil, selected, q),
       categories:
@@ -182,7 +192,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
           </div>
         </details>
         <section
-          :if={@directory? and @mandates != []}
+          :if={@directory? and (@mandates != [] or @page > 1)}
           class="mt-8 border-t border-base-300 pt-5"
           aria-labelledby="verified-mandates"
         >
@@ -228,6 +238,15 @@ defmodule BrusselsWtfWeb.TimelinePage do
               </a>
             </li>
           </ul>
+          <.mandates_pager
+            :if={@directory? and (@page > 1 or @more_mandates?)}
+            page={@page}
+            more?={@more_mandates?}
+            locale={@locale}
+            selected={@selected_communes}
+            q={@q}
+            path={@resource_path}
+          />
         </section>
         <p :if={@directory? and @mandates == []} class="mt-8 text-base-content/80">
           {text(@locale, :none_mandates)}
@@ -284,6 +303,49 @@ defmodule BrusselsWtfWeb.TimelinePage do
     </main>
     """
   end
+
+  attr :page, :integer, required: true
+  attr :more?, :boolean, required: true
+  attr :locale, :string, required: true
+  attr :selected, :list, required: true
+  attr :q, :string, required: true
+  attr :path, :string, required: true
+
+  def mandates_pager(assigns) do
+    ~H"""
+    <nav
+      class="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm"
+      aria-label={text(@locale, :mandates_pages)}
+    >
+      <a
+        :if={@page > 1}
+        rel="prev"
+        href={mandate_page_path(@path, @locale, @selected, @q, @page - 1)}
+        class="inline-flex min-h-11 items-center underline underline-offset-2"
+      >{text(@locale, :previous_page)}</a>
+      <a
+        :if={@more?}
+        rel="next"
+        href={mandate_page_path(@path, @locale, @selected, @q, @page + 1)}
+        class="inline-flex min-h-11 items-center underline underline-offset-2"
+      >{text(@locale, :next_page)}</a>
+    </nav>
+    """
+  end
+
+  defp mandate_page_path(path, locale, selected, q, page) do
+    base = selection_path(path, locale, selected, q)
+    if page > 1, do: base <> "&page=#{page}", else: base
+  end
+
+  defp page_number(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {page, ""} when page >= 1 -> page
+      _ -> 1
+    end
+  end
+
+  defp page_number(_value), do: 1
 
   attr :entry, :map, required: true
   attr :locale, :string, required: true
@@ -473,6 +535,9 @@ defmodule BrusselsWtfWeb.TimelinePage do
       outcome_unknown: "Outcome unknown",
       decision: "Decision",
       provenance: "Content provenance",
+      mandates_pages: "Mandate pages",
+      previous_page: "Previous page",
+      next_page: "Next page",
       source: "Source"
     }
   end
@@ -519,6 +584,9 @@ defmodule BrusselsWtfWeb.TimelinePage do
       outcome_unknown: "Résultat inconnu",
       decision: "Décision",
       provenance: "Provenance du contenu",
+      mandates_pages: "Pages de mandats",
+      previous_page: "Page précédente",
+      next_page: "Page suivante",
       source: "Source"
     }
   end
@@ -564,6 +632,9 @@ defmodule BrusselsWtfWeb.TimelinePage do
       outcome_unknown: "Resultaat onbekend",
       decision: "Besluit",
       provenance: "Herkomst van de inhoud",
+      mandates_pages: "Mandatenpagina's",
+      previous_page: "Vorige pagina",
+      next_page: "Volgende pagina",
       source: "Bron"
     }
   end
