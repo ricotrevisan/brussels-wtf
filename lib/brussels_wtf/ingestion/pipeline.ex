@@ -1117,12 +1117,16 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         {:scheduled, :previous_year, locators} ->
           Enum.filter(locators, &due_now?/1)
 
-        {:scheduled, :current, nil} ->
+        {:scheduled, :current, _discovered} ->
+          commune = Ingestion.get_commune!(commune_id)
+          archive_root = BrusselsWtf.Communes.poll_index_url(commune, :previous_year)
+          current_root = BrusselsWtf.Communes.poll_index_url(commune, :current)
+
           Ingestion.list_due_locators!(BrusselsWtf.Clock.utc_now())
           |> Enum.filter(&(&1.commune_id == commune_id))
-
-        {:scheduled, :current, locators} ->
-          Enum.filter(locators, &due_now?/1)
+          |> Enum.reject(fn locator ->
+            archive_root != current_root and locator.parent_index_url == archive_root
+          end)
 
         {_manual_kind, _scope, nil} ->
           Ingestion.list_document_locators!(commune_id)
@@ -1132,7 +1136,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
       end
 
     locators =
-      if is_nil(discovered) do
+      if is_nil(discovered) and not (poll_run.kind == :scheduled and poll_run.scope == :current) do
         index_url =
           commune_id
           |> Ingestion.get_commune!()
@@ -1146,6 +1150,10 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
       end
 
     locators
+    |> Enum.reject(fn locator ->
+      disappeared?(locator) and
+        not Enum.any?(discovered || [], &(&1.id == locator.id))
+    end)
     |> Enum.filter(&(&1.role in (@processable_roles ++ @listing_roles)))
     |> Enum.each(fn locator ->
       %{
@@ -1363,6 +1371,7 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     |> Ingestion.list_document_locators!()
     |> Enum.filter(&(&1.parent_index_url == parent.url))
     |> Enum.reject(&disappeared?/1)
+    |> scheduled_children(poll_run_id)
     |> Enum.each(fn child ->
       %{
         locator_id: child.id,
@@ -1373,6 +1382,18 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
       |> Workers.FetchLocator.new()
       |> Oban.insert!()
     end)
+  end
+
+  defp scheduled_children(children, poll_run_id) do
+    run = Ingestion.get_poll_run!(poll_run_id)
+
+    if run.kind == :scheduled and run.scope == :current do
+      Enum.filter(children, fn child ->
+        due_now?(child) and child.role in (@processable_roles ++ @listing_roles)
+      end)
+    else
+      children
+    end
   end
 
   defp discover_nested_and_enqueue(locator, poll_run_id, check_key, body, now) do
@@ -1399,9 +1420,18 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
           })
         end)
 
+      poll_run = Ingestion.get_poll_run!(poll_run_id)
+
+      stored =
+        if poll_run.kind == :scheduled and poll_run.scope == :current do
+          Enum.map(stored, &reactivate_if_rediscovered(&1, now, poll_run.kind, poll_run.scope))
+        else
+          stored
+        end
+
       mark_nested_disappeared(locator, poll_run_id, check_key, stored, now)
 
-      Enum.each(stored, fn child ->
+      Enum.each(scheduled_children(stored, poll_run_id), fn child ->
         %{
           locator_id: child.id,
           poll_run_id: poll_run_id,

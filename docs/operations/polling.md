@@ -14,6 +14,14 @@ Cron entries exist for all four communes. A cron wrapper records an `adapter una
 
 `source_locators.next_fetch_at` is authoritative. No locator URL is represented by a dynamic cron entry.
 
+Current scheduled polls dispatch known due locators after a successful index response,
+including nested listings and supporting documents whose older parents are no longer
+advertised. An omitted parent is not evidence that its leaf URLs disappeared.
+Stopped, future, unsupported, and disappeared locators remain excluded unless the index
+explicitly rediscovers them. Uccle's separate archive root keeps its previous-year scope.
+Direct dispatch and listing fan-out share one fetch identity per locator, poll, and attempt.
+This does not add historical discovery, cron entries, or processing budget.
+
 ## Poll now and backfill
 
 Sign in to `/review` and use **Operational polling**. Choose `poll-now` or `backfill`, a target type, and the target ID. Supported targets are commune, index, meeting, and locator.
