@@ -2,6 +2,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
   use BrusselsWtfWeb, :dstar_page
 
   alias BrusselsWtf.Council
+  alias BrusselsWtf.Council.VoteTally
 
   @impl Dstar.Page
   def mount(conn, %{"commune" => commune, "municipal_id" => municipal_id} = params) do
@@ -13,6 +14,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
         locale_available = not is_nil(variant)
         withdrawn = page.publication_status == :draft and not is_nil(page.withdrawn_at)
         resource_path = "/meetings/#{commune}/#{municipal_id}"
+        contested_only = params["votes"] == "contested"
 
         assign(conn,
           page_title:
@@ -36,6 +38,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
             ),
           revision_history: page.publication_revisions,
           locale: locale,
+          contested_only: contested_only,
           commune_name: commune_name(locale, commune, page.council_meeting.commune.name),
           items:
             if(locale_available and not withdrawn,
@@ -180,6 +183,13 @@ defmodule BrusselsWtfWeb.MeetingPage do
           </ul>
         </section>
       </details>
+      <.vote_tally
+        :if={not @withdrawn}
+        items={@items}
+        locale={@locale}
+        resource_path={@resource_path}
+        contested_only={@contested_only}
+      />
       <div :if={not @withdrawn} class="mt-9 divide-y divide-base-300">
         <.coverage_item :for={item <- @items} item={item} page={@meeting_page} locale={@locale} />
       </div>
@@ -197,6 +207,182 @@ defmodule BrusselsWtfWeb.MeetingPage do
       <BrusselsWtfWeb.PublicationComponents.footer locale={@locale} />
     </main>
     """
+  end
+
+  attr :items, :list, required: true
+  attr :locale, :string, required: true
+  attr :resource_path, :string, required: true
+  attr :contested_only, :boolean, default: false
+
+  defp vote_tally(assigns) do
+    rows =
+      assigns.items
+      |> Enum.filter(&(display_state(&1) == :decision))
+      |> Enum.map(fn item ->
+        decision = item.published_decision
+        variant = Enum.find(item.coverage_variants, &(&1.locale == assigns.locale))
+
+        %{
+          anchor: item.stable_anchor,
+          number: public_item_number(item),
+          title: (variant && variant.title) || item.source_wording,
+          disposition: decision.disposition,
+          for: decision.votes_for,
+          against: decision.votes_against,
+          abstentions: decision.abstentions,
+          status: VoteTally.classify(decision)
+        }
+      end)
+
+    stats = %{
+      total: length(rows),
+      unanimous: Enum.count(rows, &(&1.status == :unanimous)),
+      contested: Enum.count(rows, &(&1.status == :contested)),
+      not_recorded: Enum.count(rows, &(&1.status == :not_recorded))
+    }
+
+    visible =
+      if assigns.contested_only, do: Enum.filter(rows, &(&1.status == :contested)), else: rows
+
+    assigns = assign(assigns, rows: rows, visible: visible, stats: stats)
+
+    ~H"""
+    <section
+      :if={@stats.unanimous + @stats.contested > 0}
+      id="vote-tally"
+      aria-labelledby="vote-tally-heading"
+      class="mt-9 scroll-mt-4"
+      tabindex="-1"
+    >
+      <h2 id="vote-tally-heading" class="text-xl font-semibold">{text(@locale, :vote_tally)}</h2>
+      <p class="mt-1 text-sm text-base-content/70" data-vote-stats>
+        {tally_stats(@locale, @stats)}
+      </p>
+      <p class="mt-2 text-sm">
+        <a
+          :if={not @contested_only and @stats.contested > 0}
+          href={@resource_path <> "?lang=" <> @locale <> "&votes=contested#vote-tally"}
+          class="underline underline-offset-2"
+        >{text(@locale, :show_contested)}</a>
+        <a
+          :if={@contested_only}
+          href={@resource_path <> "?lang=" <> @locale <> "#vote-tally"}
+          class="underline underline-offset-2"
+        >{text(@locale, :show_all_votes)}</a>
+      </p>
+      <p :if={@visible == []} class="mt-3 text-sm">{text(@locale, :no_contested_votes)}</p>
+      <div :if={@visible != []} class="mt-3 overflow-x-auto">
+        <table class="w-full text-left text-sm">
+          <thead class="border-b border-base-300 text-base-content/70">
+            <tr>
+              <th scope="col" class="py-2 pr-3 font-medium">#</th>
+              <th scope="col" class="py-2 pr-3 font-medium">{text(@locale, :item)}</th>
+              <th scope="col" class="py-2 pr-3 font-medium">{text(@locale, :decision)}</th>
+              <th scope="col" class="py-2 pr-3 text-right font-medium">
+                {text(@locale, :votes_for)}
+              </th>
+              <th scope="col" class="py-2 pr-3 text-right font-medium">
+                {text(@locale, :votes_against)}
+              </th>
+              <th scope="col" class="py-2 pr-3 text-right font-medium">
+                {text(@locale, :votes_abstentions)}
+              </th>
+              <th scope="col" class="py-2 font-medium">
+                <span class="sr-only">{text(@locale, :vote_split)}</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-base-300">
+            <tr :for={row <- @visible} data-vote-status={row.status}>
+              <td class="py-2 pr-3 align-top tabular-nums">{row.number}</td>
+              <td class="py-2 pr-3 align-top">
+                <a href={"#" <> row.anchor} class="underline underline-offset-2">{row.title}</a>
+              </td>
+              <td class="py-2 pr-3 align-top">{disposition_label(@locale, row.disposition)}</td>
+              <td class="py-2 pr-3 text-right align-top tabular-nums">{count_cell(row.for)}</td>
+              <td class={[
+                "py-2 pr-3 text-right align-top tabular-nums",
+                (row.against || 0) > 0 && "font-semibold text-error"
+              ]}>
+                {count_cell(row.against)}
+              </td>
+              <td class={[
+                "py-2 pr-3 text-right align-top tabular-nums",
+                (row.abstentions || 0) > 0 && "font-semibold text-warning"
+              ]}>
+                {count_cell(row.abstentions)}
+              </td>
+              <td class="w-28 py-2 align-top">
+                <.vote_bar row={row} locale={@locale} />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    """
+  end
+
+  attr :row, :map, required: true
+  attr :locale, :string, required: true
+
+  defp vote_bar(assigns) do
+    row = assigns.row
+    total = (row.for || 0) + (row.against || 0) + (row.abstentions || 0)
+
+    assigns =
+      assign(assigns,
+        total: total,
+        segments:
+          if(row.status == :not_recorded or total == 0,
+            do: [],
+            else:
+              [
+                {"bg-success", row.for},
+                {"bg-error", row.against},
+                {"bg-warning", row.abstentions}
+              ]
+              |> Enum.reject(fn {_class, value} -> (value || 0) == 0 end)
+              |> Enum.map(fn {class, value} -> {class, Float.round(value * 100 / total, 2)} end)
+          )
+      )
+
+    ~H"""
+    <div
+      :if={@segments != []}
+      class="mt-1 flex h-2 w-full overflow-hidden rounded-full bg-base-300"
+      role="img"
+      aria-label={vote_summary(@row, @locale)}
+    >
+      <span :for={{class, width} <- @segments} class={class} style={"width: #{width}%"}></span>
+    </div>
+    <span :if={@segments == []} class="text-base-content/60">
+      {text(@locale, :vote_not_recorded)}
+    </span>
+    """
+  end
+
+  defp count_cell(nil), do: "—"
+  defp count_cell(value), do: value
+
+  defp tally_stats(locale, stats) do
+    base = text(locale, :tally_stats)
+
+    base
+    |> String.replace("%{total}", Integer.to_string(stats.total))
+    |> String.replace("%{unanimous}", Integer.to_string(stats.unanimous))
+    |> String.replace("%{contested}", Integer.to_string(stats.contested))
+    |> then(fn copy ->
+      if stats.not_recorded > 0,
+        do:
+          copy <>
+            String.replace(
+              text(locale, :tally_not_recorded),
+              "%{count}",
+              Integer.to_string(stats.not_recorded)
+            ),
+        else: copy
+    end)
   end
 
   attr :item, :any, required: true
@@ -447,6 +633,13 @@ defmodule BrusselsWtfWeb.MeetingPage do
   defp vote_summary(%Ash.NotLoaded{}, _locale), do: nil
   defp vote_summary(nil, _locale), do: nil
 
+  defp vote_summary(%{for: for_votes, against: against, abstentions: abstentions}, locale),
+    do:
+      vote_summary(
+        %{votes_for: for_votes, votes_against: against, abstentions: abstentions},
+        locale
+      )
+
   defp vote_summary(decision, locale) do
     values = [decision.votes_for, decision.votes_against, decision.abstentions]
 
@@ -568,7 +761,18 @@ defmodule BrusselsWtfWeb.MeetingPage do
       withdrawn_explanation: "The page is temporarily unavailable while its content is reviewed.",
       withdrawn_on: "Withdrawn:",
       item_withdrawn: "Coverage for this agenda item is temporarily unavailable.",
-      corrections: "Corrections"
+      corrections: "Corrections",
+      vote_tally: "Vote tally",
+      tally_stats: "Decisions: %{total} · unanimous: %{unanimous} · contested: %{contested}",
+      tally_not_recorded: " · no recorded tally: %{count}",
+      show_contested: "Show contested votes only",
+      show_all_votes: "Show all decisions",
+      no_contested_votes: "No contested vote is recorded for this meeting.",
+      votes_for: "For",
+      votes_against: "Against",
+      votes_abstentions: "Abst.",
+      vote_split: "Vote split",
+      vote_not_recorded: "Not recorded"
     }
   end
 
@@ -614,7 +818,18 @@ defmodule BrusselsWtfWeb.MeetingPage do
         "La page est temporairement indisponible pendant la vérification de son contenu.",
       withdrawn_on: "Retiré le :",
       item_withdrawn: "Le contenu de ce point est temporairement indisponible.",
-      corrections: "Corrections"
+      corrections: "Corrections",
+      vote_tally: "Résultats des votes",
+      tally_stats: "Décisions : %{total} · unanimes : %{unanimous} · contestées : %{contested}",
+      tally_not_recorded: " · sans décompte documenté : %{count}",
+      show_contested: "Afficher uniquement les votes contestés",
+      show_all_votes: "Afficher toutes les décisions",
+      no_contested_votes: "Aucun vote contesté n’est documenté pour cette réunion.",
+      votes_for: "Pour",
+      votes_against: "Contre",
+      votes_abstentions: "Abst.",
+      vote_split: "Répartition des votes",
+      vote_not_recorded: "Non documenté"
     }
   end
 
@@ -659,7 +874,18 @@ defmodule BrusselsWtfWeb.MeetingPage do
         "De pagina is tijdelijk niet beschikbaar terwijl de inhoud wordt nagekeken.",
       withdrawn_on: "Ingetrokken op:",
       item_withdrawn: "Het bericht over dit agendapunt is tijdelijk niet beschikbaar.",
-      corrections: "Correcties"
+      corrections: "Correcties",
+      vote_tally: "Stemmingsresultaten",
+      tally_stats: "Besluiten: %{total} · unaniem: %{unanimous} · betwist: %{contested}",
+      tally_not_recorded: " · zonder gedocumenteerde stemming: %{count}",
+      show_contested: "Alleen betwiste stemmingen tonen",
+      show_all_votes: "Alle besluiten tonen",
+      no_contested_votes: "Voor deze vergadering is geen betwiste stemming gedocumenteerd.",
+      votes_for: "Voor",
+      votes_against: "Tegen",
+      votes_abstentions: "Onth.",
+      vote_split: "Stemverdeling",
+      vote_not_recorded: "Niet gedocumenteerd"
     }
   end
 end

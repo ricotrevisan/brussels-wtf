@@ -65,8 +65,9 @@ defmodule BrusselsWtfWeb.IxellesFinalPrincipalSeamTest do
     assert %{disposition: :approved, statement: "Le Conseil approuve.", votes_for: 37} =
              decided.decision
 
-    assert decided.decision.votes_against == nil
-    assert decided.decision.abstentions == nil
+    # "37 votants : 37 votes positifs." is a complete tally: omitted categories are zero.
+    assert decided.decision.votes_against == 0
+    assert decided.decision.abstentions == 0
     assert Enum.sort(Enum.map(decided.decision.evidence, & &1.claim)) == [:decision, :vote]
 
     minutes_history =
@@ -129,6 +130,24 @@ defmodule BrusselsWtfWeb.IxellesFinalPrincipalSeamTest do
       assert html =~ title
       assert html =~ stable_anchor
       assert html =~ vote
+
+      document = LazyHTML.from_document(html)
+      assert [row] = document["#vote-tally tbody tr"] |> Enum.to_list()
+      assert LazyHTML.attribute(row, "data-vote-status") == ["unanimous"]
+      assert row["a"] |> LazyHTML.attribute("href") == ["#" <> stable_anchor]
+
+      assert row["td"] |> Enum.map(&(LazyHTML.text(&1) |> String.trim())) |> Enum.slice(3, 3) ==
+               ["37", "0", "0"]
+
+      assert document["[data-vote-stats]"] |> LazyHTML.text() =~ "1"
+
+      contested =
+        build_conn()
+        |> get(scenario.expected.path <> "?lang=#{locale}&votes=contested")
+        |> html_response(200)
+        |> LazyHTML.from_document()
+
+      assert contested["#vote-tally tbody tr"] |> Enum.to_list() == []
       assert html =~ scenario.sources.minutes.url
       assert html =~ minutes_hash
     end
