@@ -1540,6 +1540,8 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     decisions
     |> List.wrap()
     |> Enum.each(fn candidate ->
+      vote = complete_vote(candidate["vote"])
+
       decision =
         Council.record_decision!(%{
           agenda_item_id: item.id,
@@ -1547,9 +1549,9 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
           interpretation_key: interpretation_key(candidate),
           disposition: disposition(candidate["disposition"]),
           statement: candidate["statement"],
-          votes_for: get_in(candidate, ["vote", "for"]),
-          votes_against: get_in(candidate, ["vote", "against"]),
-          abstentions: get_in(candidate, ["vote", "abstentions"])
+          votes_for: vote["for"],
+          votes_against: vote["against"],
+          abstentions: vote["abstentions"]
         })
 
       record_decision_evidence(candidate["evidence"], :decision, decision, version, citation_url)
@@ -1570,6 +1572,12 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
       end
     end)
   end
+
+  # A cited "38 votants : 38 votes positifs." line is a complete tally: the omitted
+  # against and abstention categories are recorded as zero, not left unknown. The
+  # interpretation key still hashes the normalizer's own candidate.
+  defp complete_vote(vote) when is_map(vote), do: BrusselsWtf.Council.VoteTally.complete(vote)
+  defp complete_vote(_vote), do: %{}
 
   defp record_decision_evidence(nil, _claim, _decision, _version, _citation_url), do: :ok
 
