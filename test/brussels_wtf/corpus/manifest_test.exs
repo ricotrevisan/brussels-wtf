@@ -112,6 +112,29 @@ defmodule BrusselsWtf.Corpus.ManifestTest do
     assert dossier["titles"]["en"] =~ "Bases"
   end
 
+  defp expected_vote(nil, _source), do: nil
+
+  defp expected_vote(vote, source) do
+    {:ok, counts} = BrusselsWtf.Council.VoteTally.parse(vote["excerpt"])
+
+    %{
+      "for" => counts.for,
+      "against" => counts.against,
+      "abstentions" => counts.abstentions,
+      "evidence" => [
+        %{
+          "citation_url" => source["url"],
+          "excerpt" => vote["excerpt"],
+          "location" => vote["location"],
+          "retrieved_at" => "2026-08-21T14:00:00Z",
+          "source_sha256" => source["sha256"],
+          "source_origin_url" => source["url"],
+          "synthetic" => false
+        }
+      ]
+    }
+  end
+
   defp publication_input(meeting) do
     sources = Map.new(meeting["sources"], &{&1["name"], &1})
 
@@ -146,7 +169,7 @@ defmodule BrusselsWtf.Corpus.ManifestTest do
             if kind == "decision" do
               normalized_claim
               |> Map.put("disposition", claim["disposition"])
-              |> Map.put("vote", nil)
+              |> Map.put("vote", expected_vote(claim["vote"], source))
             else
               normalized_claim
             end

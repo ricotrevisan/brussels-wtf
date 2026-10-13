@@ -1,6 +1,8 @@
 defmodule BrusselsWtf.Corpus.Manifest do
   @moduledoc "Hash-pinned, recorded contract for the bounded real-meeting corpus."
 
+  alias BrusselsWtf.Council.VoteTally
+
   @contract_ids ~w(issue-33 current-20260911)
 
   def load!(id \\ "issue-33") do
@@ -159,7 +161,7 @@ defmodule BrusselsWtf.Corpus.Manifest do
     valid_items? =
       length(meeting["items"]) == 3 and length(Enum.uniq(item_keys)) == 3 and
         Enum.all?(meeting["items"], fn item ->
-          item["state"] in ["proposal", "decision"] and
+          item["state"] in ["proposal", "decision"] and valid_recorded_vote?(item) and
             Enum.sort(Map.keys(item["coverage"])) == ~w(en fr nl) and
             MapSet.member?(source_names, item["source"])
         end)
@@ -167,6 +169,14 @@ defmodule BrusselsWtf.Corpus.Manifest do
     unless valid_sources? and valid_items?,
       do: raise("invalid issue-33 meeting #{inspect(meeting["key"])}")
   end
+
+  defp valid_recorded_vote?(%{"state" => "decision", "decision" => %{"vote" => vote}})
+       when not is_nil(vote) do
+    is_map(vote) and nonempty?(vote["location"]) and
+      match?({:ok, _counts}, VoteTally.parse(vote["excerpt"]))
+  end
+
+  defp valid_recorded_vote?(_item), do: true
 
   # This is a second sealed contract, not a generic manifest-upload API.
   @current_meetings %{
@@ -341,7 +351,10 @@ defmodule BrusselsWtf.Corpus.Manifest do
         wording =
           if source["acquisition"] == "official_fetch", do: [item["source_wording"]], else: []
 
-        (wording ++ [item["identity_marker"], claim["excerpt"] | item["evidence_markers"]])
+        vote_markers = if is_map(claim["vote"]), do: [claim["vote"]["excerpt"]], else: []
+
+        (wording ++
+           [item["identity_marker"], claim["excerpt"] | vote_markers ++ item["evidence_markers"]])
         |> Enum.reject(&String.contains?(scope, &1))
         |> Enum.map(&"#{item["key"]} pages #{first}-#{last}: #{&1}")
       end)
@@ -405,8 +418,22 @@ defmodule BrusselsWtf.Corpus.Manifest do
               "location" => decision["location"]
             }
           }
+          |> put_normalized_vote(decision["vote"])
         ])
     end
+  end
+
+  defp put_normalized_vote(decision, nil), do: decision
+
+  defp put_normalized_vote(decision, vote) do
+    {:ok, counts} = VoteTally.parse(vote["excerpt"])
+
+    Map.put(decision, "vote", %{
+      "for" => counts.for,
+      "against" => counts.against,
+      "abstentions" => counts.abstentions,
+      "evidence" => %{"excerpt" => vote["excerpt"], "location" => vote["location"]}
+    })
   end
 
   defp verify_publication_input(input, meeting) do
@@ -434,15 +461,27 @@ defmodule BrusselsWtf.Corpus.Manifest do
           ])
           |> update_in(["claims"], fn claims ->
             Enum.map(claims || [], fn claim ->
-              Map.update(claim, "evidence", [], fn evidence ->
+              claim
+              |> Map.update("evidence", [], fn evidence ->
                 Enum.map(evidence, &Map.delete(&1, "retrieved_at"))
               end)
+              |> strip_vote_retrieval()
             end)
           end)
         end)
         |> Enum.sort_by(& &1["key"])
     }
   end
+
+  defp strip_vote_retrieval(%{"vote" => %{"evidence" => evidence} = vote} = claim)
+       when is_list(evidence),
+       do:
+         Map.put(claim, "vote", %{
+           vote
+           | "evidence" => Enum.map(evidence, &Map.delete(&1, "retrieved_at"))
+         })
+
+  defp strip_vote_retrieval(claim), do: claim
 
   defp expected_publication_contract(meeting) do
     sources = Map.new(meeting["sources"], &{&1["name"], &1})
@@ -493,7 +532,7 @@ defmodule BrusselsWtf.Corpus.Manifest do
       if kind == "decision" do
         normalized_claim
         |> Map.put("disposition", claim["disposition"])
-        |> Map.put("vote", nil)
+        |> Map.put("vote", expected_vote(claim["vote"], source))
       else
         normalized_claim
       end
@@ -505,6 +544,28 @@ defmodule BrusselsWtf.Corpus.Manifest do
       "outcome" => if(kind == "decision", do: claim["disposition"], else: "unknown"),
       "source_wording" => item["source_wording"],
       "claims" => [normalized_claim]
+    }
+  end
+
+  defp expected_vote(nil, _source), do: nil
+
+  defp expected_vote(vote, source) do
+    {:ok, counts} = VoteTally.parse(vote["excerpt"])
+
+    %{
+      "for" => counts.for,
+      "against" => counts.against,
+      "abstentions" => counts.abstentions,
+      "evidence" => [
+        %{
+          "citation_url" => source["url"],
+          "excerpt" => vote["excerpt"],
+          "location" => vote["location"],
+          "source_sha256" => source["sha256"],
+          "source_origin_url" => source["url"],
+          "synthetic" => false
+        }
+      ]
     }
   end
 
