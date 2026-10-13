@@ -24,13 +24,16 @@ defmodule BrusselsWtf.Workers.NormalizeSource do
 
       {:discard, "normalization contract changed; requeue from the current release"}
     else
-      BrusselsWtf.Ingestion.Pipeline.normalize(
-        run_id,
-        url,
-        attempt,
-        @max_attempts,
-        generation_kind
-      )
+      case BrusselsWtf.Ingestion.Pipeline.normalize(
+             run_id,
+             url,
+             attempt,
+             @max_attempts,
+             generation_kind
+           ) do
+        {:error, :extraction_only} -> {:discard, "native-only recovery remains held"}
+        result -> result
+      end
     end
   end
 end

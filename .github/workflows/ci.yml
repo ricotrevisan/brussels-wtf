@@ -57,8 +57,19 @@ jobs:
       - run: mix deps.get --only test
       - run: mix format --check-formatted
       - run: mix compile --warnings-as-errors
+      - name: Prepare quota-backed OCR integration workspace
+        run: |
+          workspace="${RUNNER_TEMP}/large-pdf-ocr-scratch"
+          mkdir -p "$workspace"
+          sudo mount -t tmpfs -o "size=512m,mode=0700,uid=$(id -u),gid=$(id -g),nosuid,nodev,noexec" tmpfs "$workspace"
+          printf 'OCR_TEST_WORKSPACE=%s\n' "$workspace" >> "$GITHUB_ENV"
       - run: mix test
       - name: Install Playwright Chromium
         run: uv sync --project test/browser --frozen && uv run --project test/browser --frozen playwright install --with-deps chromium
       - name: Run browser tests
         run: mix test.browser
+      - name: Unmount OCR integration workspace
+        if: always()
+        run: |
+          workspace="${RUNNER_TEMP}/large-pdf-ocr-scratch"
+          if mountpoint -q "$workspace"; then sudo umount "$workspace"; fi

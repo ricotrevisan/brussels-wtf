@@ -62,6 +62,16 @@ defmodule BrusselsWtf.Archive.Memory do
   end
 
   @impl true
+  def fetch_file(key, sha256, size, destination, opts) do
+    BrusselsWtf.Archive.with_fetch_file(key, sha256, size, destination, opts, fn io ->
+      with {:ok, bytes} <- get(key),
+           :ok <- verify_bytes(bytes, sha256, size) do
+        IO.binwrite(io, bytes)
+      end
+    end)
+  end
+
+  @impl true
   def ready?, do: :ok
 
   @impl true

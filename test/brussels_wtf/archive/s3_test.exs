@@ -351,6 +351,342 @@ defmodule BrusselsWtf.Archive.S3Test do
     assert {:error, {:archive_http_error, 403}} = Archive.store_file(path)
   end
 
+  test "fetch_file streams a signed single GET into a private file without HEAD or binary buffering" do
+    bytes = :binary.copy("synthetic bytes\n", 10_000)
+    sha256 = BrusselsWtf.Digest.sha256(bytes)
+    key = Archive.object_key(sha256, :derived)
+    path = fetch_destination()
+
+    stub_file_object(sha256, byte_size(bytes), [
+      binary_part(bytes, 0, 50_000),
+      binary_part(bytes, 50_000, byte_size(bytes) - 50_000)
+    ])
+
+    install_fetch_adapter(fn request ->
+      assert request.method == :get
+      assert is_function(request.into, 2)
+      assert request.options.retry == false
+      assert request.options.redirect == false
+      assert request.options.raw == true
+      assert request.options.receive_timeout == 1234
+      assert Req.Request.get_header(request, "accept-encoding") == ["identity"]
+      assert request.url.path == "/preview-bucket/#{key}"
+      assert [_] = Req.Request.get_header(request, "authorization")
+      run_stub(request)
+    end)
+
+    size = byte_size(bytes)
+
+    assert {:ok, %{object_key: ^key, sha256: ^sha256, byte_size: ^size}} =
+             Archive.fetch_file(key, sha256, size, path,
+               max_bytes: size,
+               receive_timeout_ms: 1234
+             )
+
+    assert File.read!(path) == bytes
+    assert Bitwise.band(File.stat!(path).mode, 0o777) == 0o600
+  end
+
+  test "fetch_file halts before an oversized chunk is written and removes the partial destination" do
+    hash = BrusselsWtf.Digest.sha256("source")
+    path = fetch_destination()
+
+    install_fetch_adapter(fn request ->
+      response = Req.Response.new(status: 200)
+      {:cont, pair} = request.into.({:data, "source"}, {request, response})
+      assert File.read!(path) == "source"
+      {:halt, {request, response}} = request.into.({:data, "extra"}, pair)
+      assert File.read!(path) == "source"
+      {request, response}
+    end)
+
+    assert {:error, {:size_mismatch, 6, 11}} =
+             Archive.fetch_file(Archive.object_key(hash), hash, 6, path, max_bytes: 10)
+
+    refute File.exists?(path)
+  end
+
+  test "fetch_file rejects lying or encoded response headers before writing any chunk" do
+    hash = BrusselsWtf.Digest.sha256("source")
+
+    for {headers, reason} <- [
+          {[{"content-length", "5"}], :invalid_content_length},
+          {[{"content-length", "bogus"}], :invalid_content_length},
+          {[{"content-length", "6, 6"}], :invalid_content_length},
+          {[{"content-encoding", "gzip"}], :unexpected_content_encoding}
+        ] do
+      path = fetch_destination()
+      parent = self()
+
+      install_fetch_adapter(fn request ->
+        response = Req.Response.new(status: 200, headers: headers)
+        {action, {request, response}} = request.into.({:data, "source"}, {request, response})
+        send(parent, {:header_rejection, action, File.read!(path)})
+        {request, response}
+      end)
+
+      assert {:error, ^reason} =
+               S3.fetch_file(Archive.object_key(hash), hash, 6, path, max_bytes: 9)
+
+      assert_received {:header_rejection, :halt, ""}
+      refute File.exists?(path)
+    end
+  end
+
+  test "fetch_file wall deadline stops a stalled partial stream and removes its destination" do
+    hash = BrusselsWtf.Digest.sha256("source")
+    path = fetch_destination()
+    parent = self()
+
+    install_fetch_adapter(fn request ->
+      response = Req.Response.new(status: 200)
+      {:cont, _pair} = request.into.({:data, "sou"}, {request, response})
+      send(parent, {:stream_worker, self()})
+      Process.sleep(300)
+      {request, response}
+    end)
+
+    assert {:error, :archive_timeout} =
+             S3.fetch_file(Archive.object_key(hash), hash, 6, path, max_bytes: 9, timeout_ms: 50)
+
+    assert_received {:stream_worker, worker}
+    refute Process.alive?(worker)
+    refute File.exists?(path)
+  end
+
+  test "fetch_file rejects corrupt and truncated streams even when hash metadata lies" do
+    hash = BrusselsWtf.Digest.sha256("source")
+
+    for {chunks, error} <- [
+          {["oth", "ers"], {:hash_mismatch, hash, BrusselsWtf.Digest.sha256("others")}},
+          {["sou"], {:size_mismatch, 6, 3}}
+        ] do
+      path = fetch_destination()
+
+      Req.Test.stub(S3, fn conn ->
+        conn =
+          conn
+          |> Plug.Conn.put_resp_header("x-amz-meta-sha256", hash)
+          |> Plug.Conn.send_chunked(200)
+
+        Enum.reduce(chunks, conn, fn chunk, conn ->
+          {:ok, conn} = Plug.Conn.chunk(conn, chunk)
+          conn
+        end)
+      end)
+
+      assert {:error, ^error} =
+               Archive.fetch_file(Archive.object_key(hash), hash, 6, path, max_bytes: 9)
+
+      refute File.exists?(path)
+    end
+  end
+
+  test "fetch_file does not write or follow remote error and redirect bodies" do
+    hash = BrusselsWtf.Digest.sha256("source")
+
+    for status <- [301, 302, 307, 308, 404, 403, 500] do
+      path = fetch_destination()
+      parent = self()
+
+      install_fetch_adapter(fn request ->
+        response =
+          Req.Response.new(
+            status: status,
+            headers: [{"location", "https://private.invalid/secret"}]
+          )
+
+        {action, {request, response}} =
+          request.into.({:data, "private error"}, {request, response})
+
+        send(parent, {:remote_rejection, action, File.read!(path)})
+        {request, response}
+      end)
+
+      error = if status == 404, do: :not_found, else: {:archive_http_error, status}
+
+      assert {:error, ^error} =
+               Archive.fetch_file(Archive.object_key(hash), hash, 6, path, max_bytes: 9)
+
+      assert_received {:remote_rejection, :halt, ""}
+      refute File.exists?(path)
+    end
+  end
+
+  test "fetch_file redacts partial transport failures and does not retry" do
+    hash = BrusselsWtf.Digest.sha256("source")
+
+    for kind <- [:transport, :exception, :throw] do
+      path = fetch_destination()
+      parent = self()
+
+      install_fetch_adapter(fn request ->
+        send(parent, :single_read)
+        response = Req.Response.new(status: 200)
+        {:cont, _pair} = request.into.({:data, "sou"}, {request, response})
+
+        case kind do
+          :transport -> {request, %Req.TransportError{reason: :timeout}}
+          :exception -> raise "test-secret-key http://rustfs.test/private-object"
+          :throw -> throw("test-secret-key http://rustfs.test/private-object")
+        end
+      end)
+
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          assert {:error, :archive_unavailable} =
+                   Archive.fetch_file(Archive.object_key(hash), hash, 6, path, max_bytes: 9)
+        end)
+
+      assert_received :single_read
+      refute_received :single_read
+      refute log =~ "test-secret-key"
+      refute log =~ "rustfs.test"
+      refute File.exists?(path)
+    end
+  end
+
+  test "S3 fetch validates cap and identity before network access" do
+    hash = BrusselsWtf.Digest.sha256("source")
+    path = fetch_destination()
+    parent = self()
+    install_fetch_adapter(fn _ -> send(parent, :unexpected_fetch) end)
+
+    for {key, hash, size, opts} <- [
+          {Archive.object_key(hash), hash, 6, []},
+          {Archive.object_key(hash), hash, 6, [max_bytes: 5]},
+          {Archive.object_key(hash), "bad", 6, [max_bytes: 9]},
+          {"private/path", hash, 6, [max_bytes: 9]},
+          {Archive.object_key(hash), hash, -1, [max_bytes: 9]}
+        ] do
+      assert {:error, _} = S3.fetch_file(key, hash, size, path, opts)
+    end
+
+    refute_received :unexpected_fetch
+    refute File.exists?(path)
+  end
+
+  test "fetch_file streams an oversized synthetic snapshot through the real HTTP transport" do
+    chunk = :binary.copy("x", 64 * 1024)
+    chunks = List.duplicate(chunk, 416)
+    bytes = IO.iodata_to_binary(chunks)
+    hash = BrusselsWtf.Digest.sha256(bytes)
+    size = byte_size(bytes)
+    path = fetch_destination()
+
+    serve_fetch(fn socket ->
+      :ok =
+        :gen_tcp.send(
+          socket,
+          "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
+        )
+
+      for part <- chunks do
+        :ok =
+          :gen_tcp.send(socket, [Integer.to_string(byte_size(part), 16), "\r\n", part, "\r\n"])
+      end
+
+      :ok = :gen_tcp.send(socket, "0\r\n\r\n")
+    end)
+
+    assert {:ok, %{byte_size: ^size, sha256: ^hash}} =
+             Archive.fetch_file(Archive.object_key(hash), hash, size, path, max_bytes: size)
+
+    assert {:ok, %{byte_size: ^size, sha256: ^hash}} = BrusselsWtf.Digest.sha256_file(path)
+    assert_received {:real_fetch_request, request}
+    assert request =~ "GET /preview-bucket/raw/sha256/"
+    assert String.downcase(request) =~ "accept-encoding: identity"
+    assert String.downcase(request) =~ "authorization: aws4-hmac-sha256"
+  end
+
+  test "fetch_file enforces receive timeout on a real stalled socket" do
+    hash = BrusselsWtf.Digest.sha256("source")
+    path = fetch_destination()
+
+    serve_fetch(fn socket ->
+      :ok =
+        :gen_tcp.send(
+          socket,
+          "HTTP/1.1 200 OK\r\nContent-Length: 6\r\nConnection: close\r\n\r\nsou"
+        )
+
+      Process.sleep(300)
+    end)
+
+    assert {:error, :archive_unavailable} =
+             Archive.fetch_file(Archive.object_key(hash), hash, 6, path,
+               max_bytes: 9,
+               receive_timeout_ms: 30,
+               timeout_ms: 1000
+             )
+
+    assert_received {:real_fetch_request, _}
+    refute File.exists?(path)
+  end
+
+  defp serve_fetch(respond) do
+    {:ok, listener} =
+      :gen_tcp.listen(0, [:binary, active: false, ip: {127, 0, 0, 1}, reuseaddr: true])
+
+    {:ok, {_, port}} = :inet.sockname(listener)
+    parent = self()
+
+    server =
+      Task.async(fn ->
+        {:ok, socket} = :gen_tcp.accept(listener)
+
+        try do
+          {:ok, request} = :gen_tcp.recv(socket, 0, 1000)
+          send(parent, {:real_fetch_request, request})
+          respond.(socket)
+        after
+          :gen_tcp.close(socket)
+        end
+      end)
+
+    on_exit(fn ->
+      :gen_tcp.close(listener)
+      if Process.alive?(server.pid), do: Process.exit(server.pid, :kill)
+    end)
+
+    config = Application.fetch_env!(:brussels_wtf, S3)
+
+    options =
+      config
+      |> Keyword.fetch!(:req_options)
+      |> Keyword.delete(:plug)
+      |> Keyword.put(:aws_endpoint_url_s3, "http://127.0.0.1:#{port}")
+
+    Application.put_env(:brussels_wtf, S3, Keyword.put(config, :req_options, options))
+  end
+
+  defmodule FetchAdapter do
+    def run(request),
+      do: Application.fetch_env!(:brussels_wtf, :archive_fetch_test_adapter).(request)
+  end
+
+  defp install_fetch_adapter(fun) do
+    Application.put_env(:brussels_wtf, :archive_fetch_test_adapter, fun)
+    on_exit(fn -> Application.delete_env(:brussels_wtf, :archive_fetch_test_adapter) end)
+    config = Application.fetch_env!(:brussels_wtf, S3)
+
+    options =
+      config
+      |> Keyword.fetch!(:req_options)
+      |> Keyword.delete(:plug)
+      |> Keyword.put(:adapter, FetchAdapter)
+
+    Application.put_env(:brussels_wtf, S3, Keyword.put(config, :req_options, options))
+  end
+
+  defp fetch_destination do
+    dir = Path.join(System.tmp_dir!(), "archive-s3-fetch-#{System.unique_integer([:positive])}")
+    File.mkdir!(dir)
+    File.chmod!(dir, 0o700)
+    on_exit(fn -> File.rm_rf!(dir) end)
+    Path.join(dir, "snapshot")
+  end
+
   defp run_stub(request) do
     Req.Plug.run(%{request | options: Map.put(request.options, :plug, {Req.Test, S3})})
   end

@@ -92,6 +92,10 @@ if config_env() == :prod do
   # avoiding recursive keyword-list leakage from the build configuration.
   config :brussels_wtf, :process_role, role
 
+  config :brussels_wtf,
+         :large_pdf_ocr_workspace,
+         System.get_env("LARGE_PDF_OCR_WORKSPACE", "/app/large-pdf-ocr-scratch")
+
   cbe = BrusselsWtf.CBE.Runtime.load()
   config :brussels_wtf, :cbe_source, cbe.source
   config :brussels_wtf, cbe.source, cbe.source_config

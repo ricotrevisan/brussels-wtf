@@ -68,6 +68,26 @@ defmodule BrusselsWtf.Review.Case do
       prepare BrusselsWtf.Review.Preparations.FilterInbox
     end
 
+    update :ocr_large_pages do
+      require_atomic? false
+      accept []
+      argument :note, :string, allow_nil?: false
+      argument :source_version_id, :uuid, allow_nil?: false
+      argument :sha256, :string, allow_nil?: false
+      argument :native_run_id, :uuid, allow_nil?: false
+      argument :original_pages, {:array, :integer}, allow_nil?: false
+      change BrusselsWtf.Review.Changes.OcrLargePages
+    end
+
+    update :extract_large_native do
+      require_atomic? false
+      accept []
+      argument :note, :string, allow_nil?: false
+      argument :source_version_id, :uuid, allow_nil?: false
+      argument :sha256, :string, allow_nil?: false
+      change BrusselsWtf.Review.Changes.ExtractLargeNative
+    end
+
     update :retry do
       require_atomic? false
       argument :note, :string, allow_nil?: false
@@ -187,7 +207,16 @@ defmodule BrusselsWtf.Review.Case do
       authorize_if actor_attribute_equals(:role, :reviewer)
     end
 
-    policy action([:retry, :reclassify, :relink, :correct, :mark_unsupported, :resolve_dossier]) do
+    policy action([
+             :ocr_large_pages,
+             :extract_large_native,
+             :retry,
+             :reclassify,
+             :relink,
+             :correct,
+             :mark_unsupported,
+             :resolve_dossier
+           ]) do
       authorize_if actor_attribute_equals(:role, :reviewer)
     end
   end

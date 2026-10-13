@@ -11,6 +11,8 @@ defmodule BrusselsWtf.Review do
     resource BrusselsWtf.Review.Case do
       define :open_review_case, action: :open
 
+      define :ocr_large_pages, action: :ocr_large_pages
+      define :extract_large_native, action: :extract_large_native
       define :retry_review_case, action: :retry
       define :complete_review_retry, action: :complete_retry
       define :reclassify_review_case, action: :reclassify

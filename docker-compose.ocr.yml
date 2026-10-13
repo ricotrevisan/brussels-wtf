@@ -8,8 +8,11 @@ services:
     cpus: 1
     mem_limit: 1g
     pids_limit: 512
+    tmpfs:
+      - /app/large-pdf-ocr-scratch:rw,size=536870912,mode=0700,uid=65534,gid=65534,nosuid,nodev,noexec
     environment:
       PROCESS_ROLE: ocr
+      LARGE_PDF_OCR_WORKSPACE: /app/large-pdf-ocr-scratch
       DATABASE_URL: ${DATABASE_URL:?}
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:?}
       REVIEW_USERNAME: ${REVIEW_USERNAME:?}
