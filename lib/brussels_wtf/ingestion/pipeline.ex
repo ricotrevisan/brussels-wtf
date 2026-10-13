@@ -335,6 +335,16 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
 
   @spec extract(Ecto.UUID.t()) :: :ok | {:error, term()}
   def extract(source_version_id, attempt \\ 1, generation_kind \\ :automatic) do
+    possible_run = Ash.get!(Ingestion.ProcessingRun, source_version_id, error?: false)
+
+    if Ingestion.LargePdfRecovery.held?(possible_run) do
+      {:error, :extraction_only}
+    else
+      extract_unheld(source_version_id, attempt, generation_kind)
+    end
+  end
+
+  defp extract_unheld(source_version_id, attempt, generation_kind) do
     version = Ash.load!(Ingestion.get_source_version!(source_version_id), :source_record)
     run = prepare_native_generation(version, generation_kind)
 
@@ -699,10 +709,14 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         source_version: [:source_record]
       )
 
-    case run.status do
-      :succeeded -> reconcile_ocr_success(run)
-      :failed -> reconcile_failed_review(run)
-      :queued -> run_ocr_attempt(run, attempt)
+    if Ingestion.LargePdfRecovery.held?(run) do
+      {:error, :extraction_only}
+    else
+      case run.status do
+        :succeeded -> reconcile_ocr_success(run)
+        :failed -> reconcile_failed_review(run)
+        :queued -> run_ocr_attempt(run, attempt)
+      end
     end
   end
 
@@ -875,10 +889,14 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         source_version: [:source_record]
       )
 
-    case run.status do
-      :succeeded -> reconcile_native_success(run.source_version, run)
-      :failed -> reconcile_failed_review(run)
-      :queued -> run_review_retry_attempt(run, attempt)
+    if Ingestion.LargePdfRecovery.held?(run) do
+      {:error, :extraction_only}
+    else
+      case run.status do
+        :succeeded -> reconcile_native_success(run.source_version, run)
+        :failed -> reconcile_failed_review(run)
+        :queued -> run_review_retry_attempt(run, attempt)
+      end
     end
   end
 
@@ -959,6 +977,14 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
         source_version: [source_record: [:commune]]
       )
 
+    if Ingestion.LargePdfRecovery.held?(run) do
+      {:error, :extraction_only}
+    else
+      normalize_unheld(run, citation_url, attempt, max_attempts, generation_kind)
+    end
+  end
+
+  defp normalize_unheld(run, citation_url, attempt, max_attempts, generation_kind) do
     version = run.source_version
     source_record = version.source_record
 

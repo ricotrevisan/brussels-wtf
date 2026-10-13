@@ -13,6 +13,9 @@ defmodule BrusselsWtf.Workers.ExtractSource do
         max_attempts: max_attempts
       }) do
     case BrusselsWtf.Ingestion.Pipeline.retry_extraction(processing_run_id, attempt) do
+      {:error, :extraction_only} ->
+        {:discard, "extraction-only generation cannot enter the ordinary pipeline"}
+
       :ok ->
         :ok
 

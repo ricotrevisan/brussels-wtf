@@ -24,6 +24,10 @@ defmodule BrusselsWtf.Archive.Unconfigured do
   def verify_file(_object_key, _sha256, _size), do: {:error, :source_archive_not_configured}
 
   @impl true
+  def fetch_file(_key, _sha256, _size, _destination, _opts),
+    do: {:error, :source_archive_not_configured}
+
+  @impl true
   def get(_object_key), do: {:error, :source_archive_not_configured}
 
   @impl true

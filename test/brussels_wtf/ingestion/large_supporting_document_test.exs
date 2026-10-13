@@ -29,6 +29,8 @@ defmodule BrusselsWtf.Ingestion.LargeSupportingDocumentTest do
     @impl true
     defdelegate get(key), to: BrusselsWtf.Archive.Memory
     @impl true
+    defdelegate fetch_file(key, sha256, size, destination, opts), to: BrusselsWtf.Archive.Memory
+    @impl true
     defdelegate ready?(), to: BrusselsWtf.Archive.Memory
     @impl true
     def verify_file(_key, _sha256, _size), do: {:error, :verification_failed}

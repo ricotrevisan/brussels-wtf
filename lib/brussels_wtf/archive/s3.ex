@@ -49,6 +49,94 @@ defmodule BrusselsWtf.Archive.S3 do
   end
 
   @impl true
+  def fetch_file(object_key, sha256, size, destination, opts) do
+    Archive.with_fetch_file(object_key, sha256, size, destination, opts, fn io ->
+      safely(fn -> fetch_file_object(object_key, sha256, size, io, opts) end)
+    end)
+  end
+
+  defp fetch_file_object(object_key, sha256, size, io, opts) do
+    into = fn {:data, chunk}, {req, response} ->
+      {context, count} =
+        Req.Response.get_private(response, :brussels_file_hash, {:crypto.hash_init(:sha256), 0})
+
+      actual = count + byte_size(chunk)
+
+      error = fetch_response_error(response, size)
+
+      cond do
+        error != nil ->
+          {:halt, {req, Req.Response.put_private(response, :brussels_file_error, error)}}
+
+        actual > size ->
+          response =
+            Req.Response.put_private(
+              response,
+              :brussels_file_error,
+              {:size_mismatch, size, actual}
+            )
+
+          {:halt, {req, response}}
+
+        true ->
+          :ok = IO.binwrite(io, chunk)
+
+          response =
+            Req.Response.put_private(
+              response,
+              :brussels_file_hash,
+              {:crypto.hash_update(context, chunk), actual}
+            )
+
+          {:cont, {req, response}}
+      end
+    end
+
+    case Req.get(
+           request(
+             raw: true,
+             redirect: false,
+             retry: false,
+             receive_timeout: Keyword.get(opts, :receive_timeout_ms, 15_000)
+           ),
+           url: object_url(object_key),
+           headers: [{"accept-encoding", "identity"}],
+           into: into
+         ) do
+      {:ok, %{status: 200} = response} ->
+        case fetch_response_error(response, size) do
+          nil -> verify_file_response(response, sha256, size)
+          reason -> {:error, reason}
+        end
+
+      {:ok, %{status: 404}} ->
+        {:error, :not_found}
+
+      {:ok, %{status: status}} ->
+        {:error, {:archive_http_error, status}}
+
+      {:error, _reason} ->
+        {:error, :archive_unavailable}
+    end
+  end
+
+  defp fetch_response_error(response, size) do
+    cond do
+      response.status != 200 ->
+        :unexpected_status
+
+      Req.Response.get_header(response, "content-encoding") not in [[], ["identity"]] ->
+        :unexpected_content_encoding
+
+      Req.Response.get_header(response, "content-length") not in [[], [Integer.to_string(size)]] ->
+        :invalid_content_length
+
+      true ->
+        nil
+    end
+  end
+
+  @impl true
   def get(object_key) when is_binary(object_key) do
     safely(fn ->
       with :ok <- validate_object_key(object_key) do

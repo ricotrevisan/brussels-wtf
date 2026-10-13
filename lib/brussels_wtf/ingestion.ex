@@ -65,6 +65,13 @@ defmodule BrusselsWtf.Ingestion do
       define :link_processing_run_artifact, action: :link
     end
 
+    resource BrusselsWtf.Ingestion.OcrRecoveryBudget do
+      define :open_ocr_recovery_budget, action: :open
+      define :reserve_ocr_recovery_budget, action: :reserve
+      define :reserve_ocr_assembly_budget, action: :reserve_assembly
+      define :settle_ocr_recovery_budget, action: :settle
+    end
+
     resource BrusselsWtf.Ingestion.ProcessingRun do
       define :get_processing_run, action: :read, get_by: [:id]
       define :record_processing_run, action: :upsert

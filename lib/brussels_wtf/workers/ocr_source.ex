@@ -15,6 +15,9 @@ defmodule BrusselsWtf.Workers.OCRSource do
         max_attempts: max_attempts
       }) do
     case Ingestion.Pipeline.ocr(processing_run_id, attempt) do
+      {:error, :extraction_only} ->
+        {:discard, "extraction-only generation cannot enter the ordinary OCR pipeline"}
+
       :ok ->
         :ok
 
