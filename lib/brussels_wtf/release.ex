@@ -165,6 +165,26 @@ defmodule BrusselsWtf.Release do
     :exit, _ -> {:error, :cbe_index_unavailable}
   end
 
+  @doc """
+  Runs a one-shot operator script with Repo and the archive client, without the
+  application supervisor, web server, or Oban queues.
+
+  Use it from `bin/brussels_wtf eval` so per-invocation environment overrides (for
+  example recorded generation mode) never touch the running release.
+  """
+  def run_ops(script_path, bindings \\ []) do
+    load_app()
+    {:ok, _} = Application.ensure_all_started(:req)
+    {:ok, _} = Application.ensure_all_started(:ash_postgres)
+
+    {:ok, _result, _} =
+      Ecto.Migrator.with_repo(BrusselsWtf.Repo, fn _repo ->
+        Code.eval_string(File.read!(script_path), bindings, file: script_path)
+      end)
+
+    :ok
+  end
+
   defp repos, do: Application.fetch_env!(@app, :ecto_repos)
   defp load_app, do: Application.load(@app)
 end

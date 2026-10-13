@@ -318,6 +318,36 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
              end)
            end)
 
+    # Every recorded decision carries its cited vote line as a complete tally.
+    decided = Enum.filter(items, &(&1.procedural_state == :decision))
+    assert length(decided) == 12
+
+    tallies =
+      Map.new(decided, fn item ->
+        decision = Enum.find(item.decisions, &(&1.id == item.published_decision_id))
+        assert Enum.any?(decision.evidence, &(&1.claim == :vote))
+
+        {item.authoritative_identifier,
+         {decision.votes_for, decision.votes_against, decision.abstentions}}
+      end)
+
+    assert tallies["forest-2025-04-22-35"] == {23, 1, 10}
+    assert tallies["11.06.2026/A/0041"] == {38, 0, 0}
+
+    forest_html =
+      conn
+      |> get("/meetings/forest/2025-04-22?lang=en")
+      |> html_response(200)
+      |> LazyHTML.from_document()
+
+    assert forest_html["[data-vote-stats]"] |> LazyHTML.text() =~ "contested: 1"
+
+    assert [contested] =
+             forest_html["#vote-tally tbody tr[data-vote-status=contested]"] |> Enum.to_list()
+
+    assert contested["td"] |> Enum.map(&(LazyHTML.text(&1) |> String.trim())) |> Enum.slice(3, 3) ==
+             ["23", "1", "10"]
+
     ixelles_page =
       Enum.find(
         pages,
@@ -502,6 +532,140 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
     assert Import.refresh!(replay.id, actor).status == :completed
   end
 
+  test "the vote tally backfill republishes a pre-tally page with cited votes, once", %{
+    conn: conn
+  } do
+    actor = %Actor{id: "rico", role: :reviewer}
+    contract = Manifest.meeting!("forest-2025-04-22")
+    [source] = contract["sources"]
+    text = contract_text(contract, source)
+
+    BrusselsWtf.Processors.Stub.put(source["sha256"], %{
+      extract: %{"text" => text, "page_texts" => [text]}
+    })
+
+    batch = Import.request!([contract["key"]], actor)
+    assert :ok = Import.import_source(batch.id, contract["key"], "primary")
+    [version_id] = Council.get_corpus_import_batch!(batch.id).source_version_ids
+    assert :ok = Ingestion.Pipeline.extract(version_id, 1, :backfill)
+
+    run =
+      version_id
+      |> Ingestion.get_source_version!()
+      |> Ash.load!(:processing_runs)
+      |> Map.fetch!(:processing_runs)
+      |> Enum.find(&(&1.status == :succeeded and &1.processor_role == :native_extraction))
+
+    assert :ok = Ingestion.Pipeline.normalize(run.id, source["url"], 1, 3, :backfill)
+    meeting = Council.get_ingested_meeting!("forest", "2025-04-22")
+
+    coverage_batch =
+      Council.request_coverage_batch!([meeting.id],
+        actor: actor,
+        item_scopes: %{meeting.id => Enum.map(contract["items"], & &1["key"])}
+      )
+
+    assert :ok =
+             perform_job(BrusselsWtf.Workers.PublishMeeting, %{
+               meeting_id: meeting.id,
+               generation_kind: "backfill",
+               coverage_batch_id: coverage_batch.id
+             })
+
+    page = meeting |> Ash.load!(:meeting_page) |> Map.fetch!(:meeting_page)
+    [initial] = Council.list_publication_revisions!(page.id)
+    bundles = Map.new(~w(fr nl en), &{&1, bundle_from_content(initial.content, &1)})
+
+    # Recreate production: decisions published before the corpus cited vote lines.
+    for item <- meeting.agenda_items, item.procedural_state == :decision do
+      item = Ash.load!(item, decision: :evidence)
+      [evidence] = Enum.filter(item.decision.evidence, &(&1.claim == :decision))
+
+      legacy =
+        Council.record_decision!(%{
+          agenda_item_id: item.id,
+          source_version_id: version_id,
+          interpretation_key: "legacy-without-vote",
+          disposition: item.decision.disposition,
+          statement: item.decision.statement
+        })
+
+      Council.record_decision_evidence!(%{
+        decision_id: legacy.id,
+        source_version_id: version_id,
+        claim: :decision,
+        excerpt: evidence.excerpt,
+        location: evidence.location,
+        citation_url: evidence.citation_url,
+        retrieved_at: evidence.retrieved_at
+      })
+
+      item
+      |> Council.mark_agenda_item_decided!(%{
+        current_decision_id: legacy.id,
+        outcome: legacy.disposition
+      })
+      |> Council.publish_agenda_item_state!()
+    end
+
+    legacy_revision =
+      Council.PublicationLifecycle.factual_correction!(
+        page.id,
+        bundles,
+        %{"fr" => "Version antérieure", "nl" => "Eerdere versie", "en" => "Earlier version"},
+        actor
+      )
+
+    before_html = conn |> get("/meetings/forest/2025-04-22?lang=en") |> html_response(200)
+    refute before_html =~ ~s(id="vote-tally")
+
+    script = Application.app_dir(:brussels_wtf, "priv/ops/backfill_vote_tallies_20261013.exs")
+    only = ["forest/2025-04-22"]
+
+    output =
+      ExUnit.CaptureIO.capture_io(fn -> BrusselsWtf.Release.run_ops(script, only: only) end)
+
+    assert output =~ "READ ONLY"
+    assert Council.get_meeting_page!(page.id).current_revision_id == legacy_revision.id
+
+    apply = [
+      only: only,
+      apply?: true,
+      actor_id: actor.id,
+      expected_revisions: %{"forest/2025-04-22" => legacy_revision.id}
+    ]
+
+    output = ExUnit.CaptureIO.capture_io(fn -> BrusselsWtf.Release.run_ops(script, apply) end)
+    assert output =~ "Vote tallies published"
+
+    current =
+      page.id
+      |> Council.get_meeting_page!()
+      |> Ash.load!(:current_revision)
+      |> Map.fetch!(:current_revision)
+
+    assert current.previous_revision_id == legacy_revision.id
+    assert current.revision_kind == :factual_correction
+    assert current.correction_notes["en"] == "Added the vote tally cited in the official minutes."
+
+    html =
+      conn
+      |> get("/meetings/forest/2025-04-22?lang=en")
+      |> html_response(200)
+      |> LazyHTML.from_document()
+
+    assert html["[data-vote-stats]"] |> LazyHTML.text() =~ "unanimous: 2 · contested: 1"
+    assert [row] = html["#vote-tally tbody tr[data-vote-status=contested]"] |> Enum.to_list()
+
+    assert row["td"] |> Enum.map(&(LazyHTML.text(&1) |> String.trim())) |> Enum.slice(3, 3) ==
+             ["23", "1", "10"]
+
+    revisions = length(Council.list_publication_revisions!(page.id))
+    output = ExUnit.CaptureIO.capture_io(fn -> BrusselsWtf.Release.run_ops(script, apply) end)
+    assert output =~ "Vote tallies already published"
+    assert length(Council.list_publication_revisions!(page.id)) == revisions
+  end
+
   for correction_kind <- [:editorial, :recorded] do
     @tag correction_kind: correction_kind
     test "a #{correction_kind} Forest correction replaces public dispositions atomically and preserves interpretations",
@@ -562,7 +726,7 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
             |> Ash.load!(decision: :evidence)
 
           assert item.decision.disposition == :other
-          [evidence] = item.decision.evidence
+          [evidence] = Enum.filter(item.decision.evidence, &(&1.claim == :decision))
           assert evidence.excerpt =~ "De prendre connaissance"
           assert evidence.excerpt =~ "Le Conseil approuve le projet de délibération."
           assert evidence.excerpt =~ "32 votants : 32 votes positifs."

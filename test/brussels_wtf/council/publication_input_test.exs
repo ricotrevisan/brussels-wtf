@@ -344,7 +344,8 @@ defmodule BrusselsWtf.Council.PublicationInputTest do
 
   @recorded_hashes %{
     "ixelles-268" => "sha256:23dbde86c479a1d0f6b9e61f80fd061ced36fe54b1c48a7b6ccc3cc414469e78",
-    "ixelles-267" => "sha256:7717c8fc1cef63761d68f3077fb68bf60da335c88e33d0e3b142f02c0e6053b7"
+    # Re-pinned for issue 127: each decision now carries its cited vote tally.
+    "ixelles-267" => "sha256:41e3319d45d4a03beae74fddc9f515e859ae3924feeb3c60b92ac3655b762a01"
   }
 
   defp expected_recorded_hash(key), do: Map.fetch!(@recorded_hashes, key)
@@ -397,6 +398,13 @@ defmodule BrusselsWtf.Council.PublicationInputTest do
       "decision" ->
         decision = contract["decision"]
         disposition = String.to_existing_atom(decision["disposition"])
+        vote = decision["vote"]
+
+        tally =
+          case vote && BrusselsWtf.Council.VoteTally.parse(vote["excerpt"]) do
+            {:ok, counts} -> counts
+            _none -> nil
+          end
 
         Map.merge(base, %{
           procedural_state: :decision,
@@ -406,10 +414,12 @@ defmodule BrusselsWtf.Council.PublicationInputTest do
             disposition: disposition,
             synthetic: false,
             source_version: version,
-            votes_for: nil,
-            votes_against: nil,
-            abstentions: nil,
-            evidence: [recorded_evidence(decision, version, captured_at, :decision)]
+            votes_for: tally && tally.for,
+            votes_against: tally && tally.against,
+            abstentions: tally && tally.abstentions,
+            evidence:
+              [recorded_evidence(decision, version, captured_at, :decision)] ++
+                if(vote, do: [recorded_evidence(vote, version, captured_at, :vote)], else: [])
           }
         })
     end
