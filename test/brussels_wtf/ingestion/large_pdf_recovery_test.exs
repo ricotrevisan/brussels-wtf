@@ -285,10 +285,10 @@ defmodule BrusselsWtf.Ingestion.LargePdfRecoveryTest do
 
   defp concurrent_connection_probe(ctx, mode) do
     Ecto.Adapters.SQL.Sandbox.mode(Repo, :manual)
-    unboxed = fn fun -> Ecto.Adapters.SQL.Sandbox.unboxed_run(Repo, fun) end
+    probe = BrusselsWtf.CommittedProbe.start!()
 
-    {:ok, {commune, entry, run, job, notifications}} =
-      unboxed.(fn ->
+    {:ok, {entry, run, job, notifications}} =
+      probe.(fn ->
         Repo.transaction(fn ->
           {commune, commune_notifications} =
             Ingestion.create_commune!(
@@ -326,12 +326,10 @@ defmodule BrusselsWtf.Ingestion.LargePdfRecoveryTest do
               from j in Oban.Job, where: fragment("?->>'processing_run_id'", j.args) == ^run.id
             )
 
-          {commune, entry, run, job,
-           commune_notifications ++ entry_notifications ++ request_notifications}
+          {entry, run, job, commune_notifications ++ entry_notifications ++ request_notifications}
         end)
       end)
 
-    on_exit(fn -> cleanup_committed_probe(unboxed, commune, entry, run, job) end)
     Ash.Notifier.notify(notifications)
     Application.put_env(:brussels_wtf, :large_pdf_test_mode, :concurrent)
     parent = self()
@@ -341,7 +339,7 @@ defmodule BrusselsWtf.Ingestion.LargePdfRecoveryTest do
     try do
       first =
         Task.Supervisor.async_nolink(supervisor, fn ->
-          unboxed.(fn ->
+          probe.(fn ->
             %{rows: [[backend]]} = Repo.query!("SELECT pg_backend_pid()")
             send(parent, {:backend, backend})
             BrusselsWtf.Workers.ExtractLargeSource.perform(job)
@@ -359,7 +357,7 @@ defmodule BrusselsWtf.Ingestion.LargePdfRecoveryTest do
         monitor = Process.monitor(first_worker)
 
         if mode == :disconnect do
-          unboxed.(fn -> Repo.query!("SELECT pg_terminate_backend($1)", [backend]) end)
+          probe.(fn -> Repo.query!("SELECT pg_terminate_backend($1)", [backend]) end)
           assert_receive {:DOWN, ^monitor, :process, ^first_worker, _}, 3_000
           assert Task.await(first, 3_000) == {:error, :recovery_unavailable}
           refute File.exists?(first_workspace)
@@ -371,7 +369,7 @@ defmodule BrusselsWtf.Ingestion.LargePdfRecoveryTest do
           assert_receive {:DOWN, ^monitor, :process, ^first_worker, _}, 3_000
         end
 
-        unboxed.(fn ->
+        probe.(fn ->
           queued =
             Ingestion.get_processing_run!(run.id) |> Ash.load!([:attempts, :derived_artifacts])
 
@@ -383,7 +381,7 @@ defmodule BrusselsWtf.Ingestion.LargePdfRecoveryTest do
 
       second =
         Task.Supervisor.async_nolink(supervisor, fn ->
-          unboxed.(fn ->
+          probe.(fn ->
             send(parent, :second_started)
             BrusselsWtf.Workers.ExtractLargeSource.perform(job)
           end)
@@ -403,7 +401,7 @@ defmodule BrusselsWtf.Ingestion.LargePdfRecoveryTest do
       assert Task.await(second, 5_000) == :ok
       refute_receive {:native_process, _}, 100
 
-      unboxed.(fn ->
+      probe.(fn ->
         complete =
           Ingestion.get_processing_run!(run.id) |> Ash.load!([:attempts, :derived_artifacts])
 
@@ -423,63 +421,7 @@ defmodule BrusselsWtf.Ingestion.LargePdfRecoveryTest do
           do: Task.Supervisor.terminate_child(supervisor, pid)
 
       Supervisor.stop(supervisor)
-
-      cleanup_committed_probe(unboxed, commune, entry, run, job)
     end
-  end
-
-  defp cleanup_committed_probe(unboxed, commune, entry, run, job) do
-    unboxed.(fn ->
-      Repo.transaction(fn ->
-        # Existing suggestion-case DELETE trigger returns NULL for other kinds.
-        # Disable triggers only in this disposable test cleanup transaction.
-        Repo.query!("SET LOCAL session_replication_role = replica")
-        Repo.delete_all(from j in Oban.Job, where: j.id == ^job.id)
-
-        for table <- ["processing_run_artifacts", "processing_attempts", "derived_artifacts"] do
-          Repo.delete_all(
-            from row in table,
-              where: field(row, :processing_run_id) == type(^run.id, :binary_id)
-          )
-        end
-
-        Repo.delete_all(from row in "processing_runs", where: row.id == type(^run.id, :binary_id))
-
-        Repo.delete_all(
-          from row in "review_actions",
-            where: row.review_case_id == type(^entry.case_id, :binary_id)
-        )
-
-        Repo.delete_all(
-          from row in "review_cases", where: row.id == type(^entry.case_id, :binary_id)
-        )
-
-        Repo.delete_all(
-          from row in "source_versions",
-            where: row.id == type(^entry.source_version_id, :binary_id)
-        )
-
-        Repo.delete_all(
-          from row in "source_records", where: row.commune_id == type(^commune.id, :binary_id)
-        )
-
-        Repo.delete_all(from row in "communes", where: row.id == type(^commune.id, :binary_id))
-      end)
-
-      assert Repo.one(from j in Oban.Job, where: j.id == ^job.id) == nil
-
-      assert Repo.one(
-               from row in "processing_runs",
-                 where: row.id == type(^run.id, :binary_id),
-                 select: row.id
-             ) == nil
-
-      assert Repo.one(
-               from row in "communes",
-                 where: row.id == type(^commune.id, :binary_id),
-                 select: row.id
-             ) == nil
-    end)
   end
 
   test "unexpected processor exceptions are sanitized, bounded, and clean private files", ctx do
