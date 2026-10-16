@@ -31,6 +31,11 @@ defmodule BrusselsWtf.PrivateDiscoveryTest do
       Ecto.Migrator.run(Repo, "priv/repo/migrations", :up, all: true, log: false)
     end
 
+    # Every operation in this module fails if a write's notification is left behind
+    # in the serialized transaction, even though `quiet/1` hides the Ash warning.
+    previous_missed = Application.get_env(:ash, :missed_notifications)
+    Application.put_env(:ash, :missed_notifications, :raise)
+    on_exit(fn -> Application.put_env(:ash, :missed_notifications, previous_missed) end)
     previous = Application.get_env(:brussels_wtf, :discovery_token_digest)
     Application.put_env(:brussels_wtf, :discovery_token_digest, BrusselsWtf.Digest.sha256(@token))
     on_exit(fn -> Application.put_env(:brussels_wtf, :discovery_token_digest, previous) end)
@@ -1196,6 +1201,120 @@ defmodule BrusselsWtf.PrivateDiscoveryTest do
     })
 
     copy
+  end
+
+  test "serialized writes deliver notifications after commit and drop them on rollback" do
+    run = source!()
+
+    delivered =
+      delivered_notifications(fn ->
+        assert {:ok, _} = Discovery.enqueue([run.id], actor: @actor, max_jobs: 4)
+      end)
+
+    assert {Discovery.SweepState, :initialize} in delivered
+    assert {Discovery.SweepState, :advance} in delivered
+    assert {Discovery.Job, :enqueue} in delivered
+    assert {Discovery.SweepEvent, :record} in delivered
+
+    claim = request("/internal/discovery/claim", %{}) |> json_response(200)
+
+    delivered =
+      delivered_notifications(fn ->
+        assert request("/internal/discovery/#{claim["id"]}/result", result(claim))
+               |> json_response(200)
+      end)
+
+    assert {Identity.Mention, :record} in delivered
+    assert {Discovery.Job, :transition} in delivered
+    assert {Discovery.SweepEvent, :record} in delivered
+
+    assert {:ok, _} = Discovery.pause(actor: @actor)
+    {:ok, %{control: before}} = Discovery.sweep_status(actor: @actor)
+    advance(86_400)
+
+    # The new UTC day is written before the hold rolls the whole admission back.
+    assert delivered_notifications(fn ->
+             assert {:error, :discovery_paused} =
+                      Discovery.enqueue([run.id], actor: @actor, max_jobs: 4)
+           end) == []
+
+    assert {:ok, %{control: ^before}} = Discovery.sweep_status(actor: @actor)
+  end
+
+  test "nested serialized writes deliver once at the outer commit; raises deliver nothing" do
+    delivered =
+      delivered_notifications(fn ->
+        assert {:ok, :ok} =
+                 Discovery.serialized(fn ->
+                   assert {:ok, _} = Discovery.serialized(fn -> Discovery.Sweep.state() end)
+                   Discovery.Sweep.record("status", "rico", %{})
+                   :ok
+                 end)
+      end)
+
+    assert delivered == [
+             {Discovery.SweepState, :initialize},
+             {Discovery.SweepEvent, :record}
+           ]
+
+    assert delivered_notifications(fn ->
+             assert_raise RuntimeError, "boom", fn ->
+               Discovery.serialized(fn ->
+                 Discovery.Sweep.record("status", "rico", %{})
+                 raise "boom"
+               end)
+             end
+           end) == []
+
+    assert Discovery.SweepEvent |> Ash.read!(authorize?: false) |> length() == 1
+
+    assert_raise RuntimeError, "discovery write outside serialized/1", fn ->
+      Discovery.Sweep.record("status", "rico", %{})
+    end
+  end
+
+  # Records what Ash.Notifier.notify/1 actually sent: anything it returns was
+  # still inside a transaction and is not delivered. A process cannot be its own tracer.
+  defp delivered_notifications(fun) do
+    test = self()
+    tracer = spawn_link(fn -> forward_traces(test) end)
+    :erlang.trace_pattern({Ash.Notifier, :notify, 1}, [{:_, [], [{:return_trace}]}], [])
+    :erlang.trace(self(), true, [:call, {:tracer, tracer}])
+
+    try do
+      fun.()
+    after
+      :erlang.trace(self(), false, [:call])
+      :erlang.trace_pattern({Ash.Notifier, :notify, 1}, false, [])
+    end
+
+    ref = :erlang.trace_delivered(self())
+    assert_receive {:trace_delivered, _, ^ref}
+    send(tracer, {:done, test})
+    assert_receive :traces_forwarded
+    traced_deliveries([])
+  end
+
+  defp forward_traces(test) do
+    receive do
+      {:done, ^test} ->
+        send(test, :traces_forwarded)
+
+      trace ->
+        send(test, trace)
+        forward_traces(test)
+    end
+  end
+
+  defp traced_deliveries(acc) do
+    receive do
+      {:trace, _, :call, {Ash.Notifier, :notify, [notifications]}} ->
+        assert_receive {:trace, _, :return_from, {Ash.Notifier, :notify, 1}, unsent}
+        sent = Enum.map(notifications -- unsent, &{&1.resource, &1.action.name})
+        traced_deliveries(acc ++ sent)
+    after
+      0 -> acc
+    end
   end
 
   test "disabled credential fails closed" do

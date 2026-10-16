@@ -15,6 +15,8 @@ defmodule BrusselsWtf.Discovery do
   alias BrusselsWtf.Discovery.{Input, Job, Sweep}
   alias BrusselsWtf.{Clock, Digest, Identity, Ingestion, Repo}
 
+  @notifications :discovery_pending_notifications
+
   resources do
     resource Job
     resource BrusselsWtf.Discovery.SweepState
@@ -344,19 +346,23 @@ defmodule BrusselsWtf.Discovery do
                   "quote" => mention["quote"]
                 })
 
-              Identity.record_mention!(%{
-                occurrence_key:
-                  "discovery:" <>
-                    Input.hash(
-                      {job.source_version_id, job.source_context["artifact_sha256"],
-                       mention["line_id"], mention["text"]}
-                    ),
-                source_version_id: job.source_version_id,
-                agenda_item_id: job.source_context["agenda_item_id"],
-                kind: if(mention["kind"] == "person", do: :person, else: :organization),
-                text: mention["text"],
-                context: context
-              })
+              Identity.record_mention!(
+                %{
+                  occurrence_key:
+                    "discovery:" <>
+                      Input.hash(
+                        {job.source_version_id, job.source_context["artifact_sha256"],
+                         mention["line_id"], mention["text"]}
+                      ),
+                  source_version_id: job.source_version_id,
+                  agenda_item_id: job.source_context["agenda_item_id"],
+                  kind: if(mention["kind"] == "person", do: :person, else: :organization),
+                  text: mention["text"],
+                  context: context
+                },
+                return_notifications?: true
+              )
+              |> collect()
             end)
 
             job =
@@ -541,19 +547,50 @@ defmodule BrusselsWtf.Discovery do
   defp read_jobs(query), do: Ash.read!(query, authorize?: false)
   defp get(id), do: Job |> Ash.Query.filter(id == ^id) |> read_jobs() |> List.first()
 
-  defp transition(job, attrs),
-    do: job |> Ash.Changeset.for_update(:transition, attrs) |> Ash.update!(authorize?: false)
+  defp transition(job, attrs), do: job |> Ash.Changeset.for_update(:transition, attrs) |> write!()
 
   # All writers share one PostgreSQL lock; the partial unique index independently
   # prevents multiple active leases. No transport state or in-memory mutex owns it.
+  # Writes inside it return their Ash notifications here; the outermost call
+  # delivers them only after commit and drops them on rollback or raise.
   @doc false
   def serialized(fun) do
     quiet(fn ->
-      Repo.transaction(fn ->
-        Repo.query!("SELECT pg_advisory_xact_lock(184321, 1)", [], log: false)
-        fun.()
-      end)
+      if Process.get(@notifications) do
+        locked_transaction(fun)
+      else
+        Process.put(@notifications, [])
+
+        try do
+          result = locked_transaction(fun)
+          if match?({:ok, _}, result), do: Ash.Notifier.notify(Process.get(@notifications))
+          result
+        after
+          Process.delete(@notifications)
+        end
+      end
     end)
+  end
+
+  defp locked_transaction(fun) do
+    Repo.transaction(fn ->
+      Repo.query!("SELECT pg_advisory_xact_lock(184321, 1)", [], log: false)
+      fun.()
+    end)
+  end
+
+  @doc false
+  def write!(%Ash.Changeset{action_type: :create} = changeset),
+    do: changeset |> Ash.create!(authorize?: false, return_notifications?: true) |> collect()
+
+  def write!(%Ash.Changeset{action_type: :update} = changeset),
+    do: changeset |> Ash.update!(authorize?: false, return_notifications?: true) |> collect()
+
+  @doc false
+  def collect({result, notifications}) do
+    pending = Process.get(@notifications) || raise "discovery write outside serialized/1"
+    Process.put(@notifications, pending ++ notifications)
+    result
   end
 
   # SQL debug logging must not expose pinned evidence or model output either.
