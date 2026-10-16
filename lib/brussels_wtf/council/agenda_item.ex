@@ -70,6 +70,23 @@ defmodule BrusselsWtf.Council.AgendaItem do
       upsert_fields [:source_wording, :procedural_state, :outcome]
     end
 
+    read :publicly_contested do
+      description "Published decisions with at least one vote against or abstention."
+      argument :commune_slugs, {:array, :string}, allow_nil?: false
+
+      # Mirrors VoteTally.classify/1 returning :contested; nil counts never match.
+      filter expr(
+               published? and council_meeting.meeting_page.publication_status == :published and
+                 council_meeting.commune.slug in ^arg(:commune_slugs) and
+                 (published_decision.votes_against > 0 or published_decision.abstentions > 0)
+             )
+
+      prepare build(
+                sort: [meeting_scheduled_on: :desc, id: :asc],
+                load: [:coverage_variants, :published_decision, council_meeting: [:commune]]
+              )
+    end
+
     update :mark_proposed do
       accept []
       change set_attribute(:procedural_state, :proposal)
@@ -248,6 +265,10 @@ defmodule BrusselsWtf.Council.AgendaItem do
     has_many :decisions, BrusselsWtf.Council.Decision
     has_many :coverage_variants, BrusselsWtf.Council.CoverageVariant
     has_many :dossier_links, BrusselsWtf.Council.DossierLink
+  end
+
+  calculations do
+    calculate :meeting_scheduled_on, :date, expr(council_meeting.scheduled_on)
   end
 
   identities do

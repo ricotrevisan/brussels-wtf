@@ -298,7 +298,9 @@ defmodule BrusselsWtfWeb.MeetingPage do
               <td class="py-2 pr-3 align-top">
                 <a href={"#" <> row.anchor} class="underline underline-offset-2">{row.title}</a>
               </td>
-              <td class="py-2 pr-3 align-top">{disposition_label(@locale, row.disposition)}</td>
+              <td class="py-2 pr-3 align-top">
+                {BrusselsWtfWeb.DispositionLabels.label(@locale, row.disposition)}
+              </td>
               <td class="py-2 pr-3 text-right align-top tabular-nums">{count_cell(row.for)}</td>
               <td class={[
                 "py-2 pr-3 text-right align-top tabular-nums",
@@ -451,7 +453,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
 
         <div :if={@display_state == :decision} class="border-l-4 border-success pl-3">
           <h3 class="font-semibold">
-            {text(@locale, :decision)}: {disposition_label(
+            {text(@locale, :decision)}: {BrusselsWtfWeb.DispositionLabels.label(
               @locale,
               loaded_value(@item.published_decision, :disposition)
             )}
@@ -666,20 +668,6 @@ defmodule BrusselsWtfWeb.MeetingPage do
   defp vote_part(_locale, :for, value), do: "#{value} for"
   defp vote_part(_locale, :against, value), do: "#{value} against"
   defp vote_part(_locale, :abstentions, value), do: "#{value} abstention(s)"
-
-  defp disposition_label("fr", :approved), do: "approuvée"
-  defp disposition_label("fr", :postponed), do: "reportée"
-  defp disposition_label("fr", :rejected), do: "rejetée"
-  defp disposition_label("fr", :amended), do: "amendée"
-  defp disposition_label("fr", :withdrawn), do: "retirée"
-  defp disposition_label("fr", :other), do: "autre"
-  defp disposition_label("nl", :approved), do: "goedgekeurd"
-  defp disposition_label("nl", :postponed), do: "uitgesteld"
-  defp disposition_label("nl", :rejected), do: "verworpen"
-  defp disposition_label("nl", :amended), do: "gewijzigd"
-  defp disposition_label("nl", :withdrawn), do: "ingetrokken"
-  defp disposition_label("nl", :other), do: "andere"
-  defp disposition_label(_locale, value), do: value |> to_string() |> String.replace("_", " ")
 
   defp provenance_labels(values, locale) do
     labels = %{

@@ -65,6 +65,7 @@ defmodule BrusselsWtfWeb.Router do
     dstar("/coverage/coming-up", TimelinePage)
     dstar("/coverage/awaiting-outcome", TimelinePage)
     dstar("/coverage/decisions", TimelinePage)
+    dstar("/coverage/contested-votes", TimelinePage)
     dstar("/mandates", TimelinePage)
     dstar("/meetings/:commune/:municipal_id", MeetingPage)
     dstar("/dossiers/:slug", DossierPage)
