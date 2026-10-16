@@ -878,8 +878,8 @@ defmodule BrusselsWtf.Ingestion.LargePdfOcrRecoveryTest do
   @tag timeout: 40_000
   test "independent OCR claims remain serialized beyond Repo's default checkout", ctx do
     Ecto.Adapters.SQL.Sandbox.mode(Repo, :manual)
-    {commune, run, job} = committed_fixture(ctx)
-    unboxed = fn fun -> Ecto.Adapters.SQL.Sandbox.unboxed_run(Repo, fun) end
+    probe = BrusselsWtf.CommittedProbe.start!()
+    {run, job} = committed_fixture(ctx, probe)
     Application.put_env(:brussels_wtf, :ocr_test_barrier, true)
     on_exit(fn -> Application.delete_env(:brussels_wtf, :ocr_test_barrier) end)
     {:ok, supervisor} = Task.Supervisor.start_link()
@@ -887,20 +887,20 @@ defmodule BrusselsWtf.Ingestion.LargePdfOcrRecoveryTest do
     try do
       owner =
         Task.Supervisor.async_nolink(supervisor, fn ->
-          unboxed.(fn -> BrusselsWtf.Workers.OcrLargeSource.perform(job) end)
+          probe.(fn -> BrusselsWtf.Workers.OcrLargeSource.perform(job) end)
         end)
 
       assert_receive {:ocr_process, child}, 2_000
       Process.sleep(16_000)
 
       assert {:snooze, 30} =
-               unboxed.(fn -> BrusselsWtf.Workers.OcrLargeSource.perform(%{job | attempt: 3}) end)
+               probe.(fn -> BrusselsWtf.Workers.OcrLargeSource.perform(%{job | attempt: 3}) end)
 
       refute_receive {:ocr_process, _}
       send(child, :continue)
       assert :ok = Task.await(owner, 3_000)
 
-      unboxed.(fn ->
+      probe.(fn ->
         assert Ingestion.get_processing_run!(run.id).status == :queued
         assert map_size(Ash.read_one!(Ingestion.OcrRecoveryBudget).reservations) == 1
       end)
@@ -909,7 +909,6 @@ defmodule BrusselsWtf.Ingestion.LargePdfOcrRecoveryTest do
           do: Task.Supervisor.terminate_child(supervisor, pid)
 
       Supervisor.stop(supervisor)
-      cleanup_committed(commune)
     end
   end
 
@@ -917,8 +916,8 @@ defmodule BrusselsWtf.Ingestion.LargePdfOcrRecoveryTest do
   test "ownership connection loss cancels live work without refunding the committed allowance",
        ctx do
     Ecto.Adapters.SQL.Sandbox.mode(Repo, :manual)
-    {commune, run, job} = committed_fixture(ctx)
-    unboxed = fn fun -> Ecto.Adapters.SQL.Sandbox.unboxed_run(Repo, fun) end
+    probe = BrusselsWtf.CommittedProbe.start!()
+    {run, job} = committed_fixture(ctx, probe)
     Application.put_env(:brussels_wtf, :ocr_test_barrier, true)
     on_exit(fn -> Application.delete_env(:brussels_wtf, :ocr_test_barrier) end)
     parent = self()
@@ -927,7 +926,7 @@ defmodule BrusselsWtf.Ingestion.LargePdfOcrRecoveryTest do
     try do
       owner =
         Task.Supervisor.async_nolink(supervisor, fn ->
-          unboxed.(fn ->
+          probe.(fn ->
             %{rows: [[backend]]} = Repo.query!("SELECT pg_backend_pid()")
             send(parent, {:ownership_backend, backend})
             BrusselsWtf.Workers.OcrLargeSource.perform(job)
@@ -937,11 +936,11 @@ defmodule BrusselsWtf.Ingestion.LargePdfOcrRecoveryTest do
       assert_receive {:ownership_backend, backend}, 2_000
       assert_receive {:ocr_process, child}, 2_000
       monitor = Process.monitor(child)
-      unboxed.(fn -> Repo.query!("SELECT pg_terminate_backend($1)", [backend]) end)
+      probe.(fn -> Repo.query!("SELECT pg_terminate_backend($1)", [backend]) end)
       assert_receive {:DOWN, ^monitor, :process, ^child, _}, 3_000
       assert {:error, :ocr_recovery_unavailable} = Task.await(owner, 3_000)
 
-      unboxed.(fn ->
+      probe.(fn ->
         assert Ingestion.get_processing_run!(run.id).status == :queued
         budget = Ash.read_one!(Ingestion.OcrRecoveryBudget)
         assert budget.cpu_ms == 90_000 and budget.wall_ms == 120_000
@@ -953,7 +952,6 @@ defmodule BrusselsWtf.Ingestion.LargePdfOcrRecoveryTest do
           do: Task.Supervisor.terminate_child(supervisor, pid)
 
       Supervisor.stop(supervisor)
-      cleanup_committed(commune)
     end
   end
 
@@ -961,9 +959,9 @@ defmodule BrusselsWtf.Ingestion.LargePdfOcrRecoveryTest do
   test "real worker death releases the execution guard but cannot restore unknown spending",
        ctx do
     Ecto.Adapters.SQL.Sandbox.mode(Repo, :manual)
-    {commune, run, job} = committed_fixture(ctx)
-    unboxed = fn fun -> Ecto.Adapters.SQL.Sandbox.unboxed_run(Repo, fun) end
-    assert :ok = unboxed.(fn -> BrusselsWtf.Workers.OcrLargeSource.perform(job) end)
+    probe = BrusselsWtf.CommittedProbe.start!()
+    {run, job} = committed_fixture(ctx, probe)
+    assert :ok = probe.(fn -> BrusselsWtf.Workers.OcrLargeSource.perform(job) end)
     assert_receive {:ocr_page, 2, _, _}
     Application.put_env(:brussels_wtf, :ocr_test_barrier, true)
     on_exit(fn -> Application.delete_env(:brussels_wtf, :ocr_test_barrier) end)
@@ -972,7 +970,7 @@ defmodule BrusselsWtf.Ingestion.LargePdfOcrRecoveryTest do
     try do
       owner =
         Task.Supervisor.async_nolink(supervisor, fn ->
-          unboxed.(fn -> BrusselsWtf.Workers.OcrLargeSource.perform(job) end)
+          probe.(fn -> BrusselsWtf.Workers.OcrLargeSource.perform(job) end)
         end)
 
       assert_receive {:ocr_process, child}, 2_000
@@ -984,7 +982,7 @@ defmodule BrusselsWtf.Ingestion.LargePdfOcrRecoveryTest do
       refute Process.alive?(owner.pid)
       refute Process.alive?(child)
 
-      unboxed.(fn ->
+      probe.(fn ->
         assert Ingestion.get_processing_run!(run.id).status == :queued
         budget = Ash.read_one!(Ingestion.OcrRecoveryBudget)
         assert budget.wall_ms == 120_000
@@ -992,9 +990,9 @@ defmodule BrusselsWtf.Ingestion.LargePdfOcrRecoveryTest do
       end)
 
       assert :ok =
-               unboxed.(fn -> BrusselsWtf.Workers.OcrLargeSource.perform(%{job | attempt: 3}) end)
+               probe.(fn -> BrusselsWtf.Workers.OcrLargeSource.perform(%{job | attempt: 3}) end)
 
-      unboxed.(fn ->
+      probe.(fn ->
         failed = Ingestion.get_processing_run!(run.id)
         assert failed.status == :failed
 
@@ -1010,22 +1008,17 @@ defmodule BrusselsWtf.Ingestion.LargePdfOcrRecoveryTest do
           do: Task.Supervisor.terminate_child(supervisor, pid)
 
       Supervisor.stop(supervisor)
-      cleanup_committed(commune)
     end
   end
 
-  defp committed_fixture(ctx) do
-    unboxed = fn fun -> Ecto.Adapters.SQL.Sandbox.unboxed_run(Repo, fun) end
-
-    unboxed.(fn ->
+  defp committed_fixture(ctx, probe) do
+    probe.(fn ->
       commune =
         Ingestion.create_commune!(%{
           slug: "ocr-death-#{Ecto.UUID.generate()}",
           name: "Isolated fixture",
           index_url: "https://example.test"
         })
-
-      on_exit(fn -> cleanup_committed(commune.id) end)
 
       record =
         Ingestion.upsert_source_record!(%{
@@ -1141,81 +1134,7 @@ defmodule BrusselsWtf.Ingestion.LargePdfOcrRecoveryTest do
           from j in Oban.Job, where: fragment("?->>'processing_run_id'", j.args) == ^run.id
         )
 
-      {commune.id, run, job}
-    end)
-  end
-
-  defp cleanup_committed(commune_id) do
-    Ecto.Adapters.SQL.Sandbox.unboxed_run(Repo, fn ->
-      Repo.transaction(fn ->
-        # Exact synthetic commune IDs only, disposable test database only.
-        # Existing immutable/suggestion triggers prohibit ordinary deletion.
-        Repo.query!("SET LOCAL session_replication_role = replica")
-
-        versions =
-          Repo.all(
-            from v in "source_versions",
-              join: r in "source_records",
-              on: v.source_record_id == r.id,
-              where: r.commune_id == type(^commune_id, :binary_id),
-              select: type(v.id, :binary_id)
-          )
-
-        runs =
-          Repo.all(
-            from p in "processing_runs",
-              where: type(p.source_version_id, :binary_id) in ^versions,
-              select: type(p.id, :binary_id)
-          )
-
-        cases =
-          Repo.all(
-            from c in "review_cases",
-              where: c.commune_id == type(^commune_id, :binary_id),
-              select: type(c.id, :binary_id)
-          )
-
-        Repo.delete_all(
-          from j in Oban.Job, where: fragment("?->>'processing_run_id'", j.args) in ^runs
-        )
-
-        for table <- [
-              "ocr_recovery_budgets",
-              "processing_run_artifacts",
-              "processing_attempts",
-              "derived_artifacts"
-            ] do
-          Repo.delete_all(
-            from row in table, where: type(field(row, :processing_run_id), :binary_id) in ^runs
-          )
-        end
-
-        Repo.delete_all(from row in "processing_runs", where: type(row.id, :binary_id) in ^runs)
-
-        Repo.delete_all(
-          from row in "review_actions", where: type(row.review_case_id, :binary_id) in ^cases
-        )
-
-        Repo.delete_all(
-          from row in "review_cases", where: row.commune_id == type(^commune_id, :binary_id)
-        )
-
-        Repo.delete_all(
-          from row in "source_versions", where: type(row.id, :binary_id) in ^versions
-        )
-
-        Repo.delete_all(
-          from row in "source_records", where: row.commune_id == type(^commune_id, :binary_id)
-        )
-
-        Repo.delete_all(from row in "communes", where: row.id == type(^commune_id, :binary_id))
-      end)
-
-      assert Repo.one(
-               from row in "communes",
-                 where: row.id == type(^commune_id, :binary_id),
-                 select: row.id
-             ) == nil
+      {run, job}
     end)
   end
 
