@@ -5,6 +5,8 @@ defmodule BrusselsWtf.Council do
 
   use Ash.Domain, otp_app: :brussels_wtf
 
+  alias BrusselsWtf.Council.VoteTally
+
   resources do
     resource BrusselsWtf.Council.Meeting do
       define :get_meeting, action: :read, get_by: [:id]
@@ -141,6 +143,31 @@ defmodule BrusselsWtf.Council do
       define :upsert_locale_variant, action: :upsert
       define :list_locale_variants, action: :for_page, args: [:meeting_page_id]
     end
+  end
+
+  @contested_per_page 25
+
+  @doc """
+  Lists one page of published contested decisions for the selected communes,
+  newest meeting first, with paging applied in the database.
+
+  Returns `%{items: agenda_items, more?: boolean}`. `page` starts at 1.
+  """
+  def list_contested_decisions!(communes, page \\ 1) when is_integer(page) do
+    items =
+      BrusselsWtf.Council.AgendaItem
+      |> Ash.Query.for_read(:publicly_contested, %{commune_slugs: communes})
+      |> Ash.Query.offset((Kernel.max(page, 1) - 1) * @contested_per_page)
+      |> Ash.Query.limit(@contested_per_page + 1)
+      |> Ash.read!()
+
+    %{
+      items:
+        items
+        |> Enum.take(@contested_per_page)
+        |> Enum.filter(&(VoteTally.classify(&1.published_decision) == :contested)),
+      more?: length(items) > @contested_per_page
+    }
   end
 
   @doc "Lists public category entries with filtering and search applied before any preview limit."

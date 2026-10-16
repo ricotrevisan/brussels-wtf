@@ -19,12 +19,13 @@ defmodule BrusselsWtfWeb.TimelinePage do
     path = "/" <> String.trim(conn.request_path, "/")
     homepage? = path == "/"
     directory? = path == "/mandates"
+    contested? = path == "/coverage/contested-votes"
     category = Enum.find(categories(), &(&1.path == path))
 
-    q = if homepage?, do: "", else: search_query(params["q"])
+    q = if homepage? or contested?, do: "", else: search_query(params["q"])
 
     matching =
-      if directory? do
+      if directory? or contested? do
         %{}
       else
         Council.list_public_timeline!(
@@ -38,7 +39,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
         )
       end
 
-    page = if directory?, do: page_number(params["page"]), else: 1
+    page = if directory? or contested?, do: page_number(params["page"]), else: 1
 
     mandates =
       if directory? do
@@ -47,23 +48,24 @@ defmodule BrusselsWtfWeb.TimelinePage do
         %{mandates: [], more?: false}
       end
 
+    contested =
+      if contested? do
+        Council.list_contested_decisions!(selected, page)
+      else
+        %{items: [], more?: false}
+      end
+
     assign(BrusselsWtfWeb.FollowControl.load(conn),
-      page_title:
-        text(
-          locale,
-          if(directory?, do: :verified_mandates, else: (category && category.label) || :title)
-        ),
+      page_title: text(locale, title_key(directory?, contested?, category)),
       html_lang: locale,
       resource_path: path,
       homepage?: homepage?,
       directory?: directory?,
-      title:
-        text(
-          locale,
-          if(directory?, do: :verified_mandates, else: (category && category.label) || :title)
-        ),
+      contested?: contested?,
+      title: text(locale, title_key(directory?, contested?, category)),
       home_path: selection_path("/", locale, selected),
       directory_path: selection_path("/mandates", locale, selected),
+      contested_path: selection_path("/coverage/contested-votes", locale, selected),
       reset_path: selection_path(path, locale, selected),
       locale: locale,
       communes:
@@ -71,6 +73,8 @@ defmodule BrusselsWtfWeb.TimelinePage do
       selected_communes: selected,
       mandates: mandates.mandates,
       more_mandates?: mandates.more?,
+      contested_rows: Enum.map(contested.items, &contested_row(&1, locale, selected)),
+      more_contested?: contested.more?,
       page: page,
       q: q,
       language_path: selection_path(path, nil, selected, q),
@@ -86,6 +90,33 @@ defmodule BrusselsWtfWeb.TimelinePage do
           })
         end)
     )
+  end
+
+  defp title_key(true, _contested?, _category), do: :verified_mandates
+  defp title_key(_directory?, true, _category), do: :contested_votes
+  defp title_key(_directory?, _contested?, category), do: (category && category.label) || :title
+
+  defp contested_row(item, locale, selected) do
+    meeting = item.council_meeting
+    decision = item.published_decision
+    variant = Enum.find(item.coverage_variants, &(&1.locale == locale))
+
+    %{
+      commune: commune_name(locale, meeting.commune.slug, meeting.commune.name),
+      commune_slug: meeting.commune.slug,
+      date: meeting.scheduled_on,
+      title: if(variant, do: variant.title, else: text(locale, :item_unavailable)),
+      disposition: decision.disposition,
+      for: decision.votes_for,
+      against: decision.votes_against,
+      abstentions: decision.abstentions,
+      href:
+        selection_path(
+          "/meetings/#{meeting.commune.slug}/#{meeting.municipal_identifier}",
+          locale,
+          selected
+        ) <> "##{item.stable_anchor}"
+    }
   end
 
   defp search_query(value) when is_binary(value), do: String.slice(value, 0, 200)
@@ -134,7 +165,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
         <form method="get" action={@resource_path} data-reader-communes class="space-y-4">
           <input type="hidden" name="lang" value={@locale} />
           <input type="hidden" name="communes_submitted" value="1" />
-          <label :if={not @homepage?} class="block text-sm font-medium">
+          <label :if={not @homepage? and not @contested?} class="block text-sm font-medium">
             {text(@locale, :search)}
             <input type="search" name="q" value={@q} class="input input-bordered mt-1 w-full" />
           </label>
@@ -238,8 +269,9 @@ defmodule BrusselsWtfWeb.TimelinePage do
               </a>
             </li>
           </ul>
-          <.mandates_pager
+          <.pager
             :if={@directory? and (@page > 1 or @more_mandates?)}
+            label={text(@locale, :mandates_pages)}
             page={@page}
             more?={@more_mandates?}
             locale={@locale}
@@ -251,6 +283,79 @@ defmodule BrusselsWtfWeb.TimelinePage do
         <p :if={@directory? and @mandates == []} class="mt-8 text-base-content/80">
           {text(@locale, :none_mandates)}
         </p>
+        <section
+          :if={@contested?}
+          id="contested-votes"
+          class="mt-8 border-t border-base-300 pt-5"
+          aria-labelledby="coverage-title"
+        >
+          <p class="text-sm text-base-content/80">{text(@locale, :contested_intro)}</p>
+          <p
+            :if={@contested_rows == []}
+            class="mt-3 text-base-content/80"
+            data-contested-empty
+          >
+            {text(@locale, :none_contested)}
+          </p>
+          <div :if={@contested_rows != []} class="mt-3 overflow-x-auto">
+            <table class="w-full text-left text-sm">
+              <thead class="border-b border-base-300 text-base-content/70">
+                <tr>
+                  <th scope="col" class="py-2 pr-3 font-medium">{text(@locale, :commune)}</th>
+                  <th scope="col" class="py-2 pr-3 font-medium">{text(@locale, :meeting_date)}</th>
+                  <th scope="col" class="py-2 pr-3 font-medium">{text(@locale, :item)}</th>
+                  <th scope="col" class="py-2 pr-3 font-medium">{text(@locale, :decision)}</th>
+                  <th scope="col" class="py-2 pr-3 text-right font-medium">
+                    {text(@locale, :votes_for)}
+                  </th>
+                  <th scope="col" class="py-2 pr-3 text-right font-medium">
+                    {text(@locale, :votes_against)}
+                  </th>
+                  <th scope="col" class="py-2 text-right font-medium">
+                    {text(@locale, :votes_abstentions)}
+                  </th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-base-300">
+                <tr :for={row <- @contested_rows} data-commune={row.commune_slug}>
+                  <td class="py-2 pr-3 align-top">{row.commune}</td>
+                  <td class="py-2 pr-3 align-top tabular-nums">
+                    <time datetime={Date.to_iso8601(row.date)}>{format_date(row.date)}</time>
+                  </td>
+                  <td class="py-2 pr-3 align-top">
+                    <a href={row.href} class="underline underline-offset-2">{row.title}</a>
+                  </td>
+                  <td class="py-2 pr-3 align-top">
+                    {BrusselsWtfWeb.DispositionLabels.label(@locale, row.disposition)}
+                  </td>
+                  <td class="py-2 pr-3 text-right align-top tabular-nums">{count_cell(row.for)}</td>
+                  <td class={[
+                    "py-2 pr-3 text-right align-top tabular-nums",
+                    (row.against || 0) > 0 && "font-semibold text-error"
+                  ]}>
+                    {count_cell(row.against)}
+                  </td>
+                  <td class={[
+                    "py-2 text-right align-top tabular-nums",
+                    (row.abstentions || 0) > 0 && "font-semibold text-warning"
+                  ]}>
+                    {count_cell(row.abstentions)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <.pager
+            :if={@page > 1 or @more_contested?}
+            label={text(@locale, :contested_pages)}
+            page={@page}
+            more?={@more_contested?}
+            locale={@locale}
+            selected={@selected_communes}
+            q={@q}
+            path={@resource_path}
+          />
+        </section>
       </div>
 
       <section
@@ -284,6 +389,12 @@ defmodule BrusselsWtfWeb.TimelinePage do
               href={@directory_path}
             >{text(@locale, :verified_mandates)}</a>
           </li>
+          <li :if={not @contested?}>
+            <a
+              class="inline-flex min-h-11 items-center underline underline-offset-2"
+              href={@contested_path}
+            >{text(@locale, :contested_votes)}</a>
+          </li>
           <li>
             <a
               class="inline-flex min-h-11 items-center underline underline-offset-2"
@@ -304,6 +415,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
     """
   end
 
+  attr :label, :string, required: true
   attr :page, :integer, required: true
   attr :more?, :boolean, required: true
   attr :locale, :string, required: true
@@ -311,29 +423,26 @@ defmodule BrusselsWtfWeb.TimelinePage do
   attr :q, :string, required: true
   attr :path, :string, required: true
 
-  def mandates_pager(assigns) do
+  def pager(assigns) do
     ~H"""
-    <nav
-      class="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm"
-      aria-label={text(@locale, :mandates_pages)}
-    >
+    <nav class="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm" aria-label={@label}>
       <a
         :if={@page > 1}
         rel="prev"
-        href={mandate_page_path(@path, @locale, @selected, @q, @page - 1)}
+        href={page_path(@path, @locale, @selected, @q, @page - 1)}
         class="inline-flex min-h-11 items-center underline underline-offset-2"
       >{text(@locale, :previous_page)}</a>
       <a
         :if={@more?}
         rel="next"
-        href={mandate_page_path(@path, @locale, @selected, @q, @page + 1)}
+        href={page_path(@path, @locale, @selected, @q, @page + 1)}
         class="inline-flex min-h-11 items-center underline underline-offset-2"
       >{text(@locale, :next_page)}</a>
     </nav>
     """
   end
 
-  defp mandate_page_path(path, locale, selected, q, page) do
+  defp page_path(path, locale, selected, q, page) do
     base = selection_path(path, locale, selected, q)
     if page > 1, do: base <> "&page=#{page}", else: base
   end
@@ -490,6 +599,9 @@ defmodule BrusselsWtfWeb.TimelinePage do
 
   defp format_date(date), do: Date.to_iso8601(date)
 
+  defp count_cell(nil), do: "—"
+  defp count_cell(value), do: value
+
   defp text("fr", key), do: Map.fetch!(fr_text(), key)
   defp text("nl", key), do: Map.fetch!(nl_text(), key)
   defp text(_locale, key), do: Map.fetch!(en_text(), key)
@@ -538,6 +650,15 @@ defmodule BrusselsWtfWeb.TimelinePage do
       mandates_pages: "Mandate pages",
       previous_page: "Previous page",
       next_page: "Next page",
+      contested_votes: "Contested votes",
+      contested_intro: "Decisions with at least one vote against or one abstention.",
+      none_contested: "No contested vote is recorded in this selection.",
+      contested_pages: "Contested vote pages",
+      commune: "Commune",
+      meeting_date: "Meeting date",
+      votes_for: "For",
+      votes_against: "Against",
+      votes_abstentions: "Abst.",
       source: "Source"
     }
   end
@@ -587,6 +708,15 @@ defmodule BrusselsWtfWeb.TimelinePage do
       mandates_pages: "Pages de mandats",
       previous_page: "Page précédente",
       next_page: "Page suivante",
+      contested_votes: "Votes contestés",
+      contested_intro: "Décisions ayant recueilli au moins un vote contre ou une abstention.",
+      none_contested: "Aucun vote contesté n’est documenté dans cette sélection.",
+      contested_pages: "Pages de votes contestés",
+      commune: "Commune",
+      meeting_date: "Date de la séance",
+      votes_for: "Pour",
+      votes_against: "Contre",
+      votes_abstentions: "Abst.",
       source: "Source"
     }
   end
@@ -635,6 +765,15 @@ defmodule BrusselsWtfWeb.TimelinePage do
       mandates_pages: "Mandatenpagina's",
       previous_page: "Vorige pagina",
       next_page: "Volgende pagina",
+      contested_votes: "Betwiste stemmingen",
+      contested_intro: "Besluiten met minstens één tegenstem of onthouding.",
+      none_contested: "In deze selectie is geen betwiste stemming gedocumenteerd.",
+      contested_pages: "Pagina's met betwiste stemmingen",
+      commune: "Gemeente",
+      meeting_date: "Datum van de zitting",
+      votes_for: "Voor",
+      votes_against: "Tegen",
+      votes_abstentions: "Onth.",
       source: "Bron"
     }
   end

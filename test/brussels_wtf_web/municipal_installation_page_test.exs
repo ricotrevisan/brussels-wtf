@@ -183,7 +183,8 @@ defmodule BrusselsWtfWeb.MunicipalInstallationPageTest do
     import Phoenix.LiveViewTest
 
     pager =
-      render_component(&BrusselsWtfWeb.TimelinePage.mandates_pager/1,
+      render_component(&BrusselsWtfWeb.TimelinePage.pager/1,
+        label: "Mandate pages",
         page: 2,
         more?: true,
         locale: "en",
@@ -209,7 +210,8 @@ defmodule BrusselsWtfWeb.MunicipalInstallationPageTest do
     end
 
     french =
-      render_component(&BrusselsWtfWeb.TimelinePage.mandates_pager/1,
+      render_component(&BrusselsWtfWeb.TimelinePage.pager/1,
+        label: "Mandate pages",
         page: 1,
         more?: true,
         locale: "fr",
@@ -224,7 +226,8 @@ defmodule BrusselsWtfWeb.MunicipalInstallationPageTest do
     assert LazyHTML.attribute(french[~s(a[rel="prev"])], "href") == []
 
     last =
-      render_component(&BrusselsWtfWeb.TimelinePage.mandates_pager/1,
+      render_component(&BrusselsWtfWeb.TimelinePage.pager/1,
+        label: "Mandate pages",
         page: 3,
         more?: false,
         locale: "nl",
