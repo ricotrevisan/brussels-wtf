@@ -99,7 +99,7 @@ defmodule BrusselsWtf.Discovery.Sweep do
           else:
             job
             |> Ash.Changeset.for_update(:transition, %{batch_ids: job.batch_ids ++ [batch_id]})
-            |> Ash.update!(authorize?: false)
+            |> Discovery.write!()
       end)
 
     advance(control, %{day_used: control.day_used + new_count})
@@ -389,11 +389,11 @@ defmodule BrusselsWtf.Discovery.Sweep do
   defp count(query), do: Ash.count!(query, authorize?: false)
 
   defp create(resource, action, attrs),
-    do: resource |> Ash.Changeset.for_create(action, attrs) |> Ash.create!(authorize?: false)
+    do: resource |> Ash.Changeset.for_create(action, attrs) |> Discovery.write!()
 
   defp advance(control, attrs),
     do:
       control
       |> Ash.Changeset.for_update(:advance, Map.put(attrs, :revision, control.revision + 1))
-      |> Ash.update!(authorize?: false)
+      |> Discovery.write!()
 end
