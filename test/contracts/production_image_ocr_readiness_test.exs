@@ -6,6 +6,10 @@ defmodule BrusselsWtf.Contracts.ProductionImageOcrReadinessTest do
   @image System.get_env("PRODUCTION_IMAGE", "brussels-wtf:issue21")
   @postgres_image System.get_env("OCR_CONTRACT_POSTGRES_IMAGE", "postgres:17-alpine")
   @fixtures Path.expand("../support/ocr_readiness_contract", __DIR__)
+  @compose Path.expand("../../docker-compose.ocr.yml", __DIR__)
+  @pdf_fixture Path.expand("../support/pdf_contract/forest-partial-scan.pdf", __DIR__)
+  @scratch "/app/large-pdf-ocr-scratch"
+  @gib 1_073_741_824
 
   setup_all do
     suffix = "#{System.os_time(:millisecond)}-#{System.unique_integer([:positive])}"
@@ -227,6 +231,232 @@ defmodule BrusselsWtf.Contracts.ProductionImageOcrReadinessTest do
     refute logs =~ "contract-archive-secret-long"
   end
 
+  @tag timeout: 300_000
+  test "production Compose starts healthy without swap and writes only to its tmpfs mounts",
+       context do
+    container = start_compose(context, start_archive(context))
+
+    host =
+      docker!(["inspect", container, "--format", "{{json .HostConfig}}"]) |> Jason.decode!()
+
+    assert host["NanoCpus"] == 1_000_000_000
+    assert host["Memory"] == @gib
+    assert host["MemorySwap"] == @gib
+    assert host["PidsLimit"] == 512
+    assert host["ReadonlyRootfs"] == true
+    assert host["IpcMode"] == "none"
+    refute host["Privileged"]
+    assert host["PortBindings"] in [nil, %{}]
+    assert host["Tmpfs"] |> Map.keys() |> Enum.sort() == [@scratch, "/dev/mqueue", "/tmp"]
+
+    eventually(
+      fn ->
+        assert state(container, "{{.State.Running}}") == "true",
+               "Compose startup failed:\n#{docker!(["logs", container])}"
+
+        state(container, "{{.State.Health.Status}}") == "healthy"
+      end,
+      120_000
+    )
+
+    worker_pid = rpc(container, "System.pid()")
+
+    assert rpc(container, "BrusselsWtf.PDF.FileProcessor.validate_ocr_workspace(\"#{@scratch}\")") ==
+             ":ok"
+
+    # The kernel, not only Docker's stored configuration, must refuse swap.
+    assert exec!(container, ["cat", "/sys/fs/cgroup/memory.max"]) == "#{@gib}"
+    assert exec!(container, ["cat", "/sys/fs/cgroup/memory.swap.max"]) == "0"
+
+    # Touch more anonymous memory than the limit. With swap available the
+    # allocation would page out and succeed; here the cgroup OOM-kills it, the
+    # largest process, while the worker keeps running.
+    {output, status} =
+      docker([
+        "exec",
+        container,
+        "python3",
+        "-c",
+        "b = b'x' * (1280 << 20); print(len(b))"
+      ])
+
+    assert status == 137, "allocation beyond 1 GiB was not OOM-killed (#{status}):\n#{output}"
+    assert exec!(container, ["cat", "/sys/fs/cgroup/memory.swap.current"]) == "0"
+
+    assert exec!(container, ["cat", "/sys/fs/cgroup/memory.events"]) =~
+             ~r/^oom_kill [1-9]/m
+
+    assert rpc(container, "System.pid()") == worker_pid
+    assert {_, 0} = health(container, context.command)
+
+    # Every directory or regular file the runtime user may write is inside a
+    # declared tmpfs. `-writable` uses access(2), so read-only mounts count.
+    # Directories the user cannot search hold nothing it can write either.
+    {output, _status} =
+      docker([
+        "exec",
+        container,
+        "find",
+        "/",
+        "(",
+        "-path",
+        "/proc",
+        "-o",
+        "-path",
+        "/sys",
+        ")",
+        "-prune",
+        "-o",
+        "(",
+        "-type",
+        "d",
+        "-o",
+        "-type",
+        "f",
+        ")",
+        "-writable",
+        "-print"
+      ])
+
+    {denied, writable} =
+      output
+      |> String.split("\n", trim: true)
+      |> Enum.split_with(&String.starts_with?(&1, "find: "))
+
+    for line <- denied, do: assert(line =~ ~r/: Permission denied$/, line)
+
+    assert writable != []
+
+    for path <- writable do
+      assert path in ["/tmp", @scratch] or String.starts_with?(path, ["/tmp/", @scratch <> "/"]),
+             "writable outside the declared tmpfs mounts: #{path}"
+    end
+
+    for user <- ["65534", "0"],
+        path <- ["/probe", "/app/probe", "/var/tmp/probe", "/dev/mqueue/probe"] do
+      {output, status} = docker(["exec", "-u", user, container, "touch", path])
+      assert status != 0
+      assert output =~ "Read-only file system", "#{user} #{path}: #{output}"
+    end
+
+    # /tmp is capped, so overflowing it cannot become unbounded disk writes.
+    {output, status} =
+      docker(["exec", container, "sh", "-c", "head -c 300M /dev/zero > /tmp/fill"])
+
+    assert status != 0
+    assert output =~ "No space left on device"
+    exec!(container, ["rm", "-f", "/tmp/fill"])
+
+    # The real OCR toolchains run inside this envelope: ordinary OCR in /tmp
+    # and file-backed page OCR in the dedicated scratch mount.
+    {_, 0} =
+      System.cmd("sh", [
+        "-c",
+        "docker exec -i \"$1\" sh -c 'cat > /tmp/input.pdf' < \"$2\"",
+        "sh",
+        container,
+        @pdf_fixture
+      ])
+
+    ordinary =
+      docker!([
+        "exec",
+        "-e",
+        "PDF_CONTRACT_PATH=/tmp/input.pdf",
+        "-e",
+        "PDF_CONTRACT_MODE=ocr",
+        "-e",
+        "PDF_CONTRACT_PAGES=2",
+        container,
+        "/app/bin/brussels_wtf",
+        "eval",
+        "BrusselsWtf.PDF.Contract.print_from_env()"
+      ])
+      |> String.split("\n")
+      |> Enum.find(&String.starts_with?(&1, "PDF_CONTRACT_JSON="))
+      |> String.replace_prefix("PDF_CONTRACT_JSON=", "")
+      |> Jason.decode!()
+
+    assert ordinary["status"] == "ok"
+    assert ordinary["quality_measurements"]["accepted"]
+
+    bytes = File.read!(@pdf_fixture)
+    hash = Base.encode16(:crypto.hash(:sha256, bytes), case: :lower)
+
+    page =
+      exec!(container, [
+        "/app/bin/brussels_wtf",
+        "eval",
+        """
+        meta = %{media_type: "application/pdf", sha256: "#{hash}", byte_size: #{byte_size(bytes)}}
+        {:ok, r} = BrusselsWtf.PDF.FileProcessor.ocr_page(meta, "/tmp/input.pdf", 2, "#{@scratch}")
+        File.rm_rf!(Path.dirname(r.text_path))
+        IO.puts("PAGE_OCR accepted=\#{r.quality_measurements["accepted"]} pages=\#{r.page_count}")
+        """
+      ])
+
+    assert page =~ "PAGE_OCR accepted=true pages=1"
+    assert rpc(container, "System.pid()") == worker_pid
+    assert {_, 0} = health(container, context.command)
+  end
+
+  # Run the committed production Compose file itself. The override only joins the
+  # disposable network and normalizes this host's nofile limit (see start_container).
+  defp start_compose(context, archive_environment) do
+    project = "#{context.network}-compose"
+    directory = Path.join(System.tmp_dir!(), project)
+    File.mkdir_p!(directory)
+    override = Path.join(directory, "override.yml")
+    env_file = Path.join(directory, "empty.env")
+    File.write!(env_file, "")
+
+    File.write!(override, """
+    services:
+      ocr:
+        networks: [contract]
+        ulimits:
+          nofile: {soft: 65536, hard: 65536}
+    networks:
+      contract:
+        name: #{context.network}
+        external: true
+    """)
+
+    compose = [
+      "compose",
+      "--project-name",
+      project,
+      "--env-file",
+      env_file,
+      "-f",
+      @compose,
+      "-f",
+      override
+    ]
+
+    env =
+      archive_environment
+      |> Enum.reject(&(&1 == "-e"))
+      |> Enum.map(fn pair -> pair |> String.split("=", parts: 2) |> List.to_tuple() end)
+      |> Enum.concat([
+        {"APP_IMAGE", @image},
+        {"DATABASE_URL", "ecto://contract:contract@database/contract"},
+        {"SECRET_KEY_BASE", String.duplicate("x", 64)},
+        {"REVIEW_USERNAME", "contract"},
+        {"REVIEW_PASSWORD", "contract-password-long"}
+      ])
+
+    on_exit(fn ->
+      docker(compose ++ ["down", "--volumes", "--remove-orphans"], env)
+      File.rm_rf!(directory)
+    end)
+
+    docker!(compose ++ ["up", "--detach", "--no-build"], env)
+    docker!(compose ++ ["ps", "--all", "--quiet", "ocr"], env) |> String.trim()
+  end
+
+  defp exec!(container, command), do: docker!(["exec", container | command]) |> String.trim()
+
   defp start_archive(context) do
     archive = "#{context.network}-archive"
     client = "#{context.network}-archive-client"
@@ -414,15 +644,16 @@ defmodule BrusselsWtf.Contracts.ProductionImageOcrReadinessTest do
   defp state(container, template),
     do: docker!(["inspect", container, "--format", template]) |> String.trim()
 
-  defp docker!(arguments) do
-    {output, status} = docker(arguments)
+  defp docker!(arguments, env \\ []) do
+    {output, status} = docker(arguments, env)
     assert status == 0, "docker #{Enum.join(arguments, " ")} failed (#{status}):\n#{output}"
     output
   end
 
-  defp docker(arguments) do
+  defp docker(arguments, env \\ []) do
     System.cmd("timeout", ["--kill-after=1s", "45s", "docker" | arguments],
-      stderr_to_stdout: true
+      stderr_to_stdout: true,
+      env: env
     )
   end
 

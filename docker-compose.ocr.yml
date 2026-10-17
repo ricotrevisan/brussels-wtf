@@ -7,11 +7,23 @@ services:
     restart: unless-stopped
     cpus: 1
     mem_limit: 1g
+    # Equal to mem_limit: no swap. Memory pressure OOM-kills inside 1 GiB.
+    memswap_limit: 1g
     pids_limit: 512
+    # Only the tmpfs mounts below are writable. Their pages count toward mem_limit.
+    read_only: true
+    ipc: none
     tmpfs:
       - /app/large-pdf-ocr-scratch:rw,size=536870912,mode=0700,uid=65534,gid=65534,nosuid,nodev,noexec
+      # System.tmp_dir!/0 and ordinary OCR (pdftotext, OCRmyPDF) temporary files.
+      - /tmp:rw,size=268435456,mode=0700,uid=65534,gid=65534,nosuid,nodev,noexec
+      # Docker always mounts a writable POSIX message-queue filesystem here.
+      - /dev/mqueue:ro,size=4096,nosuid,nodev,noexec
     environment:
       PROCESS_ROLE: ocr
+      # A dump cannot be written to the read-only root, and tmpfs would lose it
+      # on restart. Skip it rather than spend crash time and memory.
+      ERL_CRASH_DUMP_SECONDS: "0"
       LARGE_PDF_OCR_WORKSPACE: /app/large-pdf-ocr-scratch
       DATABASE_URL: ${DATABASE_URL:?}
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:?}
