@@ -1,30 +1,35 @@
-defmodule BrusselsWtf.Processors.OpenRouterCoverage do
+defmodule BrusselsWtf.Processors.OpenCodeCoverage do
   @moduledoc """
-  Bounded OpenRouter coverage generation. Only publication input or canonical
+  Bounded OpenCode Zen coverage generation. Only publication input or canonical
   coverage enters this adapter. No source archives, tools or external retrieval.
 
-  OpenRouter documents ordered `models` fallback and billing for the final model:
-  https://openrouter.ai/docs/guides/routing/model-fallbacks
-  `provider.max_price` prompt/completion units are USD per million tokens:
-  https://openrouter.ai/docs/guides/routing/provider-selection#max-price
+  Zen serves each model through one API family and has no server-side fallback,
+  so the ordered chain runs here, one Chat Completions request per stage:
+  https://opencode.ai/v2/docs/console/api/inference/
+  Prices are the published USD per million tokens: https://opencode.ai/docs/zen/
+  Responses report token counts but no documented per-request cost, so cost is
+  computed from those counts at list price and rounded up.
   """
   @behaviour BrusselsWtf.Processors.Coverage
 
   alias BrusselsWtf.Council.{GenerationContract, PublicationInput}
-  alias BrusselsWtf.Processors.OpenRouterCoverage.Contract
+  alias BrusselsWtf.Processors.OpenCodeCoverage.Contract
 
-  @models ["stealth/union-alpha", "google/gemma-4-31b-it:free", "deepseek/deepseek-v4-flash-0731"]
-  @url "https://openrouter.ai/api/v1/chat/completions"
+  # Prices are USD cents per million tokens. A stage timeout of nil uses the
+  # rest of the wall deadline.
+  @chain [
+    %{model: "qwen3.8-max", input_price: 200, output_price: 600, timeout: 45_000},
+    %{model: "deepseek-v4.1-flash", input_price: 30, output_price: 120, timeout: nil}
+  ]
+  @models Enum.map(@chain, & &1.model)
+  @url "https://opencode.ai/inference/openai/v1/chat/completions"
+  @user_agent "brussels-wtf-coverage/1"
   @max_input_bytes 65_536
   @max_request_bytes 131_072
   @max_response_bytes 262_144
   @max_tokens 8_192
   @timeout 60_000
-  @wall_timeout 70_000
-  @primary_timeout 20_000
-  @primary_models Enum.take(@models, 2)
-  @paid_models Enum.drop(@models, 2)
-  @paid_reasoning %{"enabled" => false}
+  @wall_timeout 90_000
   @version "1"
   @prompt """
   Produce municipal council coverage using ONLY the supplied publication data.
@@ -54,14 +59,14 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverage do
   @impl true
   def metadata do
     %{
-      processor_name: "openrouter-coverage",
+      processor_name: "opencode-coverage",
       processor_version: @version,
       config_hash:
         PublicationInput.hash(%{
           code: BrusselsWtf.Digest.sha256(__MODULE__.module_info(:md5)),
           contract_code: BrusselsWtf.Digest.sha256(Contract.module_info(:md5)),
           prompt: @prompt,
-          models: @models,
+          chain: @chain,
           endpoint: @url,
           input_bytes: @max_input_bytes,
           request_bytes: @max_request_bytes,
@@ -69,14 +74,9 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverage do
           max_tokens: @max_tokens,
           timeout: @timeout,
           wall_timeout: @wall_timeout,
-          primary_timeout: @primary_timeout,
-          primary_models: @primary_models,
-          paid_models: @paid_models,
-          paid_reasoning: @paid_reasoning,
-          max_price: max_price(),
           maximum_cost_cents: cost_bound()
         }),
-      provider_category: "openrouter",
+      provider_category: "opencode",
       model: Enum.join(@models, " -> "),
       billing_mode: :paid,
       network_access: :network,
@@ -87,13 +87,21 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverage do
     }
   end
 
-  # Count each wire byte as a token, plus framing margin, at the highest permitted
-  # input/output prices. Round each attempt UP to cents and cover all three models,
-  # even though OpenRouter documents charging only for the ultimately used model.
+  # Count each request byte as an input token, plus framing margin, and every
+  # permitted output token at list price. Each stage rounds up to cents and the
+  # bound covers every stage in the chain.
   defp cost_bound do
-    per_attempt = div((@max_request_bytes + 4_096) * 6 + @max_tokens * 18 + 999_999, 1_000_000)
-    length(@models) * per_attempt
+    @chain
+    |> Enum.map(&stage_cost(&1, @max_request_bytes + 4_096, @max_tokens))
+    |> Enum.sum()
   end
+
+  defp stage_cost(stage, input_tokens, output_tokens),
+    do:
+      div(
+        input_tokens * stage.input_price + output_tokens * stage.output_price + 999_999,
+        1_000_000
+      )
 
   @impl true
   def maximum_cost(operation, _input) when operation in [:canonical_generation, :translation],
@@ -104,7 +112,7 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverage do
   def validate_configuration! do
     case credential() do
       {:ok, _} -> :ok
-      _ -> raise ArgumentError, "OpenRouter coverage requires a valid API key"
+      _ -> raise ArgumentError, "OpenCode coverage requires a valid API key"
     end
   end
 
@@ -145,13 +153,10 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverage do
     with {:ok, key} <- credential(),
          {:ok, data} <- Jason.encode(input),
          true <- byte_size(data) <= @max_input_bytes,
-         primary = request_body(instruction, data),
-         paid =
-           primary |> Map.put("models", @paid_models) |> Map.put("reasoning", @paid_reasoning),
-         {:ok, body} <- Jason.encode(primary),
-         {:ok, paid_body} <- Jason.encode(paid),
-         true <- max(byte_size(body), byte_size(paid_body)) <= @max_request_bytes do
-      request(body, paid_body, key, validate)
+         {:ok, bodies} <- encode_stages(instruction, data) do
+      deadline = System.monotonic_time(:millisecond) + @wall_timeout
+      results = run_chain(Enum.zip(@chain, bodies), key, validate, deadline, [])
+      with_usage(List.last(results), combined_usage(results))
     else
       {:error, :missing_api_key} ->
         {:error, :missing_api_key, %{"network_calls" => 0, "cost_cents" => 0}}
@@ -161,18 +166,21 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverage do
     end
   end
 
-  defp request_body(instruction, data) do
+  defp encode_stages(instruction, data) do
+    bodies = Enum.map(@chain, &Jason.encode!(request_body(&1.model, instruction, data)))
+
+    if Enum.all?(bodies, &(byte_size(&1) <= @max_request_bytes)),
+      do: {:ok, bodies},
+      else: {:error, :input_too_large}
+  end
+
+  defp request_body(model, instruction, data) do
     %{
-      "models" => @primary_models,
+      "model" => model,
       "stream" => false,
       "max_tokens" => @max_tokens,
       "temperature" => 0,
       "response_format" => %{"type" => "json_object"},
-      "provider" => %{
-        "max_price" => max_price(),
-        "require_parameters" => true,
-        "data_collection" => "deny"
-      },
       "messages" => [
         %{"role" => "system", "content" => @prompt <> "\n" <> instruction},
         %{"role" => "user", "content" => data}
@@ -180,24 +188,22 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverage do
     }
   end
 
-  defp max_price, do: %{"prompt" => 0.06, "completion" => 0.18, "request" => 0}
-
-  defp request(body, paid_body, key, validate) do
-    deadline = System.monotonic_time(:millisecond) + @wall_timeout
-    first = request_stage(body, key, validate, @primary_models, @primary_timeout)
+  # Advance only on a retryable failure while wall time remains. Every stage runs
+  # under the one reservation the caller already holds for the whole chain.
+  defp run_chain([{stage, body} | rest], key, validate, deadline, acc) do
     remaining = deadline - System.monotonic_time(:millisecond)
+    timeout = min(stage.timeout || remaining, remaining)
+    result = request_stage(stage, body, key, validate, timeout)
+    acc = [result | acc]
 
-    if retryable?(first) and remaining > 0 do
-      last = request_stage(paid_body, key, validate, @paid_models, remaining)
-      with_usage(last, combined_usage([first, last]))
-    else
-      with_usage(first, combined_usage([first]))
-    end
+    if rest != [] and retryable?(result) and deadline > System.monotonic_time(:millisecond),
+      do: run_chain(rest, key, validate, deadline, acc),
+      else: Enum.reverse(acc)
   end
 
-  defp request_stage(body, key, validate, models, timeout) do
+  defp request_stage(stage, body, key, validate, timeout) do
     # A wall deadline bounds keepalives too. Cancellation leaves cost unknown.
-    task = Task.async(fn -> perform_request(body, key, validate, models, timeout) end)
+    task = Task.async(fn -> perform_request(stage, body, key, validate, timeout) end)
 
     case Task.yield(task, timeout) do
       {:ok, result} ->
@@ -205,7 +211,7 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverage do
 
       nil ->
         Task.shutdown(task, :brutal_kill)
-        {:error, :provider_wall_timeout, %{"network_calls" => 1}}
+        {:error, :provider_wall_timeout, %{"network_calls" => 1, "model" => stage.model}}
     end
   end
 
@@ -247,11 +253,15 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverage do
   defp stage_summary({:error, reason, usage}),
     do: Map.put(usage, "status", Atom.to_string(reason))
 
-  defp perform_request(body, key, validate, models, timeout) do
+  defp perform_request(stage, body, key, validate, timeout) do
     opts = [
       url: @url,
       body: body,
-      headers: [{"authorization", "Bearer " <> key}, {"content-type", "application/json"}],
+      headers: [
+        {"authorization", "Bearer " <> key},
+        {"content-type", "application/json"},
+        {"user-agent", @user_agent}
+      ],
       retry: false,
       redirect: false,
       decode_body: false,
@@ -272,62 +282,50 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverage do
 
     case Req.post(opts) do
       {:ok, %Req.Response{status: 200, body: body}} ->
-        decode(body, validate, models)
+        decode(body, validate, stage)
 
       {:ok, %Req.Response{status: status, body: body}} ->
         {:error,
          {:provider_http_error, %{http_status: status, retryable: retryable_http?(status, body)}},
-         error_usage(body)}
+         %{"network_calls" => 1, "model" => stage.model}}
 
       {:error, _} ->
-        {:error, :provider_transport_error, %{"network_calls" => 1}}
+        {:error, :provider_transport_error, %{"network_calls" => 1, "model" => stage.model}}
     end
   rescue
-    _ -> {:error, :provider_transport_error, %{"network_calls" => 1}}
+    _ -> {:error, :provider_transport_error, %{"network_calls" => 1, "model" => stage.model}}
   catch
-    _, _ -> {:error, :provider_transport_error, %{"network_calls" => 1}}
+    _, _ -> {:error, :provider_transport_error, %{"network_calls" => 1, "model" => stage.model}}
   end
 
-  defp retryable_http?(404, body) when is_binary(body) or is_list(body) do
+  # Zen answers an exhausted workspace or key budget with 429. Every stage draws
+  # on that same budget, so it must not advance the chain.
+  defp retryable_http?(429, body), do: not budget_exceeded?(body)
+  defp retryable_http?(status, _), do: status == 408 or status in 500..599
+
+  defp budget_exceeded?(body) when is_binary(body) or is_list(body) do
     body = IO.iodata_to_binary(body)
 
     with true <- byte_size(body) <= @max_response_bytes,
-         {:ok, %{"error" => %{"code" => 404, "message" => message}}} <- Jason.decode(body),
-         true <- is_binary(message) do
-      String.starts_with?(message, [
-        "No endpoints found that support the requested parameters",
-        "No endpoints found matching your data policy",
-        "No endpoints found that match your preferences"
-      ])
+         {:ok, %{"error" => %{"message" => message}}} when is_binary(message) <-
+           Jason.decode(body) do
+      String.contains?(message, "budget exceeded")
     else
       _ -> false
     end
   end
 
-  defp retryable_http?(status, _), do: status in [408, 429] or status in 500..599
+  defp budget_exceeded?(_), do: false
 
-  defp error_usage(body) when is_binary(body) or is_list(body) do
-    with {:ok, response} when is_map(response) <- Jason.decode(IO.iodata_to_binary(body)) do
-      model = if response["model"] in @models, do: response["model"]
-      usage(response, model)
-    else
-      _ -> %{"network_calls" => 1}
-    end
-  end
+  defp decode({:body_too_large, _}, _, stage),
+    do: {:error, :provider_response_too_large, %{"network_calls" => 1, "model" => stage.model}}
 
-  defp error_usage(_), do: %{"network_calls" => 1}
-
-  defp decode({:body_too_large, _}, _, _),
-    do: {:error, :provider_response_too_large, %{"network_calls" => 1}}
-
-  defp decode(body, validate, models) do
+  defp decode(body, validate, stage) do
     body = IO.iodata_to_binary(body)
 
     with true <- byte_size(body) <= @max_response_bytes,
-         {:ok, response} when is_map(response) <- Jason.decode(body),
-         model when model in @models <- response["model"],
-         true <- model in models do
-      usage = usage(response, model)
+         {:ok, response} when is_map(response) <- Jason.decode(body) do
+      usage = usage(response, stage)
 
       case response do
         %{
@@ -349,60 +347,38 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverage do
           {:error, :incomplete_generation, usage}
       end
     else
-      _ -> {:error, :invalid_provider_response, %{"network_calls" => 1}}
+      _ -> {:error, :invalid_provider_response, %{"network_calls" => 1, "model" => stage.model}}
     end
   end
 
-  defp usage(response, model) do
+  # The requested model is the provenance: Zen addresses one model per request.
+  # The provider's own model label is kept only as a bounded safe string.
+  defp usage(response, stage) do
     raw = response["usage"]
-    base = %{"network_calls" => 1}
-    base = if model, do: Map.put(base, "model", model), else: base
 
     base =
-      case response["id"] do
-        id when is_binary(id) and byte_size(id) <= 256 ->
-          if Regex.match?(~r/\Agen-[A-Za-z0-9_-]+\z/, id),
-            do: Map.put(base, "response_id", id),
-            else: base
+      %{"network_calls" => 1, "model" => stage.model}
+      |> put_label("response_id", response["id"])
+      |> put_label("response_model", response["model"])
 
-        _ ->
-          base
-      end
-
-    if is_map(raw) do
+    with %{"prompt_tokens" => input, "completion_tokens" => output}
+         when is_integer(input) and input >= 0 and is_integer(output) and output >= 0 <- raw do
       base
-      |> put_count("input_tokens", raw["prompt_tokens"])
-      |> put_count("output_tokens", raw["completion_tokens"])
-      |> put_cost(raw["cost"])
+      |> Map.put("input_tokens", input)
+      |> Map.put("output_tokens", output)
+      |> Map.put("cost_cents", stage_cost(stage, input, output))
     else
-      base
+      _ -> base
     end
   end
 
-  defp put_count(usage, name, n) when is_integer(n) and n >= 0, do: Map.put(usage, name, n)
-  defp put_count(usage, _, _), do: usage
-
-  defp put_cost(usage, cost) when is_number(cost) and cost >= 0,
-    do: Map.put(usage, "cost_cents", ceil(cost * 100))
-
-  defp put_cost(usage, cost) when is_binary(cost) and byte_size(cost) <= 64 do
-    if Regex.match?(~r/\A\d+(\.\d+)?\z/, cost) do
-      cents =
-        cost
-        |> Decimal.new()
-        |> Decimal.mult(100)
-        |> Decimal.round(0, :ceiling)
-        |> Decimal.to_integer()
-
-      Map.put(usage, "cost_cents", cents)
-    else
-      usage
-    end
-  rescue
-    _ -> usage
+  defp put_label(usage, name, value) when is_binary(value) do
+    if Regex.match?(~r/\A[A-Za-z0-9_.:\/-]{1,128}\z/, value),
+      do: Map.put(usage, name, value),
+      else: usage
   end
 
-  defp put_cost(usage, _), do: usage
+  defp put_label(usage, _, _), do: usage
 
   defp bounded_body do
     fn {:data, data}, {request, response} ->

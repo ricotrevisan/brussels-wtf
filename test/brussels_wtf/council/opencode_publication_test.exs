@@ -1,15 +1,16 @@
-defmodule BrusselsWtf.Council.OpenRouterPublicationTest do
+defmodule BrusselsWtf.Council.OpenCodePublicationTest do
   use BrusselsWtf.DataCase, async: false
   use Oban.Testing, repo: BrusselsWtf.Repo
 
   alias BrusselsWtf.Council
   alias BrusselsWtf.Council.{CoverageBudget, CoverageReservation, Publication}
-  alias BrusselsWtf.Processors.{OpenRouterCoverage, Stub}
+  alias BrusselsWtf.Processors.{OpenCodeCoverage, Stub}
 
-  @actual_model "deepseek/deepseek-v4-flash-0731"
+  @primary "qwen3.8-max"
+  @fallback "deepseek-v4.1-flash"
 
   setup do
-    keys = [:coverage_generation, :coverage_processor, OpenRouterCoverage]
+    keys = [:coverage_generation, :coverage_processor, OpenCodeCoverage]
     previous = Map.new(keys, &{&1, Application.fetch_env(:brussels_wtf, &1)})
 
     on_exit(fn ->
@@ -22,17 +23,17 @@ defmodule BrusselsWtf.Council.OpenRouterPublicationTest do
     end)
 
     generation(:disabled)
-    Application.put_env(:brussels_wtf, :coverage_processor, OpenRouterCoverage)
+    Application.put_env(:brussels_wtf, :coverage_processor, OpenCodeCoverage)
 
-    Application.put_env(:brussels_wtf, OpenRouterCoverage,
+    Application.put_env(:brussels_wtf, OpenCodeCoverage,
       api_key: "test-key-not-a-real-credential",
-      req_options: [plug: {Req.Test, OpenRouterCoverage}]
+      req_options: [plug: {Req.Test, OpenCodeCoverage}]
     )
 
     owner = self()
 
-    Req.Test.stub(OpenRouterCoverage, fn conn ->
-      send(owner, :unexpected_openrouter_call)
+    Req.Test.stub(OpenCodeCoverage, fn conn ->
+      send(owner, :unexpected_opencode_call)
       Plug.Conn.send_resp(conn, 500, "No HTTP call expected")
     end)
 
@@ -44,7 +45,7 @@ defmodule BrusselsWtf.Council.OpenRouterPublicationTest do
     page = meeting |> Ash.load!(:meeting_page) |> Map.fetch!(:meeting_page)
     assert page.publication_status == :draft
     assert Council.list_coverage_runs!(page.id) == []
-    refute_received :unexpected_openrouter_call
+    refute_received :unexpected_opencode_call
 
     input = Publication.generation_input(meeting.id)
     {:ok, fr} = Stub.generate_fr(input)
@@ -89,20 +90,15 @@ defmodule BrusselsWtf.Council.OpenRouterPublicationTest do
     for locale <- ~w(fr nl en) do
       run = by_locale[locale]
       assert run.status == :succeeded
-      assert run.processor_name == "openrouter-coverage"
-      assert run.provider_category == "openrouter"
-      assert run.model == @actual_model
-
-      assert [primary, paid] = run.usage["stages"]
-      assert primary["status"] == "provider_http_error"
-      assert primary["http_status"] == 429
-      assert primary["cost_cents"] == 0
-      assert paid["status"] == "ok"
-      assert paid["model"] == @actual_model
+      assert run.processor_name == "opencode-coverage"
+      assert run.provider_category == "opencode"
+      assert run.model == @primary
+      assert [%{"status" => "ok", "model" => @primary}] = run.usage["stages"]
 
       assert Map.drop(run.usage, ["stages"]) == %{
-               "model" => @actual_model,
-               "network_calls" => 2,
+               "model" => @primary,
+               "response_id" => "mock-#{locale}",
+               "network_calls" => 1,
                "input_tokens" => 100,
                "output_tokens" => 20,
                "cost_cents" => 1
@@ -110,7 +106,7 @@ defmodule BrusselsWtf.Council.OpenRouterPublicationTest do
 
       assert run.output == ctx.bundles[locale]
       assert page.current_revision.content["page"][locale] == ctx.bundles[locale]["page"]
-      assert_reserved_request(locale, page.id)
+      assert_reserved_request(locale, page.id, [:primary])
     end
 
     reservations = Ash.read!(CoverageReservation, domain: Council)
@@ -118,6 +114,7 @@ defmodule BrusselsWtf.Council.OpenRouterPublicationTest do
 
     for reservation <- reservations do
       assert reservation.status == :settled
+      assert reservation.reserved_cents == 38
       assert reservation.final_cost_cents == 1
       assert reservation.coverage_run_id == by_locale[reservation.locale].id
       assert reservation.input_usage == %{"input_tokens" => 100}
@@ -127,7 +124,45 @@ defmodule BrusselsWtf.Council.OpenRouterPublicationTest do
     assert {:ok, budget} = CoverageBudget.ensure_month(100, BrusselsWtf.Clock.utc_now())
     assert budget.spent_cents == 3
     assert budget.reserved_cents == 0
-    refute_received {:openrouter_call, _, _, _}
+    refute_received {:opencode_call, _, _, _}
+  end
+
+  test "a fallback runs under the same reservation and charges it in full when cost is unknown",
+       ctx do
+    generation(:paid, 200)
+    stub_bundles(ctx.bundles, fallback: true)
+
+    assert :ok = Council.generate_meeting_coverage!(ctx.meeting.id, 1, 3)
+
+    page = Council.get_meeting_page!(ctx.page.id)
+    assert page.publication_status == :published
+
+    for run <- Council.list_coverage_runs!(page.id) do
+      assert run.status == :succeeded
+      assert run.model == @fallback
+      assert [primary, fallback] = run.usage["stages"]
+
+      assert primary == %{
+               "status" => "provider_http_error",
+               "http_status" => 429,
+               "network_calls" => 1,
+               "model" => @primary
+             }
+
+      assert fallback["status"] == "ok"
+      assert fallback["model"] == @fallback
+      assert fallback["cost_cents"] == 1
+      assert run.usage["network_calls"] == 2
+      refute Map.has_key?(run.usage, "cost_cents")
+      assert_reserved_request(run.locale, page.id, [:primary, :fallback])
+    end
+
+    reservations = Ash.read!(CoverageReservation, domain: Council)
+    assert length(reservations) == 3
+    assert Enum.all?(reservations, &(&1.status == :settled and is_nil(&1.final_cost_cents)))
+    assert {:ok, budget} = CoverageBudget.ensure_month(200, BrusselsWtf.Clock.utc_now())
+    assert budget.spent_cents == 3 * 38
+    assert budget.reserved_cents == 0
   end
 
   test "an incomplete English response leaves the entire page in draft", ctx do
@@ -147,7 +182,7 @@ defmodule BrusselsWtf.Council.OpenRouterPublicationTest do
     failed = Enum.find(runs, &(&1.locale == "en"))
     assert failed.status == :failed
     assert failed.failure_details["classification"] == "incomplete_generation"
-    assert failed.model == @actual_model
+    assert failed.model == @primary
     assert failed.usage["cost_cents"] == 1
     assert failed.output == %{}
     assert {:ok, budget} = CoverageBudget.ensure_month(100, BrusselsWtf.Clock.utc_now())
@@ -180,7 +215,7 @@ defmodule BrusselsWtf.Council.OpenRouterPublicationTest do
     assert length(Council.list_coverage_runs!(ctx.page.id)) == 6
   end
 
-  test "a fully reserved monthly budget sends no OpenRouter request", ctx do
+  test "a fully reserved monthly budget sends no OpenCode request", ctx do
     generation(:paid)
 
     assert {:ok, reservation} =
@@ -190,8 +225,8 @@ defmodule BrusselsWtf.Council.OpenRouterPublicationTest do
                  publication_input_hash: "sha256:other-reserved-input",
                  operation: :canonical_generation,
                  locale: "fr",
-                 provider: "openrouter",
-                 model: OpenRouterCoverage.metadata().model,
+                 provider: "opencode",
+                 model: OpenCodeCoverage.metadata().model,
                  retry: 1,
                  call_key: "other-call-consumes-whole-month",
                  estimated_cost_cents: 100
@@ -201,7 +236,7 @@ defmodule BrusselsWtf.Council.OpenRouterPublicationTest do
              )
 
     assert :ok = Council.generate_meeting_coverage!(ctx.meeting.id, 1, 3)
-    refute_received :unexpected_openrouter_call
+    refute_received :unexpected_opencode_call
     assert Council.list_coverage_runs!(ctx.page.id) == []
     assert Council.get_meeting_page!(ctx.page.id).publication_status == :draft
     assert [remaining] = Ash.read!(CoverageReservation, domain: Council)
@@ -212,82 +247,79 @@ defmodule BrusselsWtf.Council.OpenRouterPublicationTest do
     assert budget.reserved_cents == 100
   end
 
-  test "disabled generation needs no credential and sends no OpenRouter request", ctx do
-    Application.put_env(:brussels_wtf, OpenRouterCoverage,
-      req_options: [plug: {Req.Test, OpenRouterCoverage}]
+  test "disabled generation needs no credential and sends no OpenCode request", ctx do
+    Application.put_env(:brussels_wtf, OpenCodeCoverage,
+      req_options: [plug: {Req.Test, OpenCodeCoverage}]
     )
 
     assert :ok = Council.generate_meeting_coverage!(ctx.meeting.id, 1, 3)
-    refute_received :unexpected_openrouter_call
+    refute_received :unexpected_opencode_call
     assert Council.list_coverage_runs!(ctx.page.id) == []
     assert Ash.read!(CoverageReservation, domain: Council) == []
     assert Ash.read!(CoverageBudget, domain: Council) == []
     assert Council.get_meeting_page!(ctx.page.id).publication_status == :draft
   end
 
-  defp generation(mode) do
+  defp generation(mode, budget \\ 100) do
     Application.put_env(:brussels_wtf, :coverage_generation, %{
       mode: mode,
       backfill_enabled: false,
-      monthly_budget_cents: if(mode == :paid, do: 100, else: nil)
+      monthly_budget_cents: if(mode == :paid, do: budget, else: nil)
     })
   end
 
   defp stub_bundles(bundles, opts \\ []) do
     owner = self()
-    calls = for locale <- ~w(fr nl en), stage <- [:primary, :paid], do: {locale, stage}
+    stages = if opts[:fallback], do: [:primary, :fallback], else: [:primary]
+    calls = for locale <- ~w(fr nl en), stage <- stages, do: {locale, stage}
     queue = start_supervised!({Agent, fn -> calls end}, id: make_ref())
 
-    Req.Test.stub(OpenRouterCoverage, fn conn ->
+    Req.Test.stub(OpenCodeCoverage, fn conn ->
       {{locale, stage}, reservations} = {
         Agent.get_and_update(queue, fn [call | rest] -> {call, rest} end),
         Ash.read!(CoverageReservation, domain: Council)
       }
 
-      send(owner, {:openrouter_call, locale, stage, reservations})
+      send(owner, {:opencode_call, locale, stage, reservations})
       {:ok, body, conn} = Plug.Conn.read_body(conn)
       request = Jason.decode!(body)
 
-      if stage == :primary do
-        assert request["models"] == ["stealth/union-alpha", "google/gemma-4-31b-it:free"]
-        refute Map.has_key?(request, "reasoning")
+      if stage == :primary and opts[:fallback] do
+        assert request["model"] == @primary
 
         conn
         |> Plug.Conn.put_status(429)
-        |> Req.Test.json(%{
-          "model" => "stealth/union-alpha",
-          "usage" => %{"prompt_tokens" => 0, "completion_tokens" => 0, "cost" => 0}
-        })
+        |> Req.Test.json(%{"error" => %{"type" => "rate_limit", "message" => "Rate limited"}})
       else
-        assert request["models"] == [@actual_model]
-        assert request["reasoning"] == %{"enabled" => false}
+        assert request["model"] == if(stage == :primary, do: @primary, else: @fallback)
 
         Req.Test.json(conn, %{
           "id" => "mock-#{locale}",
-          "model" => @actual_model,
           "choices" => [
             %{
               "finish_reason" => if(opts[:incomplete] == locale, do: "length", else: "stop"),
               "message" => %{"role" => "assistant", "content" => Jason.encode!(bundles[locale])}
             }
           ],
-          "usage" => %{"prompt_tokens" => 100, "completion_tokens" => 20, "cost" => 0.001}
+          "usage" => %{"prompt_tokens" => 100, "completion_tokens" => 20}
         })
       end
     end)
   end
 
-  defp assert_reserved_request(locale, page_id) do
-    assert_received {:openrouter_call, ^locale, :primary, reservations}
-    assert_received {:openrouter_call, ^locale, :paid, paid_reservations}
-    assert Enum.map(reservations, & &1.id) == Enum.map(paid_reservations, & &1.id)
-    assert [paid] = Enum.filter(paid_reservations, &(&1.status == :executing))
-    assert [executing] = Enum.filter(reservations, &(&1.status == :executing))
-    assert paid.id == executing.id
-    assert paid.reserved_cents == executing.reserved_cents
+  defp assert_reserved_request(locale, page_id, stages) do
+    observed =
+      for stage <- stages do
+        assert_received {:opencode_call, ^locale, ^stage, reservations}
+        assert [executing] = Enum.filter(reservations, &(&1.status == :executing))
+        executing
+      end
+
+    executing = hd(observed)
+    assert Enum.all?(observed, &(&1.id == executing.id))
     assert executing.locale == locale
     assert executing.meeting_page_id == page_id
-    assert executing.reserved_cents > 0
+    assert executing.reserved_cents == 38
     assert executing.estimated_cost_cents == executing.reserved_cents
     assert is_nil(executing.coverage_run_id)
   end

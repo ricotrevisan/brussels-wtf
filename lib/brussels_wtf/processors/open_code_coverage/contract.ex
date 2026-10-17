@@ -1,4 +1,4 @@
-defmodule BrusselsWtf.Processors.OpenRouterCoverage.Contract do
+defmodule BrusselsWtf.Processors.OpenCodeCoverage.Contract do
   @moduledoc false
 
   def input(input) do
