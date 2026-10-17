@@ -1,4 +1,4 @@
-defmodule BrusselsWtf.Contracts.OpenRouterLiveTest do
+defmodule BrusselsWtf.Contracts.OpenCodeLiveTest do
   use ExUnit.Case, async: false
 
   alias BrusselsWtf.Corpus.Manifest
@@ -12,7 +12,7 @@ defmodule BrusselsWtf.Contracts.OpenRouterLiveTest do
     PublicationInput
   }
 
-  alias BrusselsWtf.Processors.OpenRouterCoverage
+  alias BrusselsWtf.Processors.OpenCodeCoverage
 
   @moduletag :external
   @moduletag timeout: 240_000
@@ -26,7 +26,7 @@ defmodule BrusselsWtf.Contracts.OpenRouterLiveTest do
 
     on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(owner) end)
 
-    keys = [:coverage_generation, :coverage_processor, OpenRouterCoverage]
+    keys = [:coverage_generation, :coverage_processor, OpenCodeCoverage]
     previous = Map.new(keys, &{&1, Application.fetch_env(:brussels_wtf, &1)})
 
     on_exit(fn ->
@@ -42,10 +42,10 @@ defmodule BrusselsWtf.Contracts.OpenRouterLiveTest do
   end
 
   test "three bounded live calls validate real Ixelles 269 coverage without publishing" do
-    key = System.get_env("OPENROUTER_API_KEY")
+    key = System.get_env("OPENCODE_API_KEY")
 
     assert is_binary(key) and String.trim(key) != "",
-           "OPENROUTER_API_KEY is required for this opt-in test"
+           "OPENCODE_API_KEY is required for this opt-in test"
 
     Application.put_env(:brussels_wtf, :coverage_generation, %{
       mode: :disabled,
@@ -68,19 +68,20 @@ defmodule BrusselsWtf.Contracts.OpenRouterLiveTest do
     assert :ok = PublicationInput.validate(input)
     assert {:ok, _recorded_reference} = Manifest.recorded_bundle(input, "fr")
 
-    Application.put_env(:brussels_wtf, :coverage_processor, OpenRouterCoverage)
-    Application.put_env(:brussels_wtf, OpenRouterCoverage, api_key: key)
+    Application.put_env(:brussels_wtf, :coverage_processor, OpenCodeCoverage)
+    Application.put_env(:brussels_wtf, OpenCodeCoverage, api_key: key)
 
     Application.put_env(:brussels_wtf, :coverage_generation, %{
       mode: :paid,
       backfill_enabled: false,
-      monthly_budget_cents: 100
+      monthly_budget_cents: 150
     })
 
-    metadata = OpenRouterCoverage.metadata()
+    metadata = OpenCodeCoverage.metadata()
 
     try do
       # No operation retry loop: at most three operations, each with two bounded HTTP stages.
+      # Three 38-cent reservations fit the 150-cent test ceiling even if every cost is unknown.
       assert {:ok, canonical, canonical_run} =
                CoverageExecution.canonical(page, input, metadata, :automatic, 1)
 
@@ -105,21 +106,21 @@ defmodule BrusselsWtf.Contracts.OpenRouterLiveTest do
       assert length(runs) == 3
       assert Enum.all?(runs, &(&1.status == :succeeded and &1.model in metadata.allowed_models))
       assert Enum.all?(Ash.read!(CoverageReservation, domain: Council), &(&1.status == :settled))
-      assert {:ok, budget} = CoverageBudget.ensure_month(100, BrusselsWtf.Clock.utc_now())
-      assert budget.spent_cents <= 100
+      assert {:ok, budget} = CoverageBudget.ensure_month(150, BrusselsWtf.Clock.utc_now())
+      assert budget.spent_cents <= 150
       assert budget.reserved_cents == 0
       assert Council.get_meeting_page!(page.id).publication_status == :draft
       assert Council.list_publication_revisions!(page.id) == []
 
       print_receipts(page)
-      Process.put(:openrouter_live_receipts_printed, true)
+      Process.put(:opencode_live_receipts_printed, true)
     after
       # Print only allowlisted receipts; never credentials, headers, or provider bodies.
-      unless Process.get(:openrouter_live_receipts_printed) do
+      unless Process.get(:opencode_live_receipts_printed) do
         try do
           print_receipts(page)
         rescue
-          _ -> IO.puts("OPENROUTER_LIVE_RECEIPTS_ERROR=unavailable")
+          _ -> IO.puts("OPENCODE_LIVE_RECEIPTS_ERROR=unavailable")
         end
       end
     end
@@ -136,12 +137,17 @@ defmodule BrusselsWtf.Contracts.OpenRouterLiveTest do
           input_tokens: run.usage["input_tokens"],
           output_tokens: run.usage["output_tokens"],
           network_calls: run.usage["network_calls"],
+          stages:
+            Enum.map(
+              run.usage["stages"] || [],
+              &Map.take(&1, ~w(model status http_status cost_cents input_tokens output_tokens))
+            ),
           failure: run.failure_details["classification"],
           http_status: run.failure_details["http_status"]
         }
       end)
 
-    IO.puts("OPENROUTER_LIVE_RECEIPTS=" <> Jason.encode!(receipts))
+    IO.puts("OPENCODE_LIVE_RECEIPTS=" <> Jason.encode!(receipts))
   end
 
   defp real_publication_input do

@@ -47,7 +47,7 @@ if config_env() in [:dev, :prod] do
   coverage = BrusselsWtf.Processors.CoverageRuntime.load()
   config :brussels_wtf, :coverage_generation, coverage.generation
   config :brussels_wtf, :coverage_processor, coverage.processor
-  config :brussels_wtf, BrusselsWtf.Processors.OpenRouterCoverage, coverage.provider_config
+  config :brussels_wtf, BrusselsWtf.Processors.OpenCodeCoverage, coverage.provider_config
 end
 
 if config_env() in [:dev, :prod] do
