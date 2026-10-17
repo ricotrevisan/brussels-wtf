@@ -233,6 +233,42 @@ defmodule BrusselsWtf.SuggestionsTest do
     end
   end
 
+  test "raw deletes remove non-suggestion review cases but refuse suggestion cases" do
+    review_case =
+      Review.open_review_case!(%{
+        kind: :normalization,
+        affected_record_id: Ecto.UUID.generate(),
+        affected_record_type: "agenda_item",
+        processing_generation: "deletable",
+        summary: "A non-suggestion case"
+      })
+
+    assert %{num_rows: 1} =
+             Ecto.Adapters.SQL.query!(
+               BrusselsWtf.Repo,
+               "DELETE FROM review_cases WHERE id = $1::text::uuid",
+               [review_case.id]
+             )
+
+    assert %{rows: [[0]]} =
+             Ecto.Adapters.SQL.query!(
+               BrusselsWtf.Repo,
+               "SELECT count(*) FROM review_cases WHERE id = $1::text::uuid",
+               [review_case.id]
+             )
+
+    assert {:ok, :accepted} = submit(@number, "Undeletable lead", "192.0.2.17")
+    suggestion = only_suggestion!()
+
+    assert_raise Postgrex.Error, ~r/suggestion review cases cannot be deleted/, fn ->
+      Ecto.Adapters.SQL.query!(
+        BrusselsWtf.Repo,
+        "DELETE FROM review_cases WHERE id = $1::text::uuid",
+        [suggestion.review_case_id]
+      )
+    end
+  end
+
   test "approval fails closed for missing, unverified, unrelated, or unsupported ownership facts" do
     assert {:ok, :accepted} = submit(@number, "Possible owner", "192.0.2.15")
     suggestion = only_suggestion!()
