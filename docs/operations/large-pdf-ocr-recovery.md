@@ -61,7 +61,9 @@ not a random subdirectory, must be a private 0700 dedicated tmpfs mount with an
 enforced capacity at most 512 MiB. Validation precedes archive writes. There is no
 free-space admission substitute or persistent-disk checkpoint fallback.
 `docker-compose.ocr.yml` declares the 512 MiB, `nosuid,nodev,noexec` mount owned by
-65534:65534. A real `id` probe of imported image
+65534:65534, with no swap and a read-only root whose only other writable path is
+a 256-MiB `/tmp` tmpfs. The Compose contract in
+`test/contracts/production_image_ocr_readiness_test.exs` proves both. A real `id` probe of imported image
 `sha256:3df4c19c385e4e27b667d65d3a2c9356c41acc08c7716baa05655fb30449882c`
 returned `uid=65534(nobody) gid=65534(nogroup)`. Recheck the actual candidate image
 before deployment; this is not proof of a new release's packaging or OS parent/init.

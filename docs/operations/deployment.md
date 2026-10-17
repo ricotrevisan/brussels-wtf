@@ -38,6 +38,18 @@ requires validation, a healthy consumer, and no HTTP listener. Test images are
 allows image overrides for repeatable local runs. It does not validate the
 estate's live storage network, credentials, or Coolify network attachments.
 
+One case starts the committed `docker-compose.ocr.yml` itself with
+`docker compose`. Its override only joins the disposable network and sets the
+same 65,536 `nofile` limit. It requires a healthy worker, Docker limits of one
+CPU, 1 GiB memory, 1 GiB memory+swap and 512 PIDs, and kernel cgroup values
+`memory.max=1073741824` and `memory.swap.max=0`. A 1.25-GiB allocation must be
+OOM-killed with zero swap used while the worker stays healthy. Every path the
+runtime user can write must be inside `/tmp` or the OCR scratch mount; root and
+the runtime user both get `Read-only file system` elsewhere. `/tmp` must refuse
+writes past 256 MiB. Ordinary OCR and file-backed page OCR must still succeed
+inside the running container. The check reads cgroup v2 files; run it on a
+cgroup v2 Docker host with swap enabled, or it proves less.
+
 ## Coolify rollout
 
 1. Pin the reviewed commit. Build one image with `SOURCE_COMMIT` set to its full
@@ -47,7 +59,8 @@ estate's live storage network, credentials, or Coolify network attachments.
 3. Confirm `/health/version` returns the pinned SHA. Confirm migrations and the
    private archive validation succeeded in redacted logs.
 4. Deploy the exact same image to the private `ocr` role with
-   `PROCESS_ROLE=ocr`, queue concurrency 1, one CPU, and 1 GiB hard memory.
+   `PROCESS_ROLE=ocr`, queue concurrency 1, one CPU, 1 GiB hard memory with
+   no swap, and a read-only root filesystem.
 5. Prove both roles use the same image digest. Check the OCR health probe and its
    live queue state after startup. A running container alone is not readiness.
 
@@ -103,7 +116,19 @@ Docker Compose build pack. Set `APP_IMAGE` to the local image tag shown by the
 successful app build (`sn1f08alzbb5reus2ynxrswz:<full-commit>` on this estate).
 `pull_policy: never` makes a missing local image fail instead of obtaining a
 different artifact. Do not independently rebuild the OCR role. The compose
-service sets one CPU, 1 GiB memory, and no public ports. Preserve the existing
+service sets one CPU, 1 GiB memory with no swap (`memswap_limit` equals
+`mem_limit`), 512 PIDs, and no public ports.
+
+The root filesystem is read-only, with `ipc: none` (no `/dev/shm`). The only
+writable paths are two private 0700 `nosuid,nodev,noexec` tmpfs mounts owned by
+65534:65534: the 512-MiB `/app/large-pdf-ocr-scratch` and a 256-MiB `/tmp` for
+`System.tmp_dir!/0` and ordinary OCR temporary files. Docker's POSIX
+message-queue mount is covered read-only. Tmpfs pages count toward the 1 GiB and
+cannot swap, so ordinary OCR that needs more than 256 MiB of scratch fails with
+`No space left on device` instead of spilling to disk. The release itself writes
+nothing at startup: its `sys.config` needs no runtime rewrite. Tmpfs contents
+are lost on restart, so `ERL_CRASH_DUMP_SECONDS=0` skips Erlang crash dumps;
+use the container logs. Preserve the existing
 OCR application's database and private-archive credentials. Both deployments
 must use the same Coolify server.
 
@@ -131,6 +156,8 @@ On the Coolify server, use the exact deployed container names:
 docker inspect --format '{{.Image}}' "$APP_CONTAINER" "$OCR_CONTAINER"
 docker inspect --format '{{json .NetworkSettings.Networks}}' "$OCR_CONTAINER"
 docker inspect --format '{{json .State.Health}}' "$OCR_CONTAINER"
+docker inspect --format '{{.HostConfig.Memory}} {{.HostConfig.MemorySwap}} {{.HostConfig.ReadonlyRootfs}} {{json .HostConfig.Tmpfs}}' "$OCR_CONTAINER"
+docker exec "$OCR_CONTAINER" cat /sys/fs/cgroup/memory.max /sys/fs/cgroup/memory.swap.max
 docker exec "$OCR_CONTAINER" /app/bin/ocr_ready
 docker exec "$OCR_CONTAINER" timeout --kill-after=1s 3s /app/bin/brussels_wtf rpc \
   'IO.inspect(%{role: Application.get_env(:brussels_wtf, :process_role), ready: BrusselsWtf.ProcessRole.ocr_ready?(), queue: case Oban.check_queue(queue: :ocr) do nil -> nil; queue -> Map.take(queue, [:queue, :paused, :limit]) end})'
