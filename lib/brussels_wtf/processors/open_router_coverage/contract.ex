@@ -22,6 +22,10 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverage.Contract do
     result(valid)
   end
 
+  @doc "A multi-batch canonical page: exactly a non-blank title and summary."
+  def page(output),
+    do: result(keys?(output, ~w(title summary)) and Enum.all?(Map.values(output), &text?/1))
+
   def canonical_fields(input, output) do
     page_refs =
       Enum.flat_map(input["items"], fn item -> Enum.map(item["claims"], & &1["key"]) end)

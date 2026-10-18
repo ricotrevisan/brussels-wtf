@@ -12,6 +12,16 @@ defmodule BrusselsWtf.Council.Publication do
   require Ash.Query
 
   @locales ["fr", "nl", "en"]
+  # Failures a retry cannot change: the same input and processor configuration
+  # fail the same size or contract check again. They are reported at once.
+  @deterministic_failures ~w(
+    input_too_large
+    invalid_publication_input
+    invalid_canonical_output
+    invalid_generation_output
+    incomplete_generation
+    unsupported_locale
+  )
 
   def generate_and_publish(
         meeting_id,
@@ -503,7 +513,7 @@ defmodule BrusselsWtf.Council.Publication do
          attempt,
          max_attempts
        ) do
-    if attempt >= max_attempts do
+    if attempt >= max_attempts or failure.classification in @deterministic_failures do
       report_processor_failure(meeting, input, metadata, failure, attempt)
       :ok
     else
@@ -548,7 +558,11 @@ defmodule BrusselsWtf.Council.Publication do
       affected_record_type: "meeting_page",
       processing_generation: "#{input_hash}:#{metadata.config_hash}",
       urgency: :high,
-      summary: "Coverage processor failed after bounded retries",
+      summary:
+        if(failure.classification in @deterministic_failures,
+          do: "Coverage processor failed; a retry cannot change the result",
+          else: "Coverage processor failed after bounded retries"
+        ),
       normalized_content: input,
       diagnostics: %{
         "classification" => failure.classification,
