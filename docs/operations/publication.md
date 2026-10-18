@@ -54,7 +54,7 @@ A gate failure preserves the last complete publication state, stores typed failu
 - `stale_generation`
 - `blocking_review_case`
 
-Processor failures retain one coverage-run record per execution. Oban retries them up to its bounded `max_attempts`; the terminal attempt opens a deduplicated high-urgency publication review case. Diagnostics contain durable identifiers and safe classifications, never provider prompts, credentials, private object keys, or response bodies.
+Processor failures retain one coverage-run record per execution. Failures a retry cannot change (`input_too_large`, `invalid_publication_input`, `invalid_canonical_output`, `invalid_generation_output`, `incomplete_generation`, `unsupported_locale`) open a deduplicated high-urgency publication review case on the first attempt and are not retried. Oban retries other failures up to its bounded `max_attempts`; the terminal attempt opens the case. Diagnostics contain durable identifiers and safe classifications, never provider prompts, credentials, private object keys, or response bodies.
 
 ## Processor configuration
 
@@ -106,19 +106,38 @@ Re-running import, dossier preparation, or coverage preparation is idempotent. E
 
 ## OpenRouter inference
 
-Work is tracked in [Add budgeted OpenRouter coverage with ordered model fallbacks](https://github.com/ricotrevisan/brussels-wtf/issues/95).
+Work is tracked in [Add budgeted OpenRouter coverage with ordered model fallbacks](https://github.com/ricotrevisan/brussels-wtf/issues/95) and [Generate paid coverage in item batches](https://github.com/ricotrevisan/brussels-wtf/issues/138).
 
-The ordered model chain is pinned in code:
+The ordered model stages are pinned in code. Prices are the OpenRouter catalog on 2026-10-18 and the per-stage `provider.max_price` caps (USD per million prompt/completion tokens):
 
-1. `stealth/union-alpha` — user-selected primary, currently free.
-2. `google/gemma-4-31b-it:free` — free fallback.
-3. `deepseek/deepseek-v4-flash-0731` — fast paid fallback. The inspected catalog on 2026-09-17 listed $0.06/million input tokens and $0.12/million output tokens, less than V4.1 Flash or Gemini Flash Lite. This is a price observation, not a quality benchmark or latency guarantee.
+1. `deepseek/deepseek-v4.1-flash`: Rico's primary. Listed at $0.065/$0.144 (OpenInference), capped at $0.10/$0.30, which also admits Decart ($0.09/$0.18) and Sail Research ($0.09/$0.30).
+2. `deepseek/deepseek-v4-flash-0731`: same model family on a different provider set (OpenInference, Baidu, DeepInfra, Sail Research). Capped at $0.06/$0.18. This is the model that produced the September dev acceptance.
+3. `google/gemini-2.5-flash-lite`: a different vendor on Google's own infrastructure, so a DeepSeek-wide outage still has a route. Capped at $0.10/$0.40.
 
-Each generation operation starts with an OpenRouter request for the ordered free-stage models, Union Alpha then Gemma. This stage has a 20-second wall limit. A retryable provider or transport failure can advance once to a separate DeepSeek request with `reasoning.enabled=false`, using only the time remaining in the overall 70-second deadline. The reasoning option is never sent to the free stage, so parameter filtering cannot silently remove Union Alpha for lacking that option. A structured HTTP 404 with error code 404 and a recognized no-compatible-endpoints message also permits fallback; arbitrary 404s remain terminal. Authentication/payment failures and successful but invalid content do not advance to another model. Req does not retry or follow redirects. Existing publication jobs retain their bounded retry policy. Each request caps input at 64 KiB, encoded request at 128 KiB, response at 256 KiB, output at 8,192 tokens (a reasoning model can spend thousands of tokens thinking before the JSON answer; 4,096 truncated a real two-item generation), connect timeout at 10 seconds, receive timeout at 60 seconds and total wall timeout at 70 seconds. Keepalive bytes cannot prolong the total deadline; a cancelled request keeps its cost uncertain. Oversized inputs are rejected rather than truncated.
+`stealth/union-alpha` is no longer listed and was removed. The free `google/gemma-4-31b-it:free` stage was also dropped. It never produced a successful generation (HTTP 504 in every September dev call and HTTP 429 in production on 2026-09-19), and it spent up to 20 seconds of each deadline before any paid stage could run. All three stages were checked live on 2026-10-18 with the exact request shape below. These are price and routing observations, not quality benchmarks.
 
-`provider.max_price` caps prompt/completion at $0.06/$0.18 per million tokens and per-request fees at zero. The initial $0.12 output ceiling selected an endpoint without JSON response-format support; live routing returned 404. The $0.18 ceiling admits compatible endpoints, including the inspected $0.03/$0.13 OpenInference and $0.06/$0.18 DeepInfra routes. These ceilings filter available endpoints; a price increase or unavailable provider fails closed. Every operation reserves a conservative 3 cents before network access, covering the bounded three-model chain. Known stage costs are rounded **up** to cents and summed for the existing ledger. If any attempted stage has unknown cost, the aggregate cost remains unknown even when the final stage succeeds. Missing/uncertain cost is never zero: the reservation's maximum is charged by the existing reconciliation contract. Thus ledger spend can exceed actual provider spend for sub-cent calls. Model pricing or caps require a versioned code change, not an unreviewed environment override.
+### Item batches
 
-Requests use `data_collection: "deny"`. This is **not** a zero-retention promise. Union Alpha's official page says its anonymous provider may retain prompts/completions; provider policy metadata is not sufficient to guarantee this model passes the deny filter. Do not relax privacy settings to force the primary or free fallback. Each response must identify an allowlisted actual model, retained in immutable run provenance and usage. Only the publication-input projection or canonical translation text is sent; no archive access, tools, browsing, credentials, reviewer notes or suggestion bodies are provided. Exact input/output key validation rejects unexpected fields. A schema and valid claim references do not independently prove every generated sentence is entailed by its evidence; real-source language/faithfulness checks are required before scaling.
+A meeting is generated in bounded item batches inside one coverage operation. Canonical French, Dutch and English each still produce exactly one coverage run over the full publication input, so the gate's run chain, the per-operation budget reservation and the atomic FR/NL/EN publication are unchanged.
+
+- Items are packed in input order: at most 8 items and 20 KiB of encoded items per French batch, and at most 8 items and 12 KiB of canonical items per translation batch. One item above the 64 KiB request input cap, or more than 24 batches, fails closed as `input_too_large` without a network call. Items are never truncated.
+- Each French batch uses the existing bundle contract over its own items. For a meeting with more than one batch, one extra page call writes the page title and summary from the validated batch titles and summaries; page `claim_refs` are then set to every claim key. Each translation batch carries the canonical page and its own items; the first batch's translated page is used.
+- The assembled bundle is validated again against the full input. Any failed batch fails the whole operation; nothing is assembled or published. After a failure no new batch starts; batches already in flight finish so their cost is recorded.
+- Up to four batch calls run concurrently. Each call tries the stages in order inside a 240-second wall deadline (120 seconds per stage).
+
+The limits come from measurement on the real Ixelles 266 (33 items, 43.5 KB, 14,793 input tokens) and 270 (72 items, 116 KB) publication inputs. French output was 0.2–0.3 tokens per input byte (2,823 tokens for 8 typical items; 4,499 for the 7 largest). Dutch output was 0.4 tokens per canonical byte (5,759 tokens for 8 items). Both batch caps keep the expected output under a third of the 16,384-token cap. In the 2026-10-18 dev smoke on meeting 270, the largest batch output was 3,743 tokens.
+
+### Requests
+
+Every request sends `reasoning.enabled=false`, `temperature: 0`, `provider.require_parameters`, `provider.data_collection: "deny"`, `provider.sort: "throughput"` and a strict `json_schema` response format. The schema pins the exact keys, item keys, variant fields and allowed claim references for that batch. On 2026-10-18 the plain `json_object` format let the model add a `"type"` key, which the exact-key contract rejected. The lowest-price primary endpoint generated about 26 tokens/s against about 113 tokens/s on Decart, and full batches timed out at 90 seconds. Throughput ordering stays inside the hard price caps.
+
+A retryable provider or transport failure (HTTP 408, 429, 5xx, wall timeout, or a structured routing 404 with a recognized no-compatible-endpoints message) advances that batch to the next stage. Arbitrary 404s, authentication or payment failures, and successful but invalid content do not advance. Req does not retry or follow redirects. Each request caps encoded input at 64 KiB, the request at 128 KiB, the response at 256 KiB, and output at 16,384 tokens (2,048 for the page call). The connect timeout is 10 seconds. Keepalive bytes cannot prolong the deadline; a cancelled request keeps its cost uncertain.
+
+### Cost
+
+Before network access, an operation reserves the sum, over every planned batch call (plus the page call) and every stage, of each wire byte counted as a token at the stage's prompt cap plus its full output cap, rounded up once to cents. Known stage costs are summed in micro-USD and the operation is rounded **up** once to cents. A stage without a provider-reported cost (for example a timeout) is charged at its own upper bound, so the ledger never undercounts and never exceeds the reservation. Each run's usage keeps a per-call receipt: batch, requested and actual model, provider name, status, tokens, micro-USD cost and duration. Model pricing or caps require a versioned code change, not an environment override.
+
+Requests use `data_collection: "deny"`. This is **not** a zero-retention promise. Do not relax privacy settings to force a model. Each response must name the requested stage model, which is retained in immutable run provenance; the run names one model only when every accepted call used it, otherwise the planned chain. Only the publication-input projection, validated canonical batch text or canonical translation text is sent; no archive access, tools, browsing, credentials, reviewer notes or suggestion bodies. A schema and valid claim references do not independently prove every generated sentence is entailed by its evidence; real-source language/faithfulness checks are required before scaling.
 
 ### Development
 
@@ -128,7 +147,7 @@ The committed `.env.openrouter.dev` contains only the 1Password reference `op://
 op run --env-file=.env.openrouter.dev -- mix phx.server
 ```
 
-Use the normal isolated test database for contract checks. Ordinary tests never call OpenRouter. Never point these tests at production storage. The opt-in check makes at most three budget-reserved operations (up to six HTTP requests across their bounded stages) using the two already published Ixelles 269 proposal interpretations. It checks structured output, not a new PDF normalizer or a full semantic benchmark, and never publishes:
+Use the normal isolated test database for contract checks. Ordinary tests never call OpenRouter. Never point these tests at production storage. The opt-in check makes at most three budget-reserved operations (one batch each, up to nine HTTP requests across their bounded stages) using the two already published Ixelles 269 proposal interpretations. It checks structured output, not a new PDF normalizer or a full semantic benchmark, and never publishes:
 
 ```bash
 op run --env-file=.env.openrouter.dev -- env ERL_FLAGS='+S 4:4' \
@@ -136,6 +155,18 @@ op run --env-file=.env.openrouter.dev -- env ERL_FLAGS='+S 4:4' \
 ```
 
 It prints only sanitized model/usage/status receipts. Test-database reservations roll back; actual OpenRouter charges do not. Do not repeatedly run it to bypass a real spending limit.
+
+The batched check runs one FR, one NL and one EN operation over a real multi-batch meeting. Real publication inputs are not committed (this repository is public). Export one to a private local file with a read-only call, then point the test at it. It writes the generated bundles next to the input for review and never publishes:
+
+```bash
+mkdir -m 700 -p /tmp/coverage-smoke
+# Read-only: prints one meeting's publication input. Run inside the app container.
+bin/brussels_wtf rpc 'IO.puts(Jason.encode!(BrusselsWtf.Council.Publication.generation_input("<meeting-uuid>")))' \
+  > /tmp/coverage-smoke/input.json
+op run --env-file=.env.openrouter.dev -- env ERL_FLAGS='+S 4:4' MIX_TEST_PARTITION=_live \
+  OPENROUTER_LIVE_INPUT=/tmp/coverage-smoke/input.json \
+  mix test --include external test/contracts/openrouter_batched_live_test.exs
+```
 
 ### Production activation
 
@@ -154,3 +185,7 @@ Official API references: [ordered fallbacks](https://openrouter.ai/docs/guides/r
 ### Implementation checkpoint — 2026-09-17
 
 The dev key authenticated successfully. The staged adapter completed canonical French and Dutch/English translations for Ixelles 269 items 38 and 39 in 52.1 seconds. Each free stage returned HTTP 504 and the paid DeepSeek stage succeeded. A content review found a Dutch modifier-scope defect; after tightening the translation instruction, one Dutch-only recheck against the saved French canonical preserved both price and quantity revisions. FR and EN were not regenerated after that prompt change. These are bounded fixture acceptance results, not a guarantee for other inputs or evidence that the primary model succeeded. All failed-stage costs remained unknown and reconciliation used the conservative reservation ceiling. No production activation, publication, or historical replay was performed.
+
+### Batched dev smoke — 2026-10-18
+
+The real adapter generated FR/NL/EN for the Ixelles 270 publication input (72 items, 116 KB): the meeting whose production runs failed with `input_too_large`. Each locale used 9 batches, and FR also made the page call. Every call was served by `deepseek/deepseek-v4.1-flash` (Decart or Sail Research) with no fallback, timeout or invalid output. Wall time was 89 s for FR, 96 s for NL and 65 s for EN. Actual provider cost was $0.0115 + $0.0117 + $0.0102 = $0.0334, and the ledger charged 2 cents per operation. All bundles passed the generation contract; nothing was published. An earlier run with `json_object` output and price-first routing failed NL validation (the extra `"type"` key) and had three 90-second timeouts; that run led to the strict schema and throughput ordering above. No production configuration, publication or regeneration was performed.
