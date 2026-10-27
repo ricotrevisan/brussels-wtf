@@ -139,6 +139,14 @@ Check the deployed OCR network attachments against the healthy app; do not
 publish storage ports or substitute public storage endpoints to bypass a missing
 network attachment.
 
+Since Coolify 4.5.0, Compose interpolates `${VAR:?}` only from variables marked
+**Available at buildtime**. Every variable the Compose file requires must be
+both build-time and runtime in the OCR application, or the deployment fails
+with `required variable … is missing a value` while the previous container keeps
+running. When `docker-compose.ocr.yml` gains a required variable, mark it
+build-time before deploying. Coolify's API returns no log for these failures;
+the log is in its `application_deployment_queues` table.
+
 ### OCR readiness and read-only diagnostics
 
 Both the image and Compose use `/app/bin/ocr_ready`. It performs a bounded RPC
