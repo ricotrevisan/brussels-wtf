@@ -46,7 +46,7 @@ defmodule BrusselsWtf.MixProject do
       {:ash_authentication, "~> 4.0"},
       {:ash_postgres, "~> 2.0"},
       {:simple_sat, "~> 0.1.4"},
-      {:oban, "~> 2.23"},
+      {:oban, "~> 2.24"},
       {:nimble_csv, "~> 1.2"},
       {:req, "~> 0.7"},
       {:req_s3, "~> 0.2.5"},

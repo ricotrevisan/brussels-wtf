@@ -721,8 +721,13 @@ defmodule BrusselsWtf.Ingestion.LargePdfOcrRecoveryTest do
     Application.put_env(:brussels_wtf, :large_pdf_ocr_workspace, System.tmp_dir!())
 
     try do
+      # Two earlier snoozes rolled the attempt back; this is the first real attempt.
       assert {:error, :ocr_worker_unavailable} =
-               BrusselsWtf.Workers.OcrLargeSource.perform(%{job | attempt: 4, max_attempts: 6})
+               BrusselsWtf.Workers.OcrLargeSource.perform(%{
+                 job
+                 | attempt: 1,
+                   meta: %{"snoozed" => 2}
+               })
 
       queued = Ingestion.get_processing_run!(run.id) |> Ash.load!(:attempts)
       assert queued.status == :queued
@@ -750,7 +755,11 @@ defmodule BrusselsWtf.Ingestion.LargePdfOcrRecoveryTest do
 
     waiting_job =
       waiting_job
-      |> Ecto.Changeset.change(state: "executing", attempt: 3)
+      |> Ecto.Changeset.change(
+        state: "executing",
+        attempt: 3,
+        attempted_at: DateTime.utc_now()
+      )
       |> Repo.update!()
 
     Application.put_env(:brussels_wtf, :ocr_test_barrier, true)
@@ -762,21 +771,22 @@ defmodule BrusselsWtf.Ingestion.LargePdfOcrRecoveryTest do
 
       executor =
         Oban.config()
-        |> Oban.Queue.Executor.new(waiting_job)
-        |> Oban.Queue.Executor.resolve_worker()
-        |> Oban.Queue.Executor.perform()
-        |> Oban.Queue.Executor.normalize_state()
+        |> Oban.Queues.Executor.new(waiting_job)
+        |> Oban.Queues.Executor.resolve_worker()
+        |> Oban.Queues.Executor.perform()
+        |> Oban.Queues.Executor.normalize_state()
 
       assert executor.state == :snoozed
       assert executor.result == {:snooze, 30}
       send(pid, :continue)
       assert :ok = Task.await(owner, 3_000)
 
-      Oban.Queue.Executor.ack_event(executor)
+      Oban.Queues.Executor.ack_event(executor)
       rescheduled = Repo.get!(Oban.Job, waiting_job.id)
       assert rescheduled.state == "scheduled"
-      assert rescheduled.attempt == 3
-      assert rescheduled.max_attempts == 4
+      assert rescheduled.attempt == 2
+      assert rescheduled.max_attempts == 3
+      assert rescheduled.meta["snoozed"] == 1
 
       assert Ingestion.get_processing_run!(waiting_run.id).status == :queued
 
