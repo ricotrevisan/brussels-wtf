@@ -2,6 +2,13 @@ defmodule BrusselsWtfWeb.PublicationOperationsTest do
   use BrusselsWtfWeb.ConnCase, async: false
   alias BrusselsWtf.{Council, Ingestion, Review, Suggestions}
   @reviewer %Review.Actor{id: "rico", role: :reviewer}
+  @coverage_copy [
+    {"en", "Retained documents: 1", "Cited by this revision: 1",
+     "Source or publication awaiting"},
+    {"fr", "Documents conservés\u00A0: 1", "Cités par cette révision\u00A0: 1",
+     "Source ou publication en attente"},
+    {"nl", "Bewaarde documenten: 1", "Geciteerd in deze revisie: 1", "Bron of publicatie wacht"}
+  ]
 
   setup do
     config = Application.fetch_env!(:brussels_wtf, :suggestions)
@@ -167,6 +174,191 @@ defmodule BrusselsWtfWeb.PublicationOperationsTest do
     refute meeting["source_update_pending"]
   end
 
+  describe "the coverage status of one meeting" do
+    setup do
+      BrusselsWtf.Test.Harness.load("ixelles/final-267")
+      assert :ok = Ingestion.poll_now("ixelles")
+      assert :ok = BrusselsWtf.Test.Harness.drain_pipeline()
+      meeting = Council.get_ingested_meeting!("ixelles", "267") |> Ash.load!(:meeting_page)
+      assert meeting.meeting_page.publication_status == :published
+      %{page: meeting.meeting_page}
+    end
+
+    test "a published meeting with nothing open reports its documents without a pending notice",
+         %{conn: conn} do
+      status = ixelles_status()
+
+      assert status["retained_documents"] == 1
+      assert status["cited_documents"] == 1
+      assert status["documents_in_review"] == 0
+      assert BrusselsWtf.CoverageStatus.notices(status) == []
+
+      for {locale, retained, cited, stale} <- @coverage_copy do
+        html = conn |> get("/coverage?lang=#{locale}") |> html_response(200)
+        assert html =~ retained
+        assert html =~ cited
+        refute html =~ stale
+      end
+    end
+
+    test "a document whose older version the revision cites stays cited, and its newer version is reported",
+         %{conn: conn} do
+      agenda =
+        Ingestion.SourceRecord
+        |> Ash.read!(authorize?: false, load: :versions)
+        |> Enum.find(&(&1.role == :agenda))
+
+      [cited] = agenda.versions
+
+      Ingestion.upsert_source_version!(%{
+        source_record_id: agenda.id,
+        sha256: String.duplicate("a", 64),
+        byte_size: 1,
+        media_type: "application/pdf",
+        object_key: "test/newer-version",
+        first_retrieved_at: DateTime.add(cited.first_retrieved_at, 1, :day)
+      })
+
+      status = ixelles_status()
+
+      assert status["retained_documents"] == 1
+      assert status["cited_documents"] == 1
+      assert status["source_update_pending"]
+      assert BrusselsWtf.CoverageStatus.notices(status) == [:processing_pending]
+
+      html = conn |> get("/coverage?lang=en") |> html_response(200)
+      assert html =~ "Cited by this revision: 1"
+      assert html =~ "Source retained; processing or publication pending"
+    end
+
+    test "a later publication check is named, and is not called a document review",
+         %{conn: conn, page: page} do
+      Review.open_review_case!(%{
+        kind: :publication,
+        affected_record_id: page.id,
+        affected_record_type: "meeting_page",
+        commune_id: Council.get_ingested_meeting!("ixelles", "267").commune_id,
+        processing_generation: "sha256:later-input",
+        summary: "must stay private"
+      })
+
+      status = ixelles_status()
+
+      assert status["publication_review_pending"]
+      assert status["documents_in_review"] == 0
+      assert BrusselsWtf.CoverageStatus.notices(status) == [:publication_check_pending]
+
+      for {locale, text} <- [
+            {"en", "A publication check for this meeting awaits editorial review."},
+            {"fr", "Une vérification de publication pour cette réunion attend un contrôle"},
+            {"nl", "Een publicatiecontrole voor deze vergadering wacht op redactionele controle."}
+          ] do
+        html = conn |> get("/coverage?lang=#{locale}") |> html_response(200)
+        assert html =~ text
+        refute html =~ "must stay private"
+      end
+    end
+
+    test "a retained document under review is counted, not hidden, and stays apart from cited ones",
+         %{conn: conn} do
+      assert :ok = BrusselsWtf.Test.Harness.advance("final")
+      assert :ok = Ingestion.poll_now("ixelles")
+      assert :ok = BrusselsWtf.Test.Harness.drain_pipeline(until: :fetch)
+
+      minutes =
+        Ingestion.SourceRecord
+        |> Ash.read!(authorize?: false)
+        |> Enum.find(&(&1.role == :minutes))
+
+      Review.open_review_case!(%{
+        kind: :normalization,
+        affected_record_id: minutes.id,
+        affected_record_type: "source_record",
+        commune_id: minutes.commune_id,
+        source_record_id: minutes.id,
+        processing_generation: "normalization:fixture",
+        summary: "must stay private"
+      })
+
+      status = ixelles_status()
+
+      assert status["published"]
+      refute status["publication_review_pending"]
+      assert status["retained_documents"] == 2
+      assert status["cited_documents"] == 1
+      assert status["documents_in_review"] == 1
+      assert BrusselsWtf.CoverageStatus.notices(status) == []
+
+      html = conn |> get("/coverage?lang=en") |> html_response(200)
+      assert html =~ "Awaiting editorial review: 1"
+      refute html =~ "A publication check for this meeting"
+      refute html =~ "must stay private"
+    end
+  end
+
+  test "an unpublished meeting names what is holding it, in every language", %{conn: conn} do
+    BrusselsWtf.Test.Harness.load("ixelles/proposal")
+    assert :ok = Ingestion.poll_now("ixelles")
+    assert :ok = BrusselsWtf.Test.Harness.drain_pipeline(until: :fetch)
+
+    record =
+      Ingestion.SourceRecord |> Ash.read!(authorize?: false) |> Enum.find(&(&1.role == :agenda))
+
+    Review.open_review_case!(%{
+      kind: :normalization,
+      affected_record_id: record.id,
+      affected_record_type: "source_record",
+      commune_id: record.commune_id,
+      source_record_id: record.id,
+      processing_generation: "normalization:fixture",
+      summary: "must stay private"
+    })
+
+    status = ixelles_status()
+    refute status["published"]
+    assert status["retained_documents"] == 2
+    assert status["documents_in_review"] == 1
+
+    assert BrusselsWtf.CoverageStatus.notices(status) ==
+             [:document_review_pending, :processing_pending]
+
+    for {locale, held, no_items} <- [
+          {"en", "Retained documents for this meeting await editorial review",
+           "No agenda points have been normalized for this meeting yet."},
+          {"fr", "Des documents conservés pour cette réunion attendent",
+           "Aucun point de l’ordre du jour n’a encore été normalisé pour cette réunion."},
+          {"nl", "Bewaarde documenten voor deze vergadering wachten",
+           "Voor deze vergadering zijn nog geen agendapunten genormaliseerd."}
+        ] do
+      html = conn |> get("/coverage?lang=#{locale}") |> html_response(200)
+      decoded = html |> LazyHTML.from_document() |> LazyHTML.text()
+      assert decoded =~ held
+      assert decoded =~ no_items
+    end
+  end
+
+  test "normalized meetings never claim the agenda was not enumerated", %{conn: conn} do
+    BrusselsWtf.Test.Harness.load("ixelles/proposal")
+    assert :ok = Ingestion.poll_now("ixelles")
+    assert :ok = BrusselsWtf.Test.Harness.drain_pipeline()
+
+    for {locale, scope, old} <- [
+          {"en", "Counts cover points read from retained documents", "has not been enumerated"},
+          {"fr", "Ces chiffres couvrent les points lus dans les documents conservés", "dénombré"},
+          {"nl", "Deze aantallen gelden voor punten uit bewaarde documenten", "niet geteld"}
+        ] do
+      decoded =
+        conn
+        |> get("/coverage?lang=#{locale}")
+        |> html_response(200)
+        |> LazyHTML.from_document()
+        |> LazyHTML.text()
+
+      assert decoded =~ scope
+      refute decoded =~ old
+    end
+  end
+
   test "coverage renders discovered sources before a meeting is normalized", %{conn: conn} do
     BrusselsWtf.Test.Harness.load("ixelles/proposal")
     assert :ok = Ingestion.poll_now("ixelles")
@@ -225,5 +417,12 @@ defmodule BrusselsWtfWeb.PublicationOperationsTest do
 
     assert Enum.find(after_replay.communes, &(&1["slug"] == "ixelles"))["checked_at"] ==
              commune["checked_at"]
+  end
+
+  defp ixelles_status do
+    BrusselsWtfWeb.MeetingTime.today()
+    |> BrusselsWtf.CoverageStatus.snapshot()
+    |> Map.fetch!(:meetings)
+    |> Enum.find(&(&1["slug"] == "ixelles"))
   end
 end

@@ -377,6 +377,84 @@ defmodule BrusselsWtf.Council.PublicationTest do
     assert [%{status: :resolved}] = Review.list_review_cases!(%{kind: :publication}, actor: actor)
   end
 
+  test "a successful publication resolves every open publication case for that page, with an audit" do
+    scenario = BrusselsWtf.Test.Harness.load("ixelles/proposal")
+    incomplete = pop_in(scenario.coverage, ["items", "4", "variants", "nl"]) |> elem(1)
+    BrusselsWtf.Processors.Stub.put_locales("268", incomplete)
+    page = poll_and_page!()
+    actor = %Actor{id: "rico", role: :reviewer}
+
+    assert [current_generation] = Review.list_review_cases!(%{kind: :publication}, actor: actor)
+
+    older_gate_case = open_case!(:publication, page.id, "sha256:older-input")
+    processor_case = open_case!(:publication, page.id, "sha256:older-input:sha256:config")
+    other_page_case = open_case!(:publication, Ash.UUID.generate(), "sha256:other-page")
+    same_page_other_kind = open_case!(:acquisition, page.id, "sha256:other-kind")
+
+    BrusselsWtf.Processors.Stub.put_locales("268", scenario.coverage)
+    meeting = Council.get_ingested_meeting!("ixelles", "268")
+    assert :ok = Council.generate_meeting_coverage!(meeting.id, 1, 3)
+
+    published = Council.get_meeting_page!(page.id)
+    assert published.publication_status == :published
+
+    for %{id: id} <- [current_generation, older_gate_case, processor_case] do
+      resolved = Review.get_review_case!(id, actor: actor)
+      assert resolved.status == :resolved
+      assert resolved.disposition == :superseded_by_publication
+
+      assert [audit] = resolved.actions
+      assert audit.action == :resolve_by_publication
+      assert audit.effect == :publication_revision
+      assert audit.disposition == :superseded_by_publication
+      assert audit.actor_id == "system:publication"
+      assert audit.details["publication_revision_id"] == published.current_revision_id
+      assert audit.details["publication_input_hash"] == published.publication_input_hash
+      assert audit.details["case_generation"] == resolved.processing_generation
+      assert audit.details["trigger"] == "publication"
+    end
+
+    assert Review.get_review_case!(other_page_case.id, actor: actor).status == :open
+    assert Review.get_review_case!(same_page_other_kind.id, actor: actor).status == :open
+  end
+
+  test "a failed publication leaves every publication case open" do
+    scenario = BrusselsWtf.Test.Harness.load("ixelles/proposal")
+    incomplete = pop_in(scenario.coverage, ["items", "4", "variants", "nl"]) |> elem(1)
+    BrusselsWtf.Processors.Stub.put_locales("268", incomplete)
+    page = poll_and_page!()
+    actor = %Actor{id: "rico", role: :reviewer}
+    older_gate_case = open_case!(:publication, page.id, "sha256:older-input")
+
+    meeting = Council.get_ingested_meeting!("ixelles", "268")
+    assert :ok = Council.generate_meeting_coverage!(meeting.id, 1, 3)
+
+    assert Council.get_meeting_page!(page.id).publication_status == :draft
+    resolved = Review.get_review_case!(older_gate_case.id, actor: actor)
+    assert resolved.status == :open
+    assert resolved.actions == []
+  end
+
+  test "publication cases cannot be resolved by a reviewer or for another kind of case" do
+    scenario = BrusselsWtf.Test.Harness.load("ixelles/proposal")
+    BrusselsWtf.Processors.Stub.put_locales("268", scenario.coverage)
+    page = poll_and_page!()
+    actor = %Actor{id: "rico", role: :reviewer}
+    arguments = %{publication_revision_id: page.current_revision_id, publication_input_hash: "x"}
+
+    publication_case = open_case!(:publication, page.id, "sha256:reviewer-forbidden")
+    other_kind = open_case!(:acquisition, page.id, "sha256:wrong-kind")
+
+    assert {:error, %Ash.Error.Forbidden{}} =
+             Review.resolve_review_case_by_publication(publication_case, arguments, actor: actor)
+
+    assert {:error, %Ash.Error.Invalid{}} =
+             Review.resolve_review_case_by_publication(other_kind, arguments)
+
+    assert Review.get_review_case!(publication_case.id, actor: actor).status == :open
+    assert Review.get_review_case!(other_kind.id, actor: actor).status == :open
+  end
+
   test "a meeting publishes its votable points and keeps non-votable items off the page", %{
     conn: conn
   } do
@@ -424,5 +502,15 @@ defmodule BrusselsWtf.Council.PublicationTest do
 
     meeting = Council.get_ingested_meeting!("ixelles", "268")
     meeting |> Ash.load!(:meeting_page) |> Map.fetch!(:meeting_page)
+  end
+
+  defp open_case!(kind, affected_record_id, generation) do
+    Review.open_review_case!(%{
+      kind: kind,
+      affected_record_id: affected_record_id,
+      affected_record_type: "meeting_page",
+      processing_generation: generation,
+      summary: "Issue 146 regression fixture"
+    })
   end
 end

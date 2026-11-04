@@ -118,6 +118,20 @@ defmodule BrusselsWtf.Council.MeetingPage do
       change set_attribute(:withdrawn_at, nil)
       change set_attribute(:withdrawn_by, nil)
       change set_attribute(:withdrawal_reasons, %{})
+
+      # Every publication path goes through this action, so none can leave a stale case.
+      change fn changeset, _context ->
+        Ash.Changeset.after_action(changeset, fn _changeset, page ->
+          notifications =
+            BrusselsWtf.Review.resolve_publication_cases_for_revision!(
+              page.id,
+              page.current_revision_id,
+              page.publication_input_hash
+            )
+
+          {:ok, page, notifications}
+        end)
+      end
     end
 
     read :published do

@@ -296,6 +296,34 @@ defmodule BrusselsWtf.Council.PublicationLifecycleTest do
     assert Enum.map(published_items, & &1.item_number) == ["4"]
   end
 
+  test "republication resolves a publication case opened while the page was withdrawn", %{
+    page: page,
+    actor: actor
+  } do
+    PublicationLifecycle.withdraw!(
+      page.id,
+      %{"fr" => "Retrait", "nl" => "Intrekking", "en" => "Withdrawal"},
+      actor
+    )
+
+    review_case =
+      BrusselsWtf.Review.open_review_case!(%{
+        kind: :publication,
+        affected_record_id: page.id,
+        affected_record_type: "meeting_page",
+        processing_generation: "sha256:while-withdrawn",
+        summary: "Issue 146 regression fixture"
+      })
+
+    revision = PublicationLifecycle.republish!(page.id, actor)
+
+    resolved = BrusselsWtf.Review.get_review_case!(review_case.id, actor: actor)
+    assert resolved.status == :resolved
+    assert resolved.disposition == :superseded_by_publication
+    assert [audit] = resolved.actions
+    assert audit.details["publication_revision_id"] == revision.id
+  end
+
   test "a newer revision survives an interleaved recorded correction and its attempted runs remain",
        %{
          conn: conn,

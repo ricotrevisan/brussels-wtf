@@ -99,7 +99,6 @@ defmodule BrusselsWtf.Council.Publication do
         case generate_revision(meeting, input, metadata, :automatic, 1, correction) do
           {:ok, revision, notifications} ->
             Ash.Notifier.notify(notifications)
-            BrusselsWtf.Review.resolve_publication_case!(page_id, revision.publication_input_hash)
             revision
 
           {:error, {:publication_gate, failures}} ->
@@ -411,7 +410,6 @@ defmodule BrusselsWtf.Council.Publication do
           {:ok, revision, notifications}
         else
           Ash.Notifier.notify(notifications)
-          BrusselsWtf.Review.resolve_publication_case!(meeting.meeting_page.id, input_hash)
           :ok
         end
 

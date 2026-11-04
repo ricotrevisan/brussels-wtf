@@ -46,7 +46,7 @@ A stable reference from generated coverage to a claim present in the publication
 
 ## Review case
 
-An actionable acquisition, extraction, normalization, or evidence ambiguity that requires Rico's attention. It is domain work, not merely a failed background job, and resolving it never mutates raw source versions.
+An actionable acquisition, extraction, normalization, or evidence ambiguity that requires Rico's attention. It is domain work, not merely a failed background job, and resolving it never mutates raw source versions. A successful publication of a meeting page resolves that page's open publication cases and records an audit naming the revision; no reviewer is implied.
 
 ## Agenda
 
