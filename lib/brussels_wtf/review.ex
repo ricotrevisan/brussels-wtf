@@ -15,6 +15,7 @@ defmodule BrusselsWtf.Review do
       define :extract_large_native, action: :extract_large_native
       define :retry_review_case, action: :retry
       define :complete_review_retry, action: :complete_retry
+      define :resolve_review_case_by_publication, action: :resolve_by_publication
       define :reclassify_review_case, action: :reclassify
       define :relink_review_case, action: :relink
       define :correct_review_case, action: :correct
@@ -24,6 +25,7 @@ defmodule BrusselsWtf.Review do
 
     resource BrusselsWtf.Review.Action do
       define :record_review_action, action: :record
+      define :record_publication_resolution, action: :record_publication_resolution
     end
 
     resource BrusselsWtf.Review.Note do
@@ -81,16 +83,40 @@ defmodule BrusselsWtf.Review do
     |> Ash.read!(authorize?: false, domain: __MODULE__)
   end
 
-  def resolve_publication_case!(meeting_page_id, generation) do
+  @doc """
+  Resolves the open publication cases of a page that a published revision superseded.
+
+  Called inside the publish transaction, so a publication and its audit rows commit
+  together. Returns the notifications for the caller's transaction to send. `:case_ids`
+  narrows the set for the backfill, and `:trigger` records why the case closed.
+  """
+  def resolve_publication_cases_for_revision!(page_id, revision_id, input_hash, opts \\ []) do
     BrusselsWtf.Review.Case
     |> Ash.Query.filter(
-      kind == :publication and affected_record_id == ^meeting_page_id and
-        processing_generation == ^generation and status == :open
+      kind == :publication and affected_record_id == ^page_id and status == :open
     )
+    |> then(fn query ->
+      case Keyword.fetch(opts, :case_ids) do
+        {:ok, case_ids} -> Ash.Query.filter(query, id in ^case_ids)
+        :error -> query
+      end
+    end)
+    |> Ash.Query.sort(inserted_at: :asc, id: :asc)
     |> Ash.read!(authorize?: false, domain: __MODULE__)
-    |> Enum.each(&complete_review_retry!/1)
+    |> Enum.flat_map(fn review_case ->
+      {_resolved, notifications} =
+        resolve_review_case_by_publication!(
+          review_case,
+          %{
+            publication_revision_id: revision_id,
+            publication_input_hash: input_hash,
+            trigger: Keyword.get(opts, :trigger, :publication)
+          },
+          return_notifications?: true
+        )
 
-    :ok
+      notifications
+    end)
   end
 
   def list_review_cases!(filters \\ %{}, opts \\ []) do

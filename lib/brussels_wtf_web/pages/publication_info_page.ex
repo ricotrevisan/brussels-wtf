@@ -67,23 +67,26 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
                   {text(@locale, :revision)}: {timestamp(meeting["published_at"], @locale)}
                 </p>
               <% else %>
-                · {text(@locale, pending_state(meeting))}
+                · {text(@locale, unpublished_state(meeting))}
               <% end %>
-              <p
-                :if={
-                  meeting["published"] and
-                    (meeting["review_pending"] or meeting["acquisition_failed"] or
-                       meeting["source_update_pending"])
-                }
-                class="text-sm"
-              >
-                {text(@locale, pending_state(meeting))}
+              <p :for={notice <- BrusselsWtf.CoverageStatus.notices(meeting)} class="text-sm">
+                {text(@locale, notice)}
+              </p>
+              <p :if={meeting["retained_documents"] > 0} class="text-sm">
+                {count(@locale, :documents_retained, meeting["retained_documents"])}
+                <span :if={meeting["published"]}>
+                  {count(@locale, :documents_cited, meeting["cited_documents"])}
+                </span>
+                {count(@locale, :documents_in_review, meeting["documents_in_review"])}
               </p>
               <p class="text-sm">
-                {text(@locale, :selected_count)}: {meeting["selected_items"]}. {text(
-                  @locale,
-                  :omitted_count
-                )}: {meeting["omitted_normalized_items"]}. {text(@locale, :total_unknown)}
+                <%= if normalized_items(meeting) > 0 do %>
+                  {count(@locale, :selected_count, meeting["selected_items"])}
+                  {count(@locale, :omitted_count, meeting["omitted_normalized_items"])}
+                  {text(@locale, :counts_scope)}
+                <% else %>
+                  {text(@locale, :no_items)}
+                <% end %>
               </p>
               <p class="text-sm text-base-content/70">
                 {text(@locale, if(meeting["final_source_seen"], do: :final_seen, else: :final_absent))}
@@ -107,10 +110,15 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
     """
   end
 
-  defp pending_state(%{"review_pending" => true}), do: :review_pending
-  defp pending_state(%{"acquisition_failed" => true}), do: :acquisition_failed
-  defp pending_state(%{"downloaded" => true}), do: :processing_pending
-  defp pending_state(_), do: :pending
+  defp unpublished_state(%{"downloaded" => true}), do: :retained_not_published
+  defp unpublished_state(_meeting), do: :pending
+
+  defp normalized_items(meeting),
+    do: meeting["selected_items"] + meeting["omitted_normalized_items"]
+
+  # French typography puts a non-breaking space before the colon.
+  defp count("fr", key, value), do: "#{text("fr", key)}\u00A0: #{value}."
+  defp count(locale, key, value), do: "#{text(locale, key)}: #{value}."
 
   defp timestamp(nil, locale), do: text(locale, :unverified)
   defp timestamp(%NaiveDateTime{} = date, _locale), do: NaiveDateTime.to_iso8601(date) <> " UTC"
@@ -121,8 +129,17 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
       "en" => %{
         selected_count: "Published selected items",
         omitted_count: "Other normalized items outside the selection",
-        total_unknown: "The full agenda has not been enumerated; the total omitted is unknown.",
-        review_pending: "Source or publication awaiting editorial review",
+        counts_scope:
+          "Counts cover points read from retained documents; the official agenda remains the reference for the full list.",
+        no_items: "No agenda points have been normalized for this meeting yet.",
+        documents_retained: "Retained documents",
+        documents_cited: "Cited by this revision",
+        documents_in_review: "Awaiting editorial review",
+        retained_not_published: "Source retained; coverage not yet published",
+        publication_check_pending:
+          "A publication check for this meeting awaits editorial review.",
+        document_review_pending: "Retained documents for this meeting await editorial review.",
+        meeting_review_pending: "An editorial review concerning this meeting is open.",
         acquisition_failed: "Latest source retrieval failed or the document disappeared",
         processing_pending: "Source retained; processing or publication pending",
         coverage: "Coverage and source checks",
@@ -157,9 +174,19 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
       "fr" => %{
         selected_count: "Points sélectionnés publiés",
         omitted_count: "Autres points normalisés hors sélection",
-        total_unknown:
-          "L’ordre du jour complet n’a pas été dénombré ; le total omis est inconnu.",
-        review_pending: "Source ou publication en attente de vérification rédactionnelle",
+        counts_scope:
+          "Ces chiffres couvrent les points lus dans les documents conservés ; l’ordre du jour officiel reste la référence pour la liste complète.",
+        no_items: "Aucun point de l’ordre du jour n’a encore été normalisé pour cette réunion.",
+        documents_retained: "Documents conservés",
+        documents_cited: "Cités par cette révision",
+        documents_in_review: "En attente de vérification rédactionnelle",
+        retained_not_published: "Source conservée ; couverture non encore publiée",
+        publication_check_pending:
+          "Une vérification de publication pour cette réunion attend un contrôle rédactionnel.",
+        document_review_pending:
+          "Des documents conservés pour cette réunion attendent une vérification rédactionnelle.",
+        meeting_review_pending:
+          "Une vérification rédactionnelle concernant cette réunion est ouverte.",
         acquisition_failed: "Dernière collecte échouée ou document disparu",
         processing_pending: "Source conservée ; traitement ou publication en attente",
         coverage: "Couverture et vérification des sources",
@@ -194,9 +221,18 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
       "nl" => %{
         selected_count: "Gepubliceerde geselecteerde punten",
         omitted_count: "Andere genormaliseerde punten buiten de selectie",
-        total_unknown:
-          "De volledige agenda is niet geteld; het totale aantal weggelaten punten is onbekend.",
-        review_pending: "Bron of publicatie wacht op redactionele controle",
+        counts_scope:
+          "Deze aantallen gelden voor punten uit bewaarde documenten; de officiële agenda blijft de referentie voor de volledige lijst.",
+        no_items: "Voor deze vergadering zijn nog geen agendapunten genormaliseerd.",
+        documents_retained: "Bewaarde documenten",
+        documents_cited: "Geciteerd in deze revisie",
+        documents_in_review: "Wacht op redactionele controle",
+        retained_not_published: "Bron bewaard; verslag nog niet gepubliceerd",
+        publication_check_pending:
+          "Een publicatiecontrole voor deze vergadering wacht op redactionele controle.",
+        document_review_pending:
+          "Bewaarde documenten voor deze vergadering wachten op redactionele controle.",
+        meeting_review_pending: "Er loopt een redactionele controle over deze vergadering.",
         acquisition_failed: "Laatste bronophaling mislukt of document verdwenen",
         processing_pending: "Bron bewaard; verwerking of publicatie in afwachting",
         coverage: "Dekking en broncontroles",
