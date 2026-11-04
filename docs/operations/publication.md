@@ -56,6 +56,18 @@ A gate failure preserves the last complete publication state, stores typed failu
 
 Processor failures retain one coverage-run record per execution. Failures a retry cannot change (`input_too_large`, `invalid_publication_input`, `invalid_canonical_output`, `invalid_generation_output`, `incomplete_generation`, `unsupported_locale`) open a deduplicated high-urgency publication review case on the first attempt and are not retried. Oban retries other failures up to its bounded `max_attempts`; the terminal attempt opens the case. Diagnostics contain durable identifiers and safe classifications, never provider prompts, credentials, private object keys, or response bodies.
 
+## Publication cases and the agenda-to-page scorecard
+
+Every publication path goes through the page's `publish` action. In that transaction it resolves all open publication cases of the page, whatever generation they recorded, with the disposition `superseded_by_publication`. Each case gets an audit action by `system:publication` naming the revision and input hash. A failed publication resolves nothing. Other case kinds and other pages are untouched.
+
+`/coverage` reports each meeting's own state: a pending publication check, its retained, cited and under-review document counts (listing pages excluded), retrieval failures, and retained documents the revision does not reflect yet. No line means none of those is known; it does not mean coverage is complete. Item counts cover points read from retained documents. Nothing stored proves a full agenda was enumerated, so the page does not claim it either way.
+
+Read-only scorecard, one JSON line per commune's latest meeting with a retained agenda; the field definitions are in the script header:
+
+```elixir
+Code.eval_file(Application.app_dir(:brussels_wtf, "priv/ops/agenda_to_page_scorecard.exs"))
+```
+
 ## Processor configuration
 
 Coverage generation is selected independently of extraction and normalization. `COVERAGE_PROCESSOR=recorded` (the default) uses `RecordedCorpusCoverage` for the sealed historic and September selections. Those contracts match the complete source-backed publication input; source drift fails closed instead of receiving stale prose. `COVERAGE_PROCESSOR=openrouter` selects the network-backed provider described below. Ordinary tests use controlled HTTP responses and make no paid or nondeterministic calls. Selecting OpenRouter does not replace the recorded normalizer or make arbitrary new PDFs supported.

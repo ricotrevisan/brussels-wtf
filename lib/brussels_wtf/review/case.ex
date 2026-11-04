@@ -106,6 +106,21 @@ defmodule BrusselsWtf.Review.Case do
       change set_attribute(:status, :resolved)
     end
 
+    update :resolve_by_publication do
+      require_atomic? false
+      accept []
+      argument :publication_revision_id, :uuid, allow_nil?: false
+      argument :publication_input_hash, :string, allow_nil?: false
+
+      argument :trigger, :atom do
+        allow_nil? false
+        default :publication
+        constraints one_of: [:publication, :backfill]
+      end
+
+      change BrusselsWtf.Review.Changes.ResolveByPublication
+    end
+
     update :close_suggestion do
       require_atomic? false
 
@@ -195,6 +210,10 @@ defmodule BrusselsWtf.Review.Case do
     end
 
     policy action(:complete_retry) do
+      authorize_if actor_absent()
+    end
+
+    policy action(:resolve_by_publication) do
       authorize_if actor_absent()
     end
 
@@ -293,7 +312,8 @@ defmodule BrusselsWtf.Review.Case do
                     :dossier_relinked,
                     :suggestion_rejected,
                     :suggestion_addressed,
-                    :suggestion_approved
+                    :suggestion_approved,
+                    :superseded_by_publication
                   ]
     end
 
