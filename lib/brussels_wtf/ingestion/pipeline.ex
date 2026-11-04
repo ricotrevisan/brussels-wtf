@@ -985,23 +985,13 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
   end
 
   defp normalize_unheld(run, citation_url, attempt, max_attempts, generation_kind) do
-    version = run.source_version
-    source_record = version.source_record
-
     unless run.status == :succeeded and run.quality_measurements["accepted"] do
       raise "processing run has no accepted extraction quality decision"
     end
 
-    artifact = accepted_text_artifact!(Ash.load!(run, :derived_artifacts))
-    {:ok, text} = BrusselsWtf.Archive.get(artifact.object_key)
-
-    if BrusselsWtf.Digest.sha256(text) != artifact.output_sha256 do
-      raise "derived extraction artifact checksum mismatch"
-    end
-
-    case BrusselsWtf.Processors.normalize(processor_input(run, source_record, text)) do
+    case BrusselsWtf.Processors.normalize(normalization_input(run)) do
       {:ok, normalized} ->
-        persist_normalized(source_record, version, citation_url, normalized, generation_kind)
+        persist_normalized(run, citation_url, normalized, generation_kind)
 
       {:error, :processor_unimplemented} ->
         BrusselsWtf.Ingestion.NormalizationReview.open_for_run(run, citation_url)
@@ -1033,7 +1023,41 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
     end
   end
 
-  defp persist_normalized(source_record, version, citation_url, normalized, generation_kind) do
+  @doc """
+  Reads the exact processor input a normalization of this accepted run would receive.
+
+  Read-only, so a dry run can preview a normalization through the same input and code.
+  """
+  def normalization_input(run) do
+    run =
+      Ash.load!(run, [:derived_artifacts, source_version: [source_record: [:commune]]])
+
+    artifact = accepted_text_artifact!(run)
+    {:ok, text} = BrusselsWtf.Archive.get(artifact.object_key)
+
+    if BrusselsWtf.Digest.sha256(text) != artifact.output_sha256 do
+      raise "derived extraction artifact checksum mismatch"
+    end
+
+    processor_input(run, run.source_version.source_record, text)
+  end
+
+  @doc "Queues one normalization of an accepted run under the current contract, publishing after it."
+  def enqueue_automatic_normalization(run, locator_url) do
+    %{
+      processing_run_id: run.id,
+      locator_url: locator_url,
+      processor_contract: BrusselsWtf.Processors.normalization_contract(),
+      generation_kind: "automatic"
+    }
+    |> Workers.NormalizeSource.new()
+    |> Oban.insert!()
+  end
+
+  defp persist_normalized(run, citation_url, normalized, generation_kind) do
+    version = run.source_version
+    source_record = version.source_record
+
     meeting =
       Council.upsert_meeting!(%{
         commune_id: source_record.commune_id,
@@ -1087,6 +1111,11 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
       citation_url: citation_url,
       procedural_state: :unknown
     })
+
+    # Before the publish job, so the gate never reads a superseded unavailable case.
+    if receipt = normalized["minutes_receipt"] do
+      BrusselsWtf.Ingestion.NormalizationReview.reconcile_minutes(run, citation_url, receipt)
+    end
 
     if generation_kind != :backfill do
       %{meeting_id: meeting.id, generation_kind: "automatic"}
@@ -1924,10 +1953,36 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
   # discovery context of the source locator. The lookup is read-only and a missing
   # locator degrades to nil identifiers instead of failing the run.
   defp processor_input(run, source_record, text) do
+    context = source_context(source_record)
+
     run.output
     |> Map.put("text", text)
-    |> Map.merge(source_context(source_record))
+    |> Map.merge(context)
+    |> Map.merge(known_agenda_items(context))
   end
+
+  # A minutes reader checks a printed number against the agenda it claims to resolve.
+  defp known_agenda_items(%{
+         "commune_slug" => commune_slug,
+         "role" => "minutes",
+         "meeting_identifier" => meeting_identifier
+       })
+       when is_binary(commune_slug) and is_binary(meeting_identifier) do
+    %{
+      "agenda_items" =>
+        commune_slug
+        |> Council.list_agenda_item_identities!(meeting_identifier)
+        |> Enum.map(fn item ->
+          %{
+            "item_number" => item.item_number,
+            "authoritative_identifier" => item.authoritative_identifier,
+            "source_wording" => item.source_wording
+          }
+        end)
+    }
+  end
+
+  defp known_agenda_items(_context), do: %{}
 
   defp source_context(source_record) do
     locator = source_locator(source_record)

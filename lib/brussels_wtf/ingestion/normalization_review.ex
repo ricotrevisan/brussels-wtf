@@ -75,6 +75,60 @@ defmodule BrusselsWtf.Ingestion.NormalizationReview do
     review_case
   end
 
+  @minutes_unmatched "minutes_items_unmatched"
+
+  @doc "The classification of a case that leaves single minutes points unknown."
+  def minutes_unmatched_classification, do: @minutes_unmatched
+
+  @doc """
+  Records what a successful minutes reading left unresolved.
+
+  An earlier case about this source version is superseded by the reading and resolved,
+  because a linked source record otherwise blocks its meeting page. Points the reading
+  could not resolve keep one case listing their printed identifiers and reasons.
+  """
+  def reconcile_minutes(run, citation_url, receipt) do
+    version = run.source_version
+    source_record = version.source_record
+    current = open_unmatched_case(run, version, source_record, citation_url, receipt)
+
+    version.id
+    |> BrusselsWtf.Review.list_open_normalization_cases_for_source_version!()
+    |> Enum.reject(&(current && &1.id == current.id))
+    |> Enum.each(&BrusselsWtf.Review.complete_retry!(&1.id))
+
+    :ok
+  end
+
+  defp open_unmatched_case(_run, _version, _source_record, _citation_url, %{"unmatched" => []}),
+    do: nil
+
+  defp open_unmatched_case(run, version, source_record, citation_url, receipt) do
+    unmatched = receipt["unmatched"]
+    digest = unmatched |> :erlang.term_to_binary([:deterministic]) |> BrusselsWtf.Digest.sha256()
+
+    BrusselsWtf.Review.open_review_case!(%{
+      kind: :normalization,
+      commune_id: source_record.commune_id,
+      affected_record_id: version.id,
+      affected_record_type: "source_version",
+      source_record_id: source_record.id,
+      source_version_id: version.id,
+      processing_generation: "minutes-unmatched:#{version.id}:#{digest}",
+      urgency: :normal,
+      summary: "#{length(unmatched)} of #{receipt["points"]} minutes points stay unknown",
+      normalized_content: receipt,
+      diagnostics: %{
+        "classification" => @minutes_unmatched,
+        "detail" => "These points keep an unknown outcome; other points may publish"
+      },
+      related_evidence: %{
+        "citation_url" => citation_url,
+        "processing_run_id" => run.id
+      }
+    })
+  end
+
   defp summary(:processor_unavailable),
     do: "Automatic normalization is unavailable and requires review"
 

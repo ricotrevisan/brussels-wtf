@@ -79,6 +79,22 @@ defmodule BrusselsWtf.Review do
     )
     |> Ash.Query.sort(inserted_at: :asc, id: :asc)
     |> Ash.read!(authorize?: false, domain: __MODULE__)
+    |> Enum.reject(&unresolved_points_only?/1)
+  end
+
+  # Such a case says some minutes points stay unknown. Those items publish no outcome, so
+  # the case cannot make the page assert anything unsupported; see ADR 0006.
+  defp unresolved_points_only?(review_case) do
+    review_case.diagnostics["classification"] ==
+      BrusselsWtf.Ingestion.NormalizationReview.minutes_unmatched_classification()
+  end
+
+  def list_open_normalization_cases_for_source_version!(source_version_id) do
+    BrusselsWtf.Review.Case
+    |> Ash.Query.filter(
+      status == :open and kind == :normalization and source_version_id == ^source_version_id
+    )
+    |> Ash.read!(authorize?: false, domain: __MODULE__)
   end
 
   def resolve_publication_case!(meeting_page_id, generation) do
