@@ -16,6 +16,7 @@ defmodule BrusselsWtf.Processors.Council do
   @behaviour BrusselsWtf.Processors
 
   @commune_normalizers %{
+    "forest" => BrusselsWtf.Processors.ForestCouncil,
     "ixelles" => BrusselsWtf.Processors.IxellesCouncil,
     "uccle" => BrusselsWtf.Processors.UccleCouncil
   }

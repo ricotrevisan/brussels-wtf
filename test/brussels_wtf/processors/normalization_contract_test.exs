@@ -4,6 +4,7 @@ defmodule BrusselsWtf.Processors.NormalizationContractTest do
   alias BrusselsWtf.Corpus.Manifest
   alias BrusselsWtf.Processors
   alias BrusselsWtf.Processors.Council
+  alias BrusselsWtf.Processors.ForestCouncil
   alias BrusselsWtf.Processors.IxellesCouncil
   alias BrusselsWtf.Processors.RecordedCorpus
   alias BrusselsWtf.Processors.UccleCouncil
@@ -84,6 +85,7 @@ defmodule BrusselsWtf.Processors.NormalizationContractTest do
     expected =
       {Council.module_info(:md5),
        [
+         {"forest", commune_normalizer_md5(ForestCouncil)},
          {"ixelles", commune_normalizer_md5(IxellesCouncil)},
          {"ixelles:minutes", BrusselsWtf.Processors.IxellesMinutes.module_info(:md5)},
          {"uccle", commune_normalizer_md5(UccleCouncil)}

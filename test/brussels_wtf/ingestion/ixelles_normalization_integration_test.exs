@@ -196,7 +196,7 @@ defmodule BrusselsWtf.Ingestion.IxellesNormalizationIntegrationTest do
     refute_enqueued(worker: BrusselsWtf.Workers.PublishMeeting)
   end
 
-  test "an unseen Forest origin fails closed with one review case and no crash" do
+  test "a Forest source outside the normalizer's bounds fails closed with one review case" do
     commune =
       Ingestion.create_commune!(%{
         slug: "forest",
@@ -216,7 +216,7 @@ defmodule BrusselsWtf.Ingestion.IxellesNormalizationIntegrationTest do
 
     Application.put_env(:brussels_wtf, :processors, CouncilProcessor)
 
-    # The composite itself is explicit about the missing normalizer.
+    # The composite stays unavailable without a verifiable identity or normalizer.
     assert {:error, :processor_unimplemented} =
              CouncilProcessor.normalize(%{
                "commune_slug" => "forest",
