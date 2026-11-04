@@ -1117,13 +1117,58 @@ defmodule BrusselsWtf.Ingestion.Pipeline do
       BrusselsWtf.Ingestion.NormalizationReview.reconcile_minutes(run, citation_url, receipt)
     end
 
-    if generation_kind != :backfill do
+    if generation_kind != :backfill and
+         publication_needed?(run, meeting, citation_url, normalized) do
       %{meeting_id: meeting.id, generation_kind: "automatic"}
       |> Workers.PublishMeeting.new()
       |> Oban.insert!()
     end
 
     :ok
+  end
+
+  defp publication_needed?(run, meeting, citation_url, %{"restates_agenda" => true}) do
+    case unrestated_items(meeting) do
+      [] ->
+        not published_input_current?(meeting)
+
+      items ->
+        BrusselsWtf.Ingestion.NormalizationReview.open_for_run(
+          run,
+          citation_url,
+          :normalization_ambiguity,
+          %{"unrestated_items" => items}
+        )
+
+        false
+    end
+  end
+
+  defp publication_needed?(_run, _meeting, _citation_url, _normalized), do: true
+
+  # A restating agenda replaces the meeting's whole list, so an item that only an earlier
+  # document still carries may have been withdrawn or reworded. Either reading is a guess:
+  # it stays for review and its open case blocks the publication gate. Version orders sort
+  # by source rank, then retrieval time, so a corrected agenda of the same rank counts too.
+  defp unrestated_items(meeting) do
+    items = Ash.load!(meeting, :agenda_items).agenda_items
+    latest = items |> Enum.map(& &1.current_version_order) |> Enum.max(fn -> nil end)
+
+    items
+    |> Enum.filter(&(&1.current_version_order < latest))
+    |> Enum.map(&%{"item_number" => &1.item_number, "wording" => &1.source_wording})
+    |> Enum.sort_by(& &1["item_number"])
+  end
+
+  # Re-reading an agenda that changes nothing must not spend on regenerating the page.
+  defp published_input_current?(meeting) do
+    page = Ash.load!(meeting, :meeting_page).meeting_page
+
+    page.publication_status == :published and
+      page.publication_input_hash ==
+        meeting.id
+        |> Council.Publication.generation_input()
+        |> Council.PublicationInput.hash()
   end
 
   defp discover(commune, body) do

@@ -64,11 +64,29 @@ defmodule BrusselsWtf.Processors.CouncilTest do
     assert Council.normalize(input) == expected
   end
 
+  test "an unseen Uccle agenda reaches the Uccle normalizer, not another commune's" do
+    input = %{
+      "sha256" => @unseen_sha256,
+      "commune_slug" => "uccle",
+      "meeting_identifier" => "2026-10-15",
+      "scheduled_on" => "2026-10-15",
+      "role" => "agenda",
+      "text" => File.read!("test/support/fixtures/uccle/agendas/2026-10-15-odj.excerpt.txt")
+    }
+
+    assert {:ok, normalized} = Council.normalize(input)
+    assert normalized["meeting_identifier"] == "2026-10-15"
+    assert length(normalized["items"]) == 6
+
+    assert Council.normalize(%{input | "role" => "explanatory_note"}) ==
+             {:error, :processor_unimplemented}
+  end
+
   test "an unknown commune or missing discovery context fails closed" do
     assert Council.normalize(%{
              "sha256" => @unseen_sha256,
              "text" => "unseen extracted text",
-             "commune_slug" => "uccle"
+             "commune_slug" => "forest"
            }) == {:error, :processor_unimplemented}
 
     assert Council.normalize(%{"sha256" => @unseen_sha256, "text" => "unseen extracted text"}) ==
