@@ -17,6 +17,10 @@ defmodule BrusselsWtf.Processors.Council do
 
   @commune_normalizers %{"ixelles" => BrusselsWtf.Processors.IxellesCouncil}
 
+  # Final records read differently from agendas, so a commune's minutes reader is named
+  # by the same explicit discovery context. It also widens the normalization contract.
+  @minutes_normalizers %{"ixelles" => BrusselsWtf.Processors.IxellesMinutes}
+
   @impl true
   def extract(_meta, _bytes), do: {:error, :processor_unimplemented}
 
@@ -38,7 +42,14 @@ defmodule BrusselsWtf.Processors.Council do
   end
 
   defp commune_normalizer_digests do
-    Map.new(@commune_normalizers, fn {slug, module} -> {slug, module_digest(module)} end)
+    agenda = Map.new(@commune_normalizers, fn {slug, module} -> {slug, module_digest(module)} end)
+
+    minutes =
+      Map.new(@minutes_normalizers, fn {slug, module} ->
+        {"#{slug}:minutes", module_digest(module)}
+      end)
+
+    Map.merge(agenda, minutes)
   end
 
   defp module_digest(module) do
@@ -65,14 +76,24 @@ defmodule BrusselsWtf.Processors.Council do
     end
   end
 
-  defp commune_normalizer(%{"commune_slug" => slug}) when is_binary(slug) do
+  defp commune_normalizer(%{"commune_slug" => slug, "role" => "minutes"}) when is_binary(slug) do
+    case Map.fetch(@minutes_normalizers, slug) do
+      {:ok, module} -> if loaded_normalizer?(module), do: {:ok, module}, else: :error
+      :error -> commune_agenda_normalizer(slug)
+    end
+  end
+
+  defp commune_normalizer(%{"commune_slug" => slug}) when is_binary(slug),
+    do: commune_agenda_normalizer(slug)
+
+  defp commune_normalizer(_input), do: :error
+
+  defp commune_agenda_normalizer(slug) do
     case Map.fetch(@commune_normalizers, slug) do
       {:ok, module} -> if loaded_normalizer?(module), do: {:ok, module}, else: :error
       :error -> :error
     end
   end
-
-  defp commune_normalizer(_input), do: :error
 
   defp loaded_normalizer?(module) do
     Code.ensure_loaded?(module) and function_exported?(module, :normalize, 1)

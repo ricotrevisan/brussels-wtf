@@ -81,7 +81,11 @@ defmodule BrusselsWtf.Processors.NormalizationContractTest do
 
   test "the composite digest covers its own code and every configured commune normalizer" do
     expected =
-      {Council.module_info(:md5), [{"ixelles", commune_normalizer_md5()}]}
+      {Council.module_info(:md5),
+       [
+         {"ixelles", commune_normalizer_md5()},
+         {"ixelles:minutes", BrusselsWtf.Processors.IxellesMinutes.module_info(:md5)}
+       ]}
       |> :erlang.term_to_binary([:deterministic])
       |> BrusselsWtf.Digest.sha256()
 

@@ -70,6 +70,19 @@ defmodule BrusselsWtf.Council.AgendaItem do
       upsert_fields [:source_wording, :procedural_state, :outcome]
     end
 
+    read :identities_by_meeting do
+      description "Authoritatively identified, non-synthetic items of one meeting."
+      argument :commune_slug, :string, allow_nil?: false
+      argument :municipal_identifier, :string, allow_nil?: false
+
+      filter expr(
+               council_meeting.commune.slug == ^arg(:commune_slug) and
+                 council_meeting.municipal_identifier == ^arg(:municipal_identifier) and
+                 not is_nil(authoritative_identifier) and
+                 current_version_order != "synthetic"
+             )
+    end
+
     read :publicly_contested do
       description "Published decisions with at least one vote against or abstention."
       argument :commune_slugs, {:array, :string}, allow_nil?: false

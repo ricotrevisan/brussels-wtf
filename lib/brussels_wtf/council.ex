@@ -23,6 +23,11 @@ defmodule BrusselsWtf.Council do
 
     resource BrusselsWtf.Council.AgendaItem do
       define :get_agenda_item, action: :read, get_by: [:id]
+
+      define :list_agenda_item_identities,
+        action: :identities_by_meeting,
+        args: [:commune_slug, :municipal_identifier]
+
       define :upsert_agenda_item, action: :upsert
       define :upsert_rendered_agenda_item, action: :upsert_rendered
       define :mark_agenda_item_proposed, action: :mark_proposed
