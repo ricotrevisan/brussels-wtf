@@ -59,6 +59,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       page_title: text(locale, title_key(directory?, contested?, category)),
       html_lang: locale,
       resource_path: path,
+      meta_description: BrusselsWtfWeb.PublicDescription.fixed(description_key(path), locale),
       homepage?: homepage?,
       directory?: directory?,
       contested?: contested?,
@@ -91,6 +92,13 @@ defmodule BrusselsWtfWeb.TimelinePage do
         end)
     )
   end
+
+  defp description_key("/"), do: :home
+  defp description_key("/mandates"), do: :mandates
+  defp description_key("/coverage/contested-votes"), do: :contested_votes
+  defp description_key("/coverage/coming-up"), do: :coming_up
+  defp description_key("/coverage/awaiting-outcome"), do: :awaiting_outcome
+  defp description_key("/coverage/decisions"), do: :decisions
 
   defp title_key(true, _contested?, _category), do: :verified_mandates
   defp title_key(_directory?, true, _category), do: :contested_votes

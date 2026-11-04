@@ -31,6 +31,17 @@ defmodule BrusselsWtf.Council.Dossier do
       change set_attribute(:status, :retired)
     end
 
+    read :with_published_links do
+      filter expr(
+               status == :active and
+                 exists(
+                   dossier_links,
+                   status == :active and
+                     agenda_item.council_meeting.meeting_page.publication_status == :published
+                 )
+             )
+    end
+
     read :by_slug do
       get? true
       argument :slug, :string, allow_nil?: false

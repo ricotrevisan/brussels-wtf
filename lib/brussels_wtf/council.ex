@@ -62,6 +62,7 @@ defmodule BrusselsWtf.Council do
       define :create_dossier, action: :create
       define :upsert_dossier, action: :upsert
       define :get_dossier, action: :by_slug, args: [:slug]
+      define :list_dossier_slug_candidates, action: :with_published_links
       define :retire_dossier, action: :retire
     end
 
@@ -138,6 +139,7 @@ defmodule BrusselsWtf.Council do
       define :record_publication_gate_failure, action: :record_gate_failure
       define :publish_meeting_page, action: :publish
       define :list_published_meeting_pages, action: :published
+      define :list_indexable_meeting_pages, action: :indexable
 
       define :get_published_meeting_page,
         action: :public_by_identity,

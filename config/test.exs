@@ -36,10 +36,18 @@ config :brussels_wtf,
 
 config :brussels_wtf, Oban, testing: :manual, queues: false
 
+# Tests that count page views start their own buffer.
+config :brussels_wtf, :page_view_buffer, false
+
+# Sitemap tests assert each change as soon as it is published or withdrawn.
+config :brussels_wtf, :public_sitemap_cache_ttl, 0
+
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
 config :brussels_wtf, BrusselsWtfWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4002],
+  # Public URLs in tests stay the same whichever PORT runtime.exs reads.
+  url: [host: "localhost", port: 4002],
   secret_key_base: "Ben/AdGVtuvLmP6BTbxmvIT9gfqEdn2+Onvnd68SO+S9z5AtwXNb6QkXpg3TkGWq",
   server: false
 

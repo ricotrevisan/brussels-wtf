@@ -15,15 +15,15 @@ defmodule BrusselsWtfWeb.DossierPage do
         |> Phoenix.Controller.redirect(to: "/dossiers/#{retired_into.slug}?lang=#{locale}")
 
       {:ok, dossier} ->
-        entries =
-          dossier.dossier_links
-          |> Enum.flat_map(&entry(&1, locale))
-          |> Enum.sort_by(& &1.date, {:asc, Date})
+        entries = entries(dossier, locale)
 
         assign(BrusselsWtfWeb.FollowControl.load(conn),
           page_title: text(locale, :title) <> ": " <> dossier_title(dossier, locale),
           html_lang: locale,
-          resource_path: "/dossiers/#{slug}",
+          resource_path: BrusselsWtfWeb.PublicUrl.dossier_path(slug),
+          noindex: entries == [],
+          meta_description:
+            BrusselsWtfWeb.PublicDescription.dossier(locale, dossier_title(dossier, locale)),
           locale: locale,
           dossier: dossier,
           entries: entries
@@ -132,6 +132,19 @@ defmodule BrusselsWtfWeb.DossierPage do
       <BrusselsWtfWeb.PublicationComponents.footer locale={@locale} />
     </main>
     """
+  end
+
+  @doc "Whether the dossier has publicly rendered entries in every language."
+  def indexable?(%{status: :active} = dossier) do
+    Enum.all?(BrusselsWtfWeb.PublicUrl.locales(), &(entries(dossier, &1) != []))
+  end
+
+  def indexable?(_dossier), do: false
+
+  defp entries(dossier, locale) do
+    dossier.dossier_links
+    |> Enum.flat_map(&entry(&1, locale))
+    |> Enum.sort_by(& &1.date, {:asc, Date})
   end
 
   defp dossier_title(dossier, locale),

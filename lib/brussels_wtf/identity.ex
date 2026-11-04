@@ -267,6 +267,36 @@ defmodule BrusselsWtf.Identity do
     BrusselsWtf.Identity.PublicProjection.list!(filter)
   end
 
+  @doc """
+  The profiles that currently render publicly, decided by the same gates as the
+  profile pages. Merged people resolve to a redirect and so are not listed.
+  """
+  def list_public_profile_refs! do
+    people =
+      BrusselsWtf.Identity.PublicProjection.person_candidate_ids!()
+      |> Enum.filter(
+        &match?(
+          {:ok, %BrusselsWtf.Identity.PublicProfile.Person{}},
+          get_public_person_profile(&1)
+        )
+      )
+      |> Enum.map(&{:person, &1})
+
+    companies =
+      BrusselsWtf.Identity.LegalEntity
+      |> Ash.read!(authorize?: false, domain: __MODULE__)
+      |> Enum.map(& &1.enterprise_number)
+      |> Enum.filter(
+        &match?(
+          {:ok, %BrusselsWtf.Identity.PublicProfile.Company{}},
+          get_public_company_profile(&1)
+        )
+      )
+      |> Enum.map(&{:company, &1})
+
+    people ++ companies
+  end
+
   def get_public_company_profile(enterprise_number) do
     with true <- canonical_enterprise_number?(enterprise_number),
          {:ok, company} <- get_legal_entity_by_number(enterprise_number),

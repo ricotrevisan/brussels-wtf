@@ -11,7 +11,13 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
 
     case Identity.get_public_company_profile(enterprise_number) do
       {:ok, %PublicProfile.Company{} = profile} ->
-        assign_profile(conn, profile, locale, "/companies/#{profile.enterprise_number}")
+        assign_profile(
+          conn,
+          profile,
+          locale,
+          BrusselsWtfWeb.PublicUrl.company_path(profile.enterprise_number),
+          BrusselsWtfWeb.PublicDescription.company(locale, profile.registered_name)
+        )
 
       {:error, :not_found} ->
         not_found(conn)
@@ -23,7 +29,13 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
 
     case Identity.get_public_person_profile(id) do
       {:ok, %PublicProfile.Person{} = profile} ->
-        assign_profile(conn, profile, locale, "/people/#{profile.id}")
+        assign_profile(
+          conn,
+          profile,
+          locale,
+          BrusselsWtfWeb.PublicUrl.person_path(profile.id),
+          BrusselsWtfWeb.PublicDescription.person(locale, profile.legal_name)
+        )
 
       {:redirect, %PublicProfile.Redirect{kind: :person, target_id: target_id}} ->
         conn
@@ -283,13 +295,14 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
     """
   end
 
-  defp assign_profile(conn, profile, locale, resource_path) do
+  defp assign_profile(conn, profile, locale, resource_path, meta_description) do
     enabled = Suggestions.enabled?()
 
     assign(BrusselsWtfWeb.FollowControl.load(conn),
       page_title: profile_name(profile),
       html_lang: locale,
       resource_path: resource_path,
+      meta_description: meta_description,
       locale: locale,
       profile: profile,
       relationship_groups:

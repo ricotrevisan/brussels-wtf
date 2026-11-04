@@ -104,6 +104,10 @@ Public metadata describing how text was produced or reviewed. The MVP uses `AI-g
 
 A permanent resource URL using a stable identity and optional BCP 47 language query, such as `/meetings/{id}?lang=nl-be`. Language resolution precedence is an explicit valid `lang`, the reader's persisted selection, the browser's `Accept-Language` preference on first visit, then English. The path remains identical across languages.
 
+## Page view count
+
+A first-party daily total of successful public page views by route pattern, locale, and referrer host. It stores no IP address, user agent, cookie, or finer timestamp, uses no third party, and excludes obvious bots. It measures reader demand and never affects publication.
+
 ## Mention
 
 A reference to a person or organization within a source record. A mention does not by itself establish identity, involvement, ownership, or a relationship. Unresolved company enrichment does not block meeting-page publication; verified facts update the page when later discovered.

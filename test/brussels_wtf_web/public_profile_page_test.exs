@@ -54,12 +54,12 @@ defmodule BrusselsWtfWeb.PublicProfilePageTest do
     assert html =~ String.duplicate("b", 64)
 
     assert LazyHTML.attribute(document[~s(link[rel="canonical"])], "href") == [
-             "/companies/0123456749"
+             "http://localhost:4002/companies/0123456749?lang=en"
            ]
 
     for locale <- ~w(fr nl en) do
       assert html =~ ~s(rel="alternate" hreflang="#{locale}")
-      assert html =~ ~s(href="/companies/0123456749?lang=#{locale}")
+      assert html =~ ~s(href="http://localhost:4002/companies/0123456749?lang=#{locale}")
     end
 
     assert html =~ ~s(action="/companies/0123456749/suggestions/ownership")
@@ -116,7 +116,7 @@ defmodule BrusselsWtfWeb.PublicProfilePageTest do
     assert length(LazyHTML.to_tree(document[~s(form[action*="/suggestions/"])])) == 1
 
     assert LazyHTML.attribute(document[~s(link[rel="canonical"])], "href") == [
-             "/people/#{person.id}"
+             "http://localhost:4002/people/#{person.id}?lang=en"
            ]
 
     refute html =~ "PRIVATE"

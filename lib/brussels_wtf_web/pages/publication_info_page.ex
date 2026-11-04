@@ -11,6 +11,8 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
       html_lang: locale,
       resource_path: conn.request_path,
       page_title: text(locale, if(coverage?, do: :coverage, else: :about)),
+      meta_description:
+        BrusselsWtfWeb.PublicDescription.fixed(if(coverage?, do: :coverage, else: :about), locale),
       coverage?: coverage?,
       status:
         if(coverage?, do: BrusselsWtf.CoverageStatus.snapshot(BrusselsWtfWeb.MeetingTime.today()))
@@ -99,7 +101,7 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
         </section>
       <% else %>
         <p
-          :for={key <- [:purpose, :method, :outcomes, :corrections, :retention]}
+          :for={key <- [:purpose, :method, :outcomes, :corrections, :retention, :readership]}
           class="mt-5 leading-7"
         >
           {text(@locale, key)}
@@ -169,7 +171,9 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
         corrections:
           "Use ‘Report an error in this item’ below any published item to send a private correction with its exact context. Reports enter editorial review and never change public facts automatically. Factual corrections update all three languages together and retain dated publication history. Incorrect dossier links can also be reported from the dossier page.",
         retention:
-          "You do not need an account to report an error. Contact details are optional and private, retained for at most 90 days and at most 30 days after a decision. Report text is retained for up to 365 days. Do not include sensitive personal details that are unnecessary for checking the claim."
+          "You do not need an account to report an error. Contact details are optional and private, retained for at most 90 days and at most 30 days after a decision. Report text is retained for up to 365 days. Do not include sensitive personal details that are unnecessary for checking the claim.",
+        readership:
+          "To see whether anyone reads this publication, we keep daily totals of page views by type of page, language and referring website. The count stores no IP address, browser identifier or other personal data, sets no cookie and uses no third-party service. The browser identifier is read only to skip obvious bots and is not kept."
       },
       "fr" => %{
         selected_count: "Points sélectionnés publiés",
@@ -216,7 +220,9 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
         corrections:
           "Utilisez « Signaler une erreur dans ce point » sous un point publié pour transmettre une correction privée avec son contexte exact. Les signalements vont à la rédaction et ne modifient jamais automatiquement les faits publics. Les corrections factuelles mettent à jour les trois langues ensemble et conservent un historique daté. Les liens de dossier incorrects peuvent aussi être signalés depuis le dossier.",
         retention:
-          "Aucun compte n’est requis pour signaler une erreur. Les coordonnées sont facultatives et privées, conservées au maximum 90 jours et au maximum 30 jours après une décision. Le texte est conservé jusqu’à 365 jours. Évitez les informations personnelles sensibles inutiles à la vérification."
+          "Aucun compte n’est requis pour signaler une erreur. Les coordonnées sont facultatives et privées, conservées au maximum 90 jours et au maximum 30 jours après une décision. Le texte est conservé jusqu’à 365 jours. Évitez les informations personnelles sensibles inutiles à la vérification.",
+        readership:
+          "Pour savoir si cette publication est lue, nous conservons des totaux quotidiens de pages vues par type de page, langue et site d’origine. Ce comptage ne stocke ni adresse IP, ni identifiant de navigateur, ni autre donnée personnelle, ne dépose aucun cookie et n’utilise aucun service tiers. L’identifiant du navigateur est lu uniquement pour écarter les robots évidents et n’est pas conservé."
       },
       "nl" => %{
         selected_count: "Gepubliceerde geselecteerde punten",
@@ -262,7 +268,9 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
         corrections:
           "Gebruik ‘Een fout in dit punt melden’ onder een gepubliceerd punt om een privécorrectie met de exacte context te sturen. Meldingen gaan naar de redactie en veranderen publieke feiten nooit automatisch. Feitelijke correcties werken de drie talen samen bij en bewaren gedateerde publicatiegeschiedenis. Onjuiste dossierkoppelingen kunnen ook vanuit het dossier worden gemeld.",
         retention:
-          "U hebt geen account nodig om een fout te melden. Contactgegevens zijn optioneel en privé en worden maximaal 90 dagen en maximaal 30 dagen na een beslissing bewaard. Meldingstekst wordt maximaal 365 dagen bewaard. Vermeld geen gevoelige persoonsgegevens die niet nodig zijn om de bewering te controleren."
+          "U hebt geen account nodig om een fout te melden. Contactgegevens zijn optioneel en privé en worden maximaal 90 dagen en maximaal 30 dagen na een beslissing bewaard. Meldingstekst wordt maximaal 365 dagen bewaard. Vermeld geen gevoelige persoonsgegevens die niet nodig zijn om de bewering te controleren.",
+        readership:
+          "Om te zien of deze publicatie gelezen wordt, bewaren we dagtotalen van paginaweergaven per soort pagina, taal en verwijzende website. Deze telling slaat geen IP-adres, browserkenmerk of andere persoonsgegevens op, plaatst geen cookie en gebruikt geen externe dienst. Het browserkenmerk wordt alleen gelezen om duidelijke bots over te slaan en wordt niet bewaard."
       }
     }[locale][key]
   end

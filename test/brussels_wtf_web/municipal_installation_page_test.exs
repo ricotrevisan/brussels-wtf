@@ -65,7 +65,7 @@ defmodule BrusselsWtfWeb.MunicipalInstallationPageTest do
         assert LazyHTML.text(fact) =~ wording
 
         assert LazyHTML.attribute(page[~s(link[rel="canonical"])], "href") == [
-                 "/people/#{role.subject_id}"
+                 "http://localhost:4002/people/#{role.subject_id}?lang=#{locale}"
                ]
 
         # Expected source pages come from the synthetic source scenario, not the citation renderer.
