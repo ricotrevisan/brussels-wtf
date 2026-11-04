@@ -83,6 +83,25 @@ defmodule BrusselsWtf.Processors.CouncilTest do
              {:error, :processor_unimplemented}
   end
 
+  test "an unseen City of Brussels agenda reaches the City normalizer, not another commune's" do
+    input = %{
+      "sha256" => @unseen_sha256,
+      "commune_slug" => "city-of-brussels",
+      "meeting_identifier" => "2026-10-12",
+      "scheduled_on" => "2026-10-12",
+      "role" => "agenda",
+      "page_count" => 2,
+      "text" => File.read!("test/support/fixtures/city_of_brussels/agenda_20261012_excerpt.txt")
+    }
+
+    assert {:ok, normalized} = Council.normalize(input)
+    assert normalized["meeting_identifier"] == "2026-10-12"
+    assert length(normalized["items"]) == 4
+
+    assert Council.normalize(%{input | "role" => "supporting_document"}) ==
+             {:error, :processor_unimplemented}
+  end
+
   test "an unknown commune or missing discovery context fails closed" do
     assert Council.normalize(%{
              "sha256" => @unseen_sha256,
