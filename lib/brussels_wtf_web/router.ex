@@ -12,6 +12,7 @@ defmodule BrusselsWtfWeb.Router do
     plug :protect_from_forgery
     plug :put_secure_browser_headers
     plug BrusselsWtfWeb.Locale
+    plug BrusselsWtfWeb.Plugs.PageViewCounter
   end
 
   pipeline :api do
@@ -34,6 +35,8 @@ defmodule BrusselsWtfWeb.Router do
     get "/ready", HealthController, :ready
     get "/version", HealthController, :version
   end
+
+  get "/sitemap.xml", BrusselsWtfWeb.SitemapController, :show
 
   scope "/", BrusselsWtfWeb do
     pipe_through :browser
@@ -116,6 +119,7 @@ defmodule BrusselsWtfWeb.Router do
     pipe_through [:browser, :reviewer]
 
     dstar("/", ReviewInboxPage)
+    dstar("/readership", ReadershipPage)
     post "/polls", PollController, :create
     post "/coverage-batches", CoverageBatchController, :create
     post "/corpus-batches", CorpusImportBatchController, :create

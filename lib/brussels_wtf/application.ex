@@ -24,7 +24,11 @@ defmodule BrusselsWtf.Application do
         [
           {Task.Supervisor, name: BrusselsWtf.Readiness.TaskSupervisor},
           BrusselsWtf.Readiness.Monitor,
-          {Oban, oban_config},
+          {Oban, oban_config}
+        ] ++
+        page_view_children() ++
+        [
+          BrusselsWtfWeb.PublicSitemap.Cache,
           BrusselsWtfWeb.Endpoint
         ]
 
@@ -49,6 +53,14 @@ defmodule BrusselsWtf.Application do
   def config_change(changed, _new, removed) do
     BrusselsWtfWeb.Endpoint.config_change(changed, removed)
     :ok
+  end
+
+  defp page_view_children do
+    if Application.get_env(:brussels_wtf, :page_view_buffer, true) do
+      [BrusselsWtf.Readership.PageViewBuffer.isolated_child_spec()]
+    else
+      []
+    end
   end
 
   defp archive_children do

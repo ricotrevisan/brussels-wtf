@@ -20,13 +20,18 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content={url(~p"/images/brand/social-card-1200x630.png")} />
     <meta name="twitter:image:alt" content="brussels.wtf" />
-    <%= if resource_path = assigns[:resource_path] do %>
-      <link rel="canonical" href={resource_path} />
+    <meta :if={assigns[:meta_description]} name="description" content={@meta_description} />
+    <meta :if={assigns[:noindex]} name="robots" content="noindex" />
+    <%= if (resource_path = assigns[:resource_path]) && !assigns[:noindex] do %>
       <link
-        :for={locale <- ~w(fr nl en)}
+        rel="canonical"
+        href={BrusselsWtfWeb.PublicUrl.localized(resource_path, assigns[:html_lang] || "en")}
+      />
+      <link
+        :for={{hreflang, href} <- BrusselsWtfWeb.PublicUrl.alternates(resource_path)}
         rel="alternate"
-        hreflang={locale}
-        href={resource_path <> "?lang=" <> locale}
+        hreflang={hreflang}
+        href={href}
       />
     <% end %>
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />

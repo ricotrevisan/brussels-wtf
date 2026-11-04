@@ -65,7 +65,8 @@ config :brussels_wtf,
     BrusselsWtf.CBE.Index,
     BrusselsWtf.Discovery,
     BrusselsWtf.Follow,
-    BrusselsWtf.Accounts
+    BrusselsWtf.Accounts,
+    BrusselsWtf.Readership
   ],
   clock: BrusselsWtf.Clock.System,
   http: BrusselsWtf.HTTP.Req,

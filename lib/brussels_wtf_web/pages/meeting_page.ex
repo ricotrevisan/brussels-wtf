@@ -13,7 +13,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
         variant = Enum.find(page.locale_variants, &(&1.locale == locale))
         locale_available = not is_nil(variant)
         withdrawn = page.publication_status == :draft and not is_nil(page.withdrawn_at)
-        resource_path = "/meetings/#{commune}/#{municipal_id}"
+        resource_path = BrusselsWtfWeb.PublicUrl.meeting_path(commune, municipal_id)
         contested_only = params["votes"] == "contested"
 
         assign(conn,
@@ -25,6 +25,13 @@ defmodule BrusselsWtfWeb.MeetingPage do
             end,
           html_lang: locale,
           resource_path: resource_path,
+          noindex: withdrawn or not locale_available,
+          meta_description:
+            BrusselsWtfWeb.PublicDescription.meeting(
+              locale,
+              commune_name(locale, commune, page.council_meeting.commune.name),
+              Date.to_iso8601(page.council_meeting.scheduled_on)
+            ),
           meeting_page: page,
           variant: variant,
           locale_available: locale_available,

@@ -94,6 +94,24 @@ defmodule BrusselsWtf.Identity.PublicProjection do
     |> Enum.flat_map(&project/1)
   end
 
+  @doc "People with any fact that could project publicly. Not itself a publication gate."
+  def person_candidate_ids! do
+    SourcedFact
+    |> Ash.Query.filter(
+      verification_status in [:verified, :superseded] and
+        (subject_type == :person or object_type == :person)
+    )
+    |> Ash.read!(authorize?: false, domain: Identity)
+    |> Enum.flat_map(fn fact ->
+      [
+        fact.subject_type == :person && fact.subject_id,
+        fact.object_type == :person && fact.object_id
+      ]
+    end)
+    |> Enum.filter(& &1)
+    |> Enum.uniq()
+  end
+
   def ever_public_person?(person_id) do
     SourcedFact
     |> Ash.Query.filter(

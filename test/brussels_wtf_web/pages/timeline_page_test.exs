@@ -86,7 +86,10 @@ defmodule BrusselsWtfWeb.TimelinePageTest do
       assert Enum.count(page[~s(form[method="get"][action="#{path}"])]) == 1
       assert Enum.count(page[~s(input[name="q"])]) == 1
       assert Enum.count(page[~s(button[data-follow-control])]) == 4
-      assert LazyHTML.attribute(page[~s(link[rel="canonical"])], "href") == [path]
+
+      assert LazyHTML.attribute(page[~s(link[rel="canonical"])], "href") == [
+               "http://localhost:4002#{path}?lang=en"
+             ]
 
       filtered =
         conn
@@ -151,7 +154,10 @@ defmodule BrusselsWtfWeb.TimelinePageTest do
       assert LazyHTML.attribute(trailing["section"], "aria-labelledby") ==
                LazyHTML.attribute(canonical["section"], "aria-labelledby")
 
-      assert LazyHTML.attribute(trailing[~s(link[rel="canonical"])], "href") == [path]
+      assert LazyHTML.attribute(trailing[~s(link[rel="canonical"])], "href") == [
+               "http://localhost:4002#{path}?lang=nl"
+             ]
+
       assert Enum.count(trailing[~s(form[method="get"][action="#{path}"])]) == 1
       assert LazyHTML.attribute(trailing[~s(input[name="q"])], "value") == ["budget"]
 

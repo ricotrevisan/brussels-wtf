@@ -43,6 +43,7 @@ defmodule BrusselsWtfWeb.ReviewInboxPage do
       <p class="mt-2 text-base-content/70">
         Actionable domain cases, separate from worker transport state.
       </p>
+      <p class="mt-2"><a href="/review/readership" class="underline">Reader totals</a></p>
 
       <section class="mt-7 border-y border-base-300 py-4">
         <h2 class="text-lg font-semibold">Operational polling</h2>

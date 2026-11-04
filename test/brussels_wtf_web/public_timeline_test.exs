@@ -420,7 +420,7 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
       assert LazyHTML.text(document["h1"]) =~ title
 
       assert LazyHTML.attribute(document[~s(link[rel="canonical"])], "href") == [
-               "/meetings/ixelles/demo-ixelles"
+               "http://localhost:4002/meetings/ixelles/demo-ixelles?lang=#{locale}"
              ]
     end)
   end

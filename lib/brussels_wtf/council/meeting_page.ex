@@ -155,6 +155,12 @@ defmodule BrusselsWtf.Council.MeetingPage do
       filter expr(publication_status == :published)
     end
 
+    read :indexable do
+      prepare build(load: [:locale_variants, council_meeting: [:commune]])
+
+      filter expr(publication_status == :published and not is_nil(current_revision_id))
+    end
+
     read :public_by_identity do
       get? true
 
