@@ -3,6 +3,7 @@ defmodule BrusselsWtf.Processors.CouncilTest do
 
   alias BrusselsWtf.Corpus.Manifest
   alias BrusselsWtf.Processors.Council
+  alias BrusselsWtf.Processors.ForestCouncil
   alias BrusselsWtf.Processors.IxellesCouncil
 
   @unseen_sha256 String.duplicate("0", 64)
@@ -93,6 +94,22 @@ defmodule BrusselsWtf.Processors.CouncilTest do
              {:error, :processor_unimplemented}
 
     assert Council.normalize(nil) == {:error, :processor_unimplemented}
+  end
+
+  test "an unseen Forest hash delegates to the Forest normalizer" do
+    input = %{
+      "sha256" => @unseen_sha256,
+      "text" => "unseen extracted text",
+      "commune_slug" => "forest",
+      "role" => "agenda",
+      "meeting_identifier" => "2026-10-13",
+      "scheduled_on" => "2026-10-13"
+    }
+
+    assert Council.normalize(input) == ForestCouncil.normalize(input)
+
+    assert {:error, {:normalization_ambiguity, %{"contract" => "forest-council"}}} =
+             Council.normalize(input)
   end
 
   test "a recorded hash whose markers do not match does not reach the commune branch", %{
