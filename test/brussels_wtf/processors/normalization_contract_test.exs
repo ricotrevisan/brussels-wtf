@@ -6,6 +6,7 @@ defmodule BrusselsWtf.Processors.NormalizationContractTest do
   alias BrusselsWtf.Processors.Council
   alias BrusselsWtf.Processors.IxellesCouncil
   alias BrusselsWtf.Processors.RecordedCorpus
+  alias BrusselsWtf.Processors.UccleCouncil
 
   defmodule UndigestedProcessor do
     @moduledoc false
@@ -83,8 +84,9 @@ defmodule BrusselsWtf.Processors.NormalizationContractTest do
     expected =
       {Council.module_info(:md5),
        [
-         {"ixelles", commune_normalizer_md5()},
-         {"ixelles:minutes", BrusselsWtf.Processors.IxellesMinutes.module_info(:md5)}
+         {"ixelles", commune_normalizer_md5(IxellesCouncil)},
+         {"ixelles:minutes", BrusselsWtf.Processors.IxellesMinutes.module_info(:md5)},
+         {"uccle", commune_normalizer_md5(UccleCouncil)}
        ]}
       |> :erlang.term_to_binary([:deterministic])
       |> BrusselsWtf.Digest.sha256()
@@ -108,9 +110,9 @@ defmodule BrusselsWtf.Processors.NormalizationContractTest do
     |> BrusselsWtf.Digest.sha256()
   end
 
-  defp commune_normalizer_md5 do
-    if Code.ensure_loaded?(IxellesCouncil) and function_exported?(IxellesCouncil, :normalize, 1),
-      do: IxellesCouncil.module_info(:md5),
+  defp commune_normalizer_md5(module) do
+    if Code.ensure_loaded?(module) and function_exported?(module, :normalize, 1),
+      do: module.module_info(:md5),
       else: :not_loaded
   end
 end

@@ -15,7 +15,10 @@ defmodule BrusselsWtf.Processors.Council do
 
   @behaviour BrusselsWtf.Processors
 
-  @commune_normalizers %{"ixelles" => BrusselsWtf.Processors.IxellesCouncil}
+  @commune_normalizers %{
+    "ixelles" => BrusselsWtf.Processors.IxellesCouncil,
+    "uccle" => BrusselsWtf.Processors.UccleCouncil
+  }
 
   # Final records read differently from agendas, so a commune's minutes reader is named
   # by the same explicit discovery context. It also widens the normalization contract.
