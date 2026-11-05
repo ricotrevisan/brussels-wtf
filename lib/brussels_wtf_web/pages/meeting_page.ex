@@ -252,6 +252,14 @@ defmodule BrusselsWtfWeb.MeetingPage do
             >{text(@locale, :expand_all)}</button>
           </div>
         </div>
+        <BrusselsWtfWeb.PublicShell.ai_key
+          :if={Enum.any?(@items, &has_headline?(&1, @locale))}
+          locale={@locale}
+        />
+        <p class="ai-key muted" data-numbering-note>
+          <span class="hero-hashtag-micro size-4 shrink-0" aria-hidden="true"></span>
+          <span>{text(@locale, :numbering_note)}</span>
+        </p>
         <div class="topic-filters mt-2 hidden flex-wrap gap-1.5" data-topic-filters>
           <button
             :for={{topic, count} <- agenda_topics(@items)}
@@ -284,10 +292,6 @@ defmodule BrusselsWtfWeb.MeetingPage do
           page={@meeting_page}
           locale={@locale}
           uniform={all_unknown?(@items)}
-        />
-        <BrusselsWtfWeb.PublicShell.ai_key
-          :if={Enum.any?(@items, &has_headline?(&1, @locale))}
-          locale={@locale}
         />
       </section>
 
@@ -465,7 +469,9 @@ defmodule BrusselsWtfWeb.MeetingPage do
               <tr :for={row <- @visible} data-vote-status={row.status}>
                 <td data-label="#" class="tabular-nums">{row.number}</td>
                 <td class="cell-lead">
-                  <a href={"#" <> row.anchor} class="entry-title font-medium">{row.title}<BrusselsWtfWeb.PublicShell.ai_mark
+                  <a href={"#" <> row.anchor} class="entry-title font-medium">{BrusselsWtfWeb.PublicShell.keep_figures(
+                    row.title
+                  )}<BrusselsWtfWeb.PublicShell.ai_mark
                     :if={row.ai_headline?}
                     locale={@locale}
                   /></a>
@@ -1013,6 +1019,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
       about_meeting: "About this meeting",
       agenda_note:
         "An item stays Outcome unknown until an official record of its outcome is attached. Only items the council votes on are published, so numbers can skip.",
+      numbering_note: "Only items the council votes on are listed, so numbers can skip.",
       filter_agenda: "Filter this agenda",
       of_items: "%{shown} of %{total} items",
       clear_filter: "Clear filter",
@@ -1086,6 +1093,8 @@ defmodule BrusselsWtfWeb.MeetingPage do
       about_meeting: "À propos de cette séance",
       agenda_note:
         "Un point reste en Résultat inconnu tant qu’aucun document officiel de son résultat n’est joint. Seuls les points soumis au vote sont publiés, la numérotation peut donc sauter.",
+      numbering_note:
+        "Seuls les points soumis au vote sont listés : la numérotation peut sauter.",
       filter_agenda: "Filtrer cet ordre du jour",
       of_items: "%{shown} points sur %{total}",
       clear_filter: "Effacer le filtre",
@@ -1158,6 +1167,8 @@ defmodule BrusselsWtfWeb.MeetingPage do
       about_meeting: "Over deze vergadering",
       agenda_note:
         "Een punt blijft op Uitkomst onbekend staan tot een officieel document van de uitkomst is toegevoegd. Alleen punten waarover de raad stemt worden gepubliceerd, dus nummers kunnen ontbreken.",
+      numbering_note:
+        "Alleen punten waarover de raad stemt staan hier, dus nummers kunnen ontbreken.",
       filter_agenda: "Deze agenda filteren",
       of_items: "%{shown} van %{total} punten",
       clear_filter: "Filter wissen",

@@ -78,6 +78,11 @@ defmodule BrusselsWtfWeb.TimelinePage do
         |> Map.get(:meetings, [])
         |> Enum.map(fn page -> Enum.count(page.council_meeting.agenda_items, & &1.published?) end)
         |> Enum.sum(),
+      latest_meeting:
+        matching
+        |> Map.get(:meetings, [])
+        |> List.first()
+        |> then(&(&1 && homepage? && meeting_row(&1, locale))),
       meeting_rows:
         matching
         |> Map.get(:meetings, [])
@@ -339,9 +344,16 @@ defmodule BrusselsWtfWeb.TimelinePage do
               q=""
             />
           </div>
-          <span class="hero-sticker" aria-hidden="true">
-            <img src={~p"/images/brand/icon-dark.svg"} alt="" width="200" height="200" />
-          </span>
+          <a :if={@latest_meeting} href={@latest_meeting.href} class="hero-latest" data-latest-meeting>
+            <span class="text-sm font-semibold text-primary">{text(@locale, :latest_meeting)}</span>
+            <span class="display display-md block">{@latest_meeting.commune}</span>
+            <time class="block" datetime={Date.to_iso8601(@latest_meeting.date)}>
+              {format_date(@latest_meeting.date, @locale)}
+            </time>
+            <span class="mt-2 block text-sm">
+              {item_count(@latest_meeting, @locale)} · {decided_count(@latest_meeting, @locale)}
+            </span>
+          </a>
         </div>
       </div>
 
@@ -432,6 +444,11 @@ defmodule BrusselsWtfWeb.TimelinePage do
             </li>
           </ul>
         </section>
+
+        <BrusselsWtfWeb.PublicShell.ai_key
+          :if={Enum.any?(@categories, fn c -> Enum.any?(c.entries, & &1[:headline]) end)}
+          locale={@locale}
+        />
 
         <p :if={@homepage? and @selected_communes == []} class="callout mt-6" data-none-selected>
           {text(@locale, :none_selected)}
@@ -712,11 +729,6 @@ defmodule BrusselsWtfWeb.TimelinePage do
             </li>
           </ul>
         </section>
-
-        <BrusselsWtfWeb.PublicShell.ai_key
-          :if={Enum.any?(@categories, fn c -> Enum.any?(c.entries, & &1[:headline]) end)}
-          locale={@locale}
-        />
       </div>
     </main>
     <BrusselsWtfWeb.PublicationComponents.footer locale={@locale} />
@@ -1118,6 +1130,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       votes_against: "Against",
       votes_abstentions: "Abstained",
       all_communes_chip: "All communes",
+      latest_meeting: "Latest meeting",
       latest_meetings: "Latest meetings",
       decided_count: "%{count} decisions",
       tracking: "Tracking %{meetings} meetings and %{items} agenda items so far.",
@@ -1195,6 +1208,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       votes_against: "Contre",
       votes_abstentions: "Abstention",
       all_communes_chip: "Toutes les communes",
+      latest_meeting: "Dernière séance",
       latest_meetings: "Dernières séances",
       decided_count: "%{count} décisions",
       tracking: "%{meetings} séances et %{items} points suivis à ce jour.",
@@ -1272,6 +1286,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       votes_against: "Tegen",
       votes_abstentions: "Onthouding",
       all_communes_chip: "Alle gemeenten",
+      latest_meeting: "Laatste vergadering",
       latest_meetings: "Laatste vergaderingen",
       decided_count: "%{count} besluiten",
       tracking: "Tot nu toe %{meetings} vergaderingen en %{items} agendapunten gevolgd.",

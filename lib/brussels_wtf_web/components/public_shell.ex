@@ -238,12 +238,7 @@ defmodule BrusselsWtfWeb.PublicShell do
 
   def ai_mark(assigns) do
     ~H"""
-    <span
-      class="hero-sparkles-micro ai-mark"
-      role="img"
-      aria-label={copy(@locale, :ai_headline)}
-      title={copy(@locale, :ai_headline)}
-    ></span>
+    <span class="sr-only"> ({copy(@locale, :ai_headline)})</span>
     """
   end
 
@@ -254,7 +249,7 @@ defmodule BrusselsWtfWeb.PublicShell do
     ~H"""
     <p class="ai-key muted" data-ai-key>
       <span class="hero-sparkles-micro size-4 shrink-0" aria-hidden="true"></span>
-      {copy(@locale, :ai_key)}
+      <span>{copy(@locale, :ai_key)}</span>
     </p>
     """
   end
@@ -428,7 +423,8 @@ defmodule BrusselsWtfWeb.PublicShell do
         awaiting: "Outcome unknown",
         menu: "Menu",
         ai_headline: "Written by AI",
-        ai_key: "Plain-language headline written by AI. The official title is directly below it.",
+        ai_key:
+          "Headlines are written by AI and checked against the source. The official title is below each one.",
         topic_general: "Council business",
         topic_subsidy: "Subsidy",
         topic_settlement: "Settlement",
@@ -460,7 +456,7 @@ defmodule BrusselsWtfWeb.PublicShell do
         menu: "Menu",
         ai_headline: "Rédigé par IA",
         ai_key:
-          "Titre en langage courant rédigé par IA. L’intitulé officiel figure juste en dessous.",
+          "Les titres sont rédigés par IA et vérifiés par rapport à la source. L’intitulé officiel figure sous chacun.",
         topic_general: "Affaires du conseil",
         topic_subsidy: "Subvention",
         topic_settlement: "Transaction",
@@ -492,7 +488,7 @@ defmodule BrusselsWtfWeb.PublicShell do
         menu: "Menu",
         ai_headline: "Geschreven door AI",
         ai_key:
-          "Titel in gewone taal, geschreven door AI. De officiële titel staat er vlak onder.",
+          "Titels zijn door AI geschreven en getoetst aan de bron. De officiële titel staat onder elke titel.",
         topic_general: "Raadszaken",
         topic_subsidy: "Subsidie",
         topic_settlement: "Dading",

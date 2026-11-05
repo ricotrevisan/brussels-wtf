@@ -43,7 +43,6 @@ defmodule BrusselsWtfWeb.DossierPage do
     <BrusselsWtfWeb.PublicShell.header
       locale={@locale}
       reader_back={true}
-      current="/meetings"
       lang_href={fn code -> "/dossiers/#{@dossier.slug}?lang=" <> code end}
     />
 
