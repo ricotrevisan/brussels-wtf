@@ -786,7 +786,8 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverage do
       String.starts_with?(message, [
         "No endpoints found that support the requested parameters",
         "No endpoints found matching your data policy",
-        "No endpoints found that match your preferences"
+        "No endpoints found that match your preferences",
+        "No endpoints found that satisfy the max price for this request"
       ])
     else
       _ -> false
