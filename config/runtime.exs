@@ -51,6 +51,24 @@ if config_env() in [:dev, :prod] do
 end
 
 if config_env() in [:dev, :prod] do
+  drummer_url = System.get_env("DRUMMER_WEBHOOK_URL")
+  drummer_secret = System.get_env("DRUMMER_WEBHOOK_SECRET")
+
+  config :brussels_wtf, BrusselsWtf.Alerts.Drummer,
+    url: if(drummer_url in [nil, ""], do: nil, else: drummer_url),
+    secret: if(drummer_secret in [nil, ""], do: nil, else: drummer_secret)
+
+  low = System.get_env("OPENROUTER_LOW_CREDIT_CENTS")
+
+  if low not in [nil, ""] do
+    case Integer.parse(low) do
+      {cents, ""} when cents > 0 -> config :brussels_wtf, :provider_credit_low_cents, cents
+      _other -> raise "OPENROUTER_LOW_CREDIT_CENTS must be a positive integer"
+    end
+  end
+end
+
+if config_env() in [:dev, :prod] do
   digest = System.get_env("DISCOVERY_TOKEN_SHA256")
 
   if digest not in [nil, ""] and not Regex.match?(~r/\A[0-9a-f]{64}\z/, digest) do

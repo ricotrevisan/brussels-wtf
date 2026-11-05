@@ -60,9 +60,12 @@ defmodule BrusselsWtf.Council.GenerationControl do
       get_in(metadata, [:usage, "network_calls"]) == 0
   end
 
+  # The monthly app limit is optional: without it the ledger only records spend and
+  # the provider account's limits are the ceiling (ADR 0007).
   defp complete_processor_contract?(:paid, processor, metadata, config) do
     complete_provenance?(processor, metadata) and
-      is_integer(config[:monthly_budget_cents]) and config.monthly_budget_cents > 0
+      (is_nil(config[:monthly_budget_cents]) or
+         (is_integer(config.monthly_budget_cents) and config.monthly_budget_cents > 0))
   end
 
   defp complete_provenance?(processor, metadata) do
@@ -93,6 +96,14 @@ defmodule BrusselsWtf.Council.GenerationControl do
     :brussels_wtf
     |> Application.fetch_env!(:coverage_generation)
     |> Map.fetch!(:mode)
+  end
+
+  @doc "The configured monthly app limit in cents, or nil when the month is a ledger only."
+  @spec monthly_limit_cents() :: pos_integer() | nil
+  def monthly_limit_cents do
+    :brussels_wtf
+    |> Application.get_env(:coverage_generation, %{})
+    |> Map.get(:monthly_budget_cents)
   end
 
   @spec enabled?() :: boolean()
@@ -346,14 +357,16 @@ defmodule BrusselsWtf.Council.GenerationControl do
     end
   end
 
+  defp parse_budget(:paid, value) when value in [nil, ""], do: nil
+
   defp parse_budget(:paid, value) do
-    case Integer.parse(value || "") do
+    case Integer.parse(value) do
       {budget, ""} when budget > 0 ->
         budget
 
       _other ->
         raise ArgumentError,
-              "COVERAGE_MONTHLY_BUDGET_CENTS must be a positive integer in paid mode"
+              "COVERAGE_MONTHLY_BUDGET_CENTS must be a positive integer when set"
     end
   end
 

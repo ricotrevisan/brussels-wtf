@@ -246,16 +246,25 @@ defmodule BrusselsWtf.Council.GenerationControlTest do
            }
   end
 
-  test "paid runtime configuration requires a positive hard budget" do
-    env = fn
-      "COVERAGE_GENERATION_MODE" -> "paid"
-      "COVERAGE_MONTHLY_BUDGET_CENTS" -> nil
-      "BACKFILL_GENERATION_ENABLED" -> nil
-      _name -> nil
+  test "paid runtime configuration accepts no app limit but rejects an invalid one" do
+    env = fn budget ->
+      fn
+        "COVERAGE_GENERATION_MODE" -> "paid"
+        "COVERAGE_MONTHLY_BUDGET_CENTS" -> budget
+        _name -> nil
+      end
     end
 
-    assert_raise ArgumentError, ~r/COVERAGE_MONTHLY_BUDGET_CENTS/, fn ->
-      BrusselsWtf.Council.GenerationControl.runtime_config(env)
+    assert %{mode: :paid, monthly_budget_cents: nil} =
+             BrusselsWtf.Council.GenerationControl.runtime_config(env.(nil))
+
+    assert %{monthly_budget_cents: 500} =
+             BrusselsWtf.Council.GenerationControl.runtime_config(env.("500"))
+
+    for bad <- ["0", "-5", "ten"] do
+      assert_raise ArgumentError, ~r/COVERAGE_MONTHLY_BUDGET_CENTS/, fn ->
+        BrusselsWtf.Council.GenerationControl.runtime_config(env.(bad))
+      end
     end
   end
 

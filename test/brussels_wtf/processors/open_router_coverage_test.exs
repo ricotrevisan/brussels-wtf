@@ -15,6 +15,16 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverageTest do
 
   setup do
     old = Application.get_env(:brussels_wtf, Provider)
+    old_generation = Application.get_env(:brussels_wtf, :coverage_generation)
+
+    # Most cases exercise the capped request: a monthly app limit is configured.
+    Application.put_env(:brussels_wtf, :coverage_generation, %{
+      mode: :paid,
+      backfill_enabled: false,
+      monthly_budget_cents: 1000
+    })
+
+    on_exit(fn -> Application.put_env(:brussels_wtf, :coverage_generation, old_generation) end)
 
     Application.put_env(:brussels_wtf, Provider,
       api_key: "secret-test-key",
@@ -153,6 +163,79 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverageTest do
     assert usage["cost_microusd"] == first["cost_microusd"] + second["cost_microusd"] + 1_000
     assert {:ok, reserved} = Provider.maximum_cost(:canonical_generation, input())
     assert usage["cost_cents"] <= reserved
+  end
+
+  test "without a monthly app limit requests carry no price cap and the config hash differs" do
+    capped = Provider.metadata().config_hash
+
+    Application.put_env(:brussels_wtf, :coverage_generation, %{
+      mode: :paid,
+      backfill_enabled: false,
+      monthly_budget_cents: nil
+    })
+
+    refute Provider.metadata().config_hash == capped
+    parent = self()
+
+    Req.Test.expect(Provider, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      send(parent, {:provider, Jason.decode!(body)["provider"]})
+      Req.Test.json(conn, response(bundle()))
+    end)
+
+    assert {:ok, _output, _usage} = Provider.generate_fr(input())
+
+    assert_received {:provider,
+                     %{
+                       "sort" => "throughput",
+                       "require_parameters" => true,
+                       "data_collection" => "deny"
+                     } = provider}
+
+    refute Map.has_key?(provider, "max_price")
+  end
+
+  test "a 402 stops the chain at once and is charged nothing" do
+    Req.Test.expect(Provider, fn conn ->
+      conn
+      |> Plug.Conn.put_status(402)
+      |> Req.Test.json(%{"error" => %{"code" => 402, "message" => "Insufficient credits"}})
+    end)
+
+    assert {:error, {:provider_http_error, %{http_status: 402, retryable: false}}, usage} =
+             Provider.generate_fr(input())
+
+    assert usage["network_calls"] == 1
+    assert usage["cost_cents"] == 0
+  end
+
+  test "credit balance reads the key limit and the account balance in cents" do
+    Req.Test.stub(Provider, fn conn ->
+      assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer secret-test-key"]
+
+      case conn.request_path do
+        "/api/v1/key" ->
+          Req.Test.json(conn, %{"data" => %{"limit" => 50, "limit_remaining" => 49.554}})
+
+        "/api/v1/credits" ->
+          Req.Test.json(conn, %{"data" => %{"total_credits" => 80, "total_usage" => 30.0008}})
+      end
+    end)
+
+    assert Provider.credit_balance() ==
+             {:ok, %{key_remaining_cents: 4955, account_remaining_cents: 4999}}
+
+    Req.Test.stub(Provider, fn conn ->
+      case conn.request_path do
+        "/api/v1/key" ->
+          Req.Test.json(conn, %{"data" => %{"limit" => nil, "limit_remaining" => nil}})
+
+        "/api/v1/credits" ->
+          conn |> Plug.Conn.put_status(500) |> Req.Test.json(%{})
+      end
+    end)
+
+    assert Provider.credit_balance() == {:error, :credit_balance_unavailable}
   end
 
   test "transport errors and routing 404s advance without exposing the provider body" do
