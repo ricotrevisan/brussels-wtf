@@ -30,6 +30,35 @@ defmodule BrusselsWtfWeb.CitizenAuthenticationTest do
     end
   end
 
+  test "following with an expired session leads to sign in", %{conn: conn, now: now} do
+    session = signed_in_session("follow-expired@example.test")
+    Controlled.set(DateTime.add(now, 30, :day))
+
+    followed =
+      conn
+      |> init_test_session(%{citizen_session_id: session.id})
+      |> post("/citizen/feed/follows?lang=nl", %{
+        "target_type" => "commune",
+        "target_identifier" => "ixelles"
+      })
+
+    assert redirected_to(followed) == "/citizen/sign-in?lang=nl"
+  end
+
+  test "a signed-in citizen following an invalid target gets a 422", %{conn: conn} do
+    session = signed_in_session("follow-invalid@example.test")
+
+    followed =
+      conn
+      |> init_test_session(%{citizen_session_id: session.id})
+      |> post("/citizen/feed/follows?lang=en", %{
+        "target_type" => "not-a-target",
+        "target_identifier" => "ixelles"
+      })
+
+    assert followed.status == 422
+  end
+
   test "request is enumeration resistant and link is single use", %{conn: conn} do
     body =
       conn
@@ -460,6 +489,13 @@ defmodule BrusselsWtfWeb.CitizenAuthenticationTest do
 
     {rows.("citizen_sessions"), rows.("citizen_outstanding_magic_links"),
      rows.("citizen_authentication_tokens")}
+  end
+
+  defp signed_in_session(email) do
+    Accounts.request_link(email)
+    assert_receive {:magic_link, ^email, link, _}
+    {:ok, _citizen, session} = Accounts.consume(token_from_link(link))
+    session
   end
 
   defp token_from_link(link) do
