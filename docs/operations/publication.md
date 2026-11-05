@@ -217,3 +217,9 @@ The dev key authenticated successfully. The staged adapter completed canonical F
 ### Batched dev smoke — 2026-10-18
 
 The real adapter generated FR/NL/EN for the Ixelles 270 publication input (72 items, 116 KB): the meeting whose production runs failed with `input_too_large`. Each locale used 9 batches, and FR also made the page call. Every call was served by `deepseek/deepseek-v4.1-flash` (Decart or Sail Research) with no fallback, timeout or invalid output. Wall time was 89 s for FR, 96 s for NL and 65 s for EN. Actual provider cost was $0.0115 + $0.0117 + $0.0102 = $0.0334, and the ledger charged 2 cents per operation. All bundles passed the generation contract; nothing was published. An earlier run with `json_object` output and price-first routing failed NL validation (the extra `"type"` key) and had three 90-second timeouts; that run led to the strict schema and throughput ordering above. No production configuration, publication or regeneration was performed.
+
+## Plain-language headlines
+
+Each coverage item can carry an AI-written headline above the council's wording. `BrusselsWtf.Council.Headline` keeps one only when its figures appear in the source, it is at most 100 characters, and an item without a decision claim neither states an outcome nor opens with a procedural word such as "Approval". A translation that merely repeats the French is dropped too. A dropped headline never blocks publication: the reader sees the council's wording alone.
+
+Coverage already published has no headline until it is regenerated.

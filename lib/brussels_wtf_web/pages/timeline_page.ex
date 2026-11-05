@@ -204,6 +204,12 @@ defmodule BrusselsWtfWeb.TimelinePage do
       }
 
       by_id = Map.new(rows, &{&1.id, &1})
+      shown_as_split = MapSet.new(contested_section.entries, & &1.href)
+
+      by_id =
+        Map.update!(by_id, "previously", fn section ->
+          %{section | entries: Enum.reject(section.entries, &(&1.href in shown_as_split))}
+        end)
 
       [by_id["coming-up"], by_id["previously"], contested_section, by_id["awaiting-outcome"]]
       |> Enum.sort_by(&(&1.entries == []))

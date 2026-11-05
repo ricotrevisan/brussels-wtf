@@ -237,8 +237,8 @@ defmodule BrusselsWtfWeb.MeetingPage do
               <span class="filter-label font-semibold">{text(@locale, :filter_label)}</span>
               <input
                 type="search"
+                aria-label={text(@locale, :filter_agenda)}
                 data-agenda-filter
-                placeholder={text(@locale, :filter_agenda)}
                 class="input input-bordered input-sm min-h-11 w-44 sm:w-56"
               />
             </label>
