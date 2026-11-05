@@ -138,7 +138,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
       <.meeting_stats :if={not @withdrawn and @items != []} items={@items} locale={@locale} />
 
       <details
-        :if={not @withdrawn and @meeting_page.revision_published_at}
+        :if={not @withdrawn}
         class="disclosure mt-1"
         data-outcome-note
       >
@@ -151,7 +151,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
         </summary>
         <div class="disclosure-body measure space-y-2 text-sm leading-6">
           <p :if={@locale_available}>{@variant.title}</p>
-          <p>
+          <p :if={@meeting_page.revision_published_at}>
             {text(@locale, :revision)}
             <time datetime={DateTime.to_iso8601(@meeting_page.revision_published_at)}>
               {format_datetime(@meeting_page.revision_published_at, @locale)}
