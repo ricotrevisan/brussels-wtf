@@ -1,0 +1,47 @@
+defmodule BrusselsWtf.Council.Headline do
+  @moduledoc """
+  Decides whether a generated plain-language headline may be shown.
+
+  A headline is a convenience above the official title, so a doubtful one is dropped
+  rather than blocking publication. The reader then sees the official title alone.
+  """
+
+  @max_length 100
+  @outcome_words ~r/\b(approuv|adopt|vot[ée]|d[ée]cid|rejet|refus|goedgekeurd|aangenomen|besloten|beslist|verworpen|geweigerd|approved|rejected|decided|voted|passed)/iu
+
+  @doc "Returns the trimmed headline, or nil when it fails a check."
+  def accept(headline, source_text, decided?) when is_binary(headline) do
+    trimmed = String.trim(headline)
+
+    if trimmed != "" and String.length(trimmed) <= @max_length and
+         numbers_from_source?(trimmed, source_text) and
+         (decided? or not Regex.match?(@outcome_words, trimmed)) do
+      trimmed
+    end
+  end
+
+  def accept(_headline, _source_text, _decided?), do: nil
+
+  # Every figure must come from the source. "€43,300" may shorten "43.300,56 EUR",
+  # but a figure the source does not contain is never shown.
+  defp numbers_from_source?(headline, source_text) do
+    source = numbers(source_text || "")
+
+    headline
+    |> numbers()
+    |> Enum.all?(fn number ->
+      Enum.any?(source, &(&1 == number or dropped_decimals?(&1, number)))
+    end)
+  end
+
+  defp dropped_decimals?(source, number) do
+    String.starts_with?(source, number) and byte_size(source) - byte_size(number) == 2
+  end
+
+  defp numbers(text) do
+    ~r/\d+(?:[ .,\x{00A0}\x{202F}]\d+)*/u
+    |> Regex.scan(text)
+    |> List.flatten()
+    |> Enum.map(&String.replace(&1, ~r/\D/u, ""))
+  end
+end

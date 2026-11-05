@@ -34,12 +34,13 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverage.Contract do
       MapSet.new(output["page"]["claim_refs"]) == MapSet.new(page_refs) and
         Enum.all?(input["items"], fn item ->
           generated = output["items"][item["key"]]
+
           fields = ~w(title summary) ++ Enum.map(item["claims"], &(&1["kind"] <> "_summary"))
 
           is_map(generated) and
             MapSet.new(generated["claim_refs"]) ==
               MapSet.new(Enum.map(item["claims"], & &1["key"])) and
-            keys?(generated["variant"], Enum.uniq(fields))
+            keys?(Map.delete(generated["variant"] || %{}, "headline"), Enum.uniq(fields))
         end)
     )
   end
@@ -116,11 +117,15 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverage.Contract do
     keys = Map.keys(v)
 
     Enum.all?(~w(title summary), &(&1 in keys)) and
-      Enum.all?(keys, &(&1 in ~w(title summary proposal_summary decision_summary))) and
-      Enum.all?(Map.values(v), &text?/1)
+      Enum.all?(keys, &(&1 in ~w(title headline summary proposal_summary decision_summary))) and
+      Enum.all?(Map.values(Map.delete(v, "headline")), &text?/1) and
+      headline?(v["headline"])
   end
 
   defp variant?(_), do: false
+
+  # The headline is optional and judged later; a missing one never blocks a meeting.
+  defp headline?(value), do: is_nil(value) or is_binary(value)
 
   defp refs?(refs) when is_list(refs) and refs != [],
     do: Enum.all?(refs, &text?/1) and unique?(refs)

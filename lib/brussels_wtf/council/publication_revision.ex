@@ -181,6 +181,7 @@ defmodule BrusselsWtf.Council.PublicationRevision do
                  {variant.locale,
                   %{
                     "title" => variant.title,
+                    "headline" => variant.headline,
                     "summary" => variant.summary,
                     "proposal_summary" => variant.proposal_summary,
                     "decision_summary" => variant.decision_summary
@@ -205,7 +206,14 @@ defmodule BrusselsWtf.Council.PublicationRevision do
                Map.new(item["variants"], fn {locale, variant} ->
                  {locale,
                   variant
-                  |> Map.take(["title", "summary", "proposal_summary", "decision_summary"])
+                  |> Map.take([
+                    "title",
+                    "headline",
+                    "summary",
+                    "proposal_summary",
+                    "decision_summary"
+                  ])
+                  |> Map.put_new("headline", nil)
                   |> Map.put_new("proposal_summary", nil)
                   |> Map.put_new("decision_summary", nil)}
                end)

@@ -22,6 +22,7 @@ defmodule BrusselsWtf.Council.CoverageVariant do
         :coverage_run_id,
         :locale,
         :title,
+        :headline,
         :summary,
         :proposal_summary,
         :decision_summary,
@@ -47,6 +48,7 @@ defmodule BrusselsWtf.Council.CoverageVariant do
     end
 
     attribute :title, :string, allow_nil?: false, public?: true
+    attribute :headline, :string, public?: true
     attribute :summary, :string, allow_nil?: false, public?: true
     attribute :proposal_summary, :string, public?: true
     attribute :decision_summary, :string, public?: true

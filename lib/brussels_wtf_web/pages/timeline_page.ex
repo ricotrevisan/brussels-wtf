@@ -216,6 +216,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       date: row.date,
       item_number: item.published_item_number || item.item_number,
       title: row.title,
+      headline: row.headline,
       summary: nil,
       group: :decided,
       disposition: row.disposition,
@@ -259,7 +260,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
     |> Enum.find_value(fn item ->
       case Enum.find(item.coverage_variants, &(&1.locale == locale)) do
         nil -> nil
-        variant -> variant.title
+        variant -> variant.headline || variant.title
       end
     end)
   end
@@ -289,6 +290,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       commune_slug: meeting.commune.slug,
       date: meeting.scheduled_on,
       title: if(variant, do: variant.title, else: text(locale, :item_unavailable)),
+      headline: variant && variant.headline,
       disposition: decision.disposition,
       for: decision.votes_for,
       against: decision.votes_against,
@@ -531,7 +533,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
               <tbody>
                 <tr :for={row <- @contested_rows} data-commune={row.commune_slug}>
                   <td class="cell-lead">
-                    <a href={row.href} class="entry-title">{row.title}</a>
+                    <a href={row.href} class="entry-title">{row.headline || row.title}</a>
                   </td>
                   <td data-label={text(@locale, :commune)}>{row.commune}</td>
                   <td data-label={text(@locale, :meeting_date)}>
@@ -831,8 +833,12 @@ defmodule BrusselsWtfWeb.TimelinePage do
     <article class="entry" data-commune={@entry.commune_slug} data-group={@entry.group}>
       <div class="min-w-0">
         <BrusselsWtfWeb.PublicShell.kicker topic={@topic} amount={@amount} locale={@locale} />
-        <a href={@entry.href} class="entry-title">
-          <BrusselsWtfWeb.PublicShell.title_parts title={@entry.title} />
+        <a href={@entry.href} class={["entry-title", @entry[:headline] && "has-headline"]}>
+          <BrusselsWtfWeb.PublicShell.title_parts
+            title={@entry.title}
+            headline={@entry[:headline]}
+            locale={@locale}
+          />
         </a>
         <p :if={show_summary?(@entry)} class="entry-summary measure muted mt-1 text-sm leading-5">
           {@entry.summary}
@@ -929,6 +935,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       date: page.council_meeting.scheduled_on,
       item_number: item.published_item_number || item.item_number,
       title: variant.title,
+      headline: Map.get(variant, :headline),
       summary: localized_summary(variant, state, locale),
       provenance: variant.provenance,
       state: state,

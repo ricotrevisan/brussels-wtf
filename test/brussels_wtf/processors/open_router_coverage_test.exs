@@ -105,7 +105,10 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverageTest do
     item = schema["properties"]["items"]["properties"]["1"]
     assert schema["properties"]["items"]["required"] == ["1"]
     assert item["properties"]["claim_refs"]["items"]["enum"] == ["claim-1"]
-    assert item["properties"]["variant"]["required"] == ~w(proposal_summary summary title)
+
+    assert item["properties"]["variant"]["required"] ==
+             ~w(headline proposal_summary summary title)
+
     assert item["properties"]["variant"]["additionalProperties"] == false
   end
 

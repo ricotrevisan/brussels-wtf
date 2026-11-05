@@ -80,7 +80,13 @@ defmodule BrusselsWtfWeb.DossierPage do
             · {text(@locale, :item)} {entry.item_number}
           </p>
           <h2 class="mt-1 text-lg font-semibold leading-snug">
-            <a href={entry.href} class="entry-title">{entry.title}</a>
+            <a href={entry.href} class={["entry-title", entry.headline && "has-headline"]}>
+              <BrusselsWtfWeb.PublicShell.title_parts
+                title={entry.title}
+                headline={entry.headline}
+                locale={@locale}
+              />
+            </a>
           </h2>
           <p class="mt-1.5">
             <BrusselsWtfWeb.PublicShell.status
@@ -191,6 +197,7 @@ defmodule BrusselsWtfWeb.DossierPage do
       variant ->
         %{
           "title" => variant.title,
+          "headline" => variant.headline,
           "summary" => variant.summary,
           "proposal_summary" => variant.proposal_summary,
           "decision_summary" => variant.decision_summary
@@ -222,6 +229,7 @@ defmodule BrusselsWtfWeb.DossierPage do
           date: meeting.scheduled_on,
           item_number: item.published_item_number || item.item_number,
           title: variant["title"],
+          headline: variant["headline"],
           summary: summary(variant, state, locale),
           evidences: BrusselsWtfWeb.PublicEvidence.for_item(item),
           href:

@@ -127,6 +127,7 @@ defmodule BrusselsWtf.Council.PublicTimeline do
   defp search_text(%{page: page, item: item, variant: variant}, names) do
     [
       variant && variant.title,
+      variant && variant.headline,
       variant && variant.summary,
       Map.fetch!(names, page.council_meeting.commune.slug),
       item.published_item_number || item.item_number,

@@ -371,7 +371,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
         %{
           anchor: item.stable_anchor,
           number: public_item_number(item),
-          title: (variant && variant.title) || item.source_wording,
+          title: (variant && (variant.headline || variant.title)) || item.source_wording,
           disposition: decision.disposition,
           for: decision.votes_for,
           against: decision.votes_against,
@@ -600,8 +600,12 @@ defmodule BrusselsWtfWeb.MeetingPage do
             ></span>
           </span>
           <span class="min-w-0">
-            <h2 class="agenda-title">
-              <BrusselsWtfWeb.PublicShell.title_parts title={@coverage_variant.title} />
+            <h2 class={["agenda-title", Map.get(@coverage_variant, :headline) && "has-headline"]}>
+              <BrusselsWtfWeb.PublicShell.title_parts
+                title={@coverage_variant.title}
+                headline={Map.get(@coverage_variant, :headline)}
+                locale={@locale}
+              />
             </h2>
           </span>
           <span :if={not @uniform} class="agenda-meta">

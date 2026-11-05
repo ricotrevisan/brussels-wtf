@@ -199,8 +199,28 @@ defmodule BrusselsWtfWeb.PublicShell do
   defp vote_part(_locale, :abstentions, value), do: "#{value} abstained"
 
   attr :title, :string, required: true
+  attr :headline, :string, default: nil
+  attr :locale, :string, default: "en"
 
-  @doc "Keeps the official wording whole: its first sentence leads, the rest stays quieter."
+  @doc """
+  The plain-language headline leads, marked as AI-written, with the official title as its
+  subtitle. Without a headline the official wording leads: first sentence strong, rest quiet.
+  """
+  def title_parts(%{headline: headline} = assigns) when is_binary(headline) do
+    ~H"""
+    <span class="title-lead" data-headline>
+      <span
+        class="hero-sparkles-micro ai-mark"
+        role="img"
+        aria-label={copy(@locale, :ai_headline)}
+        title={copy(@locale, :ai_headline)}
+      ></span>
+      {@headline}
+    </span>
+    <span class="title-official" data-official-title>{@title}</span>
+    """
+  end
+
   def title_parts(assigns) do
     {lead, rest} = split_title(assigns.title)
     assigns = assign(assigns, lead: lead, rest: rest)
@@ -378,6 +398,7 @@ defmodule BrusselsWtfWeb.PublicShell do
         coming: "Coming up",
         awaiting: "Outcome unknown",
         menu: "Menu",
+        ai_headline: "Plain-language headline written by AI; the official title is below",
         topic_general: "Council business",
         topic_subsidy: "Subsidy",
         topic_settlement: "Settlement",
@@ -407,6 +428,8 @@ defmodule BrusselsWtfWeb.PublicShell do
         coming: "À venir",
         awaiting: "Résultat inconnu",
         menu: "Menu",
+        ai_headline:
+          "Titre en langage courant rédigé par IA ; l’intitulé officiel figure dessous",
         topic_general: "Affaires du conseil",
         topic_subsidy: "Subvention",
         topic_settlement: "Transaction",
@@ -436,6 +459,7 @@ defmodule BrusselsWtfWeb.PublicShell do
         coming: "Binnenkort",
         awaiting: "Uitkomst onbekend",
         menu: "Menu",
+        ai_headline: "Titel in gewone taal, geschreven door AI; de officiële titel staat eronder",
         topic_general: "Raadszaken",
         topic_subsidy: "Subsidie",
         topic_settlement: "Dading",

@@ -96,6 +96,10 @@ A public explanation of one agenda item within a meeting page. It states whether
 
 The French, Dutch, or English representation of the same meeting page, coverage item, or dossier. French is the canonical editorial text for the MVP, while source evidence may be French, Dutch, or bilingual. All three locale variants publish together. Factual corrections update all three in one revision; typography-only corrections may affect one locale.
 
+## Plain-language headline
+
+An optional AI-written line above an agenda item's official title, in the reader's language, saying what the item is in everyday words. It names a subject and adds no fact: figures must appear in the source, and it states no outcome unless a decision claim exists. A headline that fails those checks is dropped, so the official title stands alone. The official title always stays visible beneath it.
+
 ## Content provenance
 
 Public metadata describing how text was produced or reviewed. The MVP uses `AI-generated`, `machine-translated`, and `human-reviewed` when each is true. Official sourcing is mandatory baseline behavior exposed through citations, not a provenance badge. Content provenance does not change the underlying source evidence or publication status.

@@ -2,6 +2,7 @@ defmodule BrusselsWtf.Council.Publication do
   @moduledoc "Orchestrates evidence-gated generation through named Ash actions."
 
   alias BrusselsWtf.Council
+  alias BrusselsWtf.Council.Headline
   alias BrusselsWtf.Council.CoverageExecution
   alias BrusselsWtf.Council.GenerationContract
   alias BrusselsWtf.Council.PublicationInput
@@ -456,6 +457,24 @@ defmodule BrusselsWtf.Council.Publication do
     end
   end
 
+  # A translation that returns the French headline unchanged is not a translation.
+  defp translated_headline(output, item_key, locale) do
+    headline = get_in(output, ["items", item_key, "variants", locale, "headline"])
+    french = get_in(output, ["items", item_key, "variants", "fr", "headline"])
+
+    if locale != "fr" and headline == french, do: nil, else: headline
+  end
+
+  defp headline_source(item) do
+    proposals =
+      case item.proposals do
+        %Ash.NotLoaded{} -> []
+        proposals -> Enum.map(proposals, & &1.text)
+      end
+
+    Enum.join([item.source_wording | proposals], " ")
+  end
+
   def persist_variants(meeting, output, runs) do
     page = meeting.meeting_page
     canonical = runs["fr"]
@@ -496,6 +515,12 @@ defmodule BrusselsWtf.Council.Publication do
                 coverage_run_id: run.id,
                 locale: locale,
                 title: variant["title"],
+                headline:
+                  Headline.accept(
+                    translated_headline(output, item_key, locale),
+                    headline_source(item),
+                    is_binary(variant["decision_summary"])
+                  ),
                 summary: variant["summary"],
                 proposal_summary: variant["proposal_summary"],
                 decision_summary: variant["decision_summary"],
