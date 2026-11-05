@@ -19,10 +19,11 @@ defmodule BrusselsWtfWeb.TimelinePage do
     path = "/" <> String.trim(conn.request_path, "/")
     homepage? = path == "/"
     directory? = path == "/mandates"
+    meetings_index? = path == "/meetings"
     contested? = path == "/coverage/contested-votes"
     category = Enum.find(categories(), &(&1.path == path))
 
-    q = if homepage? or contested?, do: "", else: search_query(params["q"])
+    q = if homepage? or contested? or meetings_index?, do: "", else: search_query(params["q"])
 
     matching =
       if directory? or contested? do
@@ -34,12 +35,18 @@ defmodule BrusselsWtfWeb.TimelinePage do
           commune_names:
             Map.new(@communes, fn {slug, name} -> {slug, commune_name(locale, slug, name)} end),
           search: q,
-          groups: if(homepage?, do: [:coming, :awaiting, :decided], else: [category.group]),
-          limit: if(homepage?, do: 5)
+          groups:
+            cond do
+              homepage? -> [:coming, :awaiting, :decided]
+              meetings_index? -> []
+              true -> [category.group]
+            end,
+          limit: if(homepage?, do: 5),
+          balance: homepage?
         )
       end
 
-    page = if directory? or contested?, do: page_number(params["page"]), else: 1
+    page = if homepage? or meetings_index?, do: 1, else: page_number(params["page"])
 
     mandates =
       if directory? do
@@ -49,21 +56,35 @@ defmodule BrusselsWtfWeb.TimelinePage do
       end
 
     contested =
-      if contested? do
+      if contested? or homepage? do
         Council.list_contested_decisions!(selected, page)
       else
         %{items: [], more?: false}
       end
 
     assign(BrusselsWtfWeb.FollowControl.load(conn),
-      page_title: text(locale, title_key(directory?, contested?, category)),
+      page_title: text(locale, title_key(directory?, contested?, category, meetings_index?)),
       html_lang: locale,
       resource_path: path,
       meta_description: BrusselsWtfWeb.PublicDescription.fixed(description_key(path), locale),
       homepage?: homepage?,
       directory?: directory?,
       contested?: contested?,
-      title: text(locale, title_key(directory?, contested?, category)),
+      title: text(locale, title_key(directory?, contested?, category, meetings_index?)),
+      meetings_index?: meetings_index?,
+      tracked_meetings: matching |> Map.get(:meetings, []) |> length(),
+      tracked_items:
+        matching
+        |> Map.get(:meetings, [])
+        |> Enum.map(fn page -> Enum.count(page.council_meeting.agenda_items, & &1.published?) end)
+        |> Enum.sum(),
+      meeting_rows:
+        matching
+        |> Map.get(:meetings, [])
+        |> Enum.map(&meeting_row(&1, locale))
+        |> then(fn rows ->
+          if homepage?, do: Enum.uniq_by(rows, & &1.commune_slug), else: rows
+        end),
       home_path: selection_path("/", locale, selected),
       directory_path: selection_path("/mandates", locale, selected),
       contested_path: selection_path("/coverage/contested-votes", locale, selected),
@@ -79,30 +100,160 @@ defmodule BrusselsWtfWeb.TimelinePage do
       page: page,
       q: q,
       language_path: selection_path(path, nil, selected, q),
+      lead: lead_key(path) && text(locale, lead_key(path)),
+      result_line: result_line(locale, selected, matching, category, page),
+      selection_query:
+        Plug.Conn.Query.encode(%{"communes_submitted" => "1", "commune" => selected}),
+      more_results?: more_results?(matching, category, page),
       categories:
-        categories()
-        |> Enum.filter(&(homepage? or &1 == category))
-        |> Enum.map(fn category ->
-          entries = Map.fetch!(matching, category.group) |> Enum.map(&entry(&1, locale, selected))
-
-          Map.merge(category, %{
-            entries: entries,
-            href: selection_path(category.path, locale, selected)
-          })
-        end)
+        sections(
+          homepage?,
+          category,
+          paged(matching, category, page),
+          Enum.take(contested.items, 3),
+          locale,
+          selected
+        )
     )
   end
 
+  defp lead_key("/coverage/coming-up"), do: :lead_coming
+  defp lead_key("/coverage/awaiting-outcome"), do: :lead_awaiting
+  defp lead_key("/coverage/decisions"), do: :lead_decided
+  defp lead_key("/coverage/contested-votes"), do: :contested_intro
+  defp lead_key("/meetings"), do: :lead_meetings
+  defp lead_key(_path), do: nil
+
+  @list_page_size 25
+
+  defp paged(matching, nil, _page), do: matching
+
+  defp paged(matching, category, page) do
+    Map.update!(
+      matching,
+      category.group,
+      &Enum.slice(&1, (page - 1) * @list_page_size, @list_page_size)
+    )
+  end
+
+  defp more_results?(_matching, nil, _page), do: false
+
+  defp more_results?(matching, category, page),
+    do: length(Map.fetch!(matching, category.group)) > page * @list_page_size
+
+  defp result_line(_locale, _selected, _matching, nil, _page), do: nil
+
+  defp result_line(locale, selected, matching, category, page) do
+    count = matching |> Map.fetch!(category.group) |> length()
+    names = Enum.map(selected, fn slug -> commune_name(locale, slug, commune_label(slug)) end)
+
+    scope =
+      cond do
+        names == [] -> nil
+        length(names) == length(@communes) -> text(locale, :all_communes)
+        true -> Enum.join(names, ", ")
+      end
+
+    pages = max(ceil(count / @list_page_size), 1)
+
+    [
+      String.replace(text(locale, :results), "%{count}", Integer.to_string(count)),
+      scope,
+      if(pages > 1, do: "#{text(locale, :page)} #{page}/#{pages}")
+    ]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join(" · ")
+  end
+
+  defp commune_label(slug), do: @communes |> List.keyfind!(slug, 0) |> elem(1)
+
+  # The homepage leads with documented outcomes; empty sections shrink to one line at the end.
+  defp sections(homepage?, category, matching, contested, locale, selected) do
+    rows =
+      categories()
+      |> Enum.filter(&(homepage? or &1 == category))
+      |> Enum.map(fn category ->
+        entries = Map.fetch!(matching, category.group) |> Enum.map(&entry(&1, locale, selected))
+
+        Map.merge(category, %{
+          entries: entries,
+          lead: lead_key(category.path),
+          href: selection_path(category.path, locale, selected)
+        })
+      end)
+
+    if homepage? do
+      contested_section = %{
+        path: "/coverage/contested-votes",
+        id: "contested",
+        group: :decided,
+        label: :contested_votes,
+        empty: :none_contested,
+        lead: :contested_intro,
+        href: selection_path("/coverage/contested-votes", locale, selected),
+        entries: Enum.map(contested, &contested_entry(&1, locale, selected))
+      }
+
+      by_id = Map.new(rows, &{&1.id, &1})
+
+      [by_id["coming-up"], by_id["previously"], contested_section, by_id["awaiting-outcome"]]
+      |> then(fn [coming | rest] -> [coming | Enum.sort_by(rest, &(&1.entries == []))] end)
+    else
+      rows
+    end
+  end
+
+  defp contested_entry(item, locale, selected) do
+    row = contested_row(item, locale, selected)
+
+    %{
+      commune: row.commune,
+      commune_slug: row.commune_slug,
+      date: row.date,
+      item_number: item.published_item_number || item.item_number,
+      title: row.title,
+      summary: nil,
+      group: :decided,
+      disposition: row.disposition,
+      contested?: true,
+      vote_line: vote_line(item.published_decision, locale),
+      votes: {row.for, row.against, row.abstentions},
+      href: row.href
+    }
+  end
+
+  defp meeting_row(page, locale) do
+    meeting = page.council_meeting
+    items = Enum.filter(meeting.agenda_items, & &1.published?)
+    decided = Enum.count(items, &loaded_or_nil(&1.published_decision))
+    variant = Enum.find(page.locale_variants, &(&1.locale == locale))
+
+    %{
+      commune: commune_name(locale, meeting.commune.slug, meeting.commune.name),
+      commune_slug: meeting.commune.slug,
+      date: meeting.scheduled_on,
+      title: variant && variant.title,
+      href: "/meetings/#{meeting.commune.slug}/#{meeting.municipal_identifier}?lang=#{locale}",
+      total: length(items),
+      decided: decided,
+      unknown: length(items) - decided
+    }
+  end
+
   defp description_key("/"), do: :home
+  defp description_key("/meetings"), do: :meetings
   defp description_key("/mandates"), do: :mandates
   defp description_key("/coverage/contested-votes"), do: :contested_votes
   defp description_key("/coverage/coming-up"), do: :coming_up
   defp description_key("/coverage/awaiting-outcome"), do: :awaiting_outcome
   defp description_key("/coverage/decisions"), do: :decisions
 
-  defp title_key(true, _contested?, _category), do: :verified_mandates
-  defp title_key(_directory?, true, _category), do: :contested_votes
-  defp title_key(_directory?, _contested?, category), do: (category && category.label) || :title
+  defp title_key(_directory?, _contested?, _category, true), do: :meetings
+  defp title_key(true, _contested?, _category, _meetings?), do: :verified_mandates
+  defp title_key(_directory?, true, _category, _meetings?), do: :contested_votes
+
+  defp title_key(_directory?, _contested?, category, _meetings?),
+    do: (category && category.label) || :title
 
   defp contested_row(item, locale, selected) do
     meeting = item.council_meeting
@@ -133,138 +284,206 @@ defmodule BrusselsWtfWeb.TimelinePage do
   @impl Dstar.Page
   def render(assigns) do
     ~H"""
-    <a href="#content" class="sr-only focus:not-sr-only focus:absolute focus:p-3 focus:bg-base-100">
-      {text(@locale, :skip)}
-    </a>
-    <header class="border-b border-base-300">
-      <div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4">
-        <Layouts.brand_link href={@home_path} />
-        <.language_nav locale={@locale} path={@language_path} />
-      </div>
-    </header>
+    <BrusselsWtfWeb.PublicShell.header
+      locale={@locale}
+      home_href={@home_path}
+      current={@resource_path}
+      selection={@selection_query}
+      lang_href={fn code -> @language_path <> "&lang=" <> code end}
+    />
 
-    <main
-      id="content"
-      class="reader-coverage mx-auto max-w-4xl px-4 py-6 sm:py-8 text-base-content"
-      tabindex="-1"
-    >
-      <a :if={not @homepage?} href={@home_path} class="mb-5 inline-block underline underline-offset-2">{text(
-        @locale,
-        :back
-      )}</a>
-      <h1 id="coverage-title" class="text-2xl sm:text-3xl font-semibold tracking-tight">{@title}</h1>
-      <p :if={@homepage?} class="mt-2 max-w-prose text-sm text-base-content/80">
-        {text(@locale, :intro)}
-      </p>
-      <div class="mt-5">
-        <form
-          :for={{slug, _name} <- if(@homepage?, do: [], else: @communes)}
-          id={"follow-commune-#{slug}"}
-          method="post"
-          action={BrusselsWtfWeb.FollowControl.action(BrusselsWtfWeb.FollowControl.find(@citizen_follows, "commune", slug)) <> "?lang=" <> @locale}
-        >
-          <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
-          <input type="hidden" name="target_type" value="commune" />
-          <input type="hidden" name="target_identifier" value={slug} />
-        </form>
-        <p :if={not @homepage? and map_size(@citizen_follows) > 0} class="mt-2 text-sm">
-          {BrusselsWtfWeb.FollowControl.text(@locale, :history)}
-        </p>
-        <form method="get" action={@resource_path} data-reader-communes class="space-y-4">
-          <input type="hidden" name="lang" value={@locale} />
-          <input type="hidden" name="communes_submitted" value="1" />
-          <label :if={not @homepage? and not @contested?} class="block text-sm font-medium">
-            {text(@locale, :search)}
-            <input type="search" name="q" value={@q} class="input input-bordered mt-1 w-full" />
-          </label>
-          <fieldset class="text-sm">
-            <legend class="mb-2 font-semibold">{text(@locale, :communes)}</legend>
-            <div class="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4">
-              <div :for={{slug, name} <- @communes} class="min-w-0">
-                <label class="flex min-h-11 items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    name="commune[]"
-                    value={slug}
-                    checked={slug in @selected_communes}
-                    class="checkbox checkbox-sm shrink-0"
-                  />
-                  <span>{name}</span>
-                </label>
+    <main id="content" class="reader-coverage text-base-content" tabindex="-1">
+      <div :if={@homepage?} class="hero-band" data-tracked={@tracked_items}>
+        <div class="site-container py-5 sm:py-10">
+          <h1 id="coverage-title" class="display display-xl measure">{@title}</h1>
+          <p class="measure mt-3 text-base leading-6 sm:text-lg sm:leading-7">
+            {text(@locale, :intro)}
+            <span :if={@tracked_items > 0} class="font-semibold">
+              {tracking_line(@locale, @tracked_meetings, @tracked_items)}
+            </span>
+          </p>
+          <.commune_form
+            communes={@communes}
+            selected={@selected_communes}
+            locale={@locale}
+            path={@resource_path}
+            homepage?={true}
+            contested?={false}
+            q=""
+          />
+        </div>
+      </div>
+
+      <div class="site-container">
+        <div :if={not @homepage?} class="pt-5 sm:pt-7">
+          <a href={@home_path} class="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium">
+            <span class="hero-arrow-left-micro size-4" aria-hidden="true"></span>{text(@locale, :back)}
+          </a>
+          <h1 id="coverage-title" class="display display-lg mt-1">{@title}</h1>
+          <p :if={@lead} class="measure muted mt-2">{@lead}</p>
+          <form
+            :for={{slug, _name} <- @communes}
+            id={"follow-commune-#{slug}"}
+            method="post"
+            action={BrusselsWtfWeb.FollowControl.action(BrusselsWtfWeb.FollowControl.find(@citizen_follows, "commune", slug)) <> "?lang=" <> @locale}
+          >
+            <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+            <input type="hidden" name="target_type" value="commune" />
+            <input type="hidden" name="target_identifier" value={slug} />
+          </form>
+          <p :if={map_size(@citizen_follows) > 0} class="mt-2 text-sm">
+            {BrusselsWtfWeb.FollowControl.text(@locale, :history)}
+          </p>
+          <.commune_form
+            communes={@communes}
+            selected={@selected_communes}
+            locale={@locale}
+            path={@resource_path}
+            homepage?={false}
+            contested?={@contested? or @meetings_index?}
+            q={@q}
+            reset_path={@reset_path}
+          />
+          <details class="reader-filters disclosure mt-1">
+            <summary>
+              <span class="hero-bell-micro size-4" aria-hidden="true"></span>{text(
+                @locale,
+                :follow_communes
+              )}
+            </summary>
+            <div class="disclosure-body grid gap-x-6 gap-y-1 sm:grid-cols-2">
+              <div :for={{slug, name} <- @communes} class="flex items-center justify-between gap-2">
+                <span>{name}</span>
+                <span class="flex items-center gap-2">
+                  <span
+                    :if={BrusselsWtfWeb.FollowControl.find(@citizen_follows, "commune", slug)}
+                    class="text-sm"
+                    data-followed-state
+                  >{BrusselsWtfWeb.FollowControl.text(@locale, :following)}</span>
+                  <button
+                    type="submit"
+                    form={"follow-commune-#{slug}"}
+                    class="btn btn-sm min-h-11"
+                    data-follow-control
+                    data-unfollow-control={
+                      !!BrusselsWtfWeb.FollowControl.find(@citizen_follows, "commune", slug)
+                    }
+                  >{if BrusselsWtfWeb.FollowControl.find(@citizen_follows, "commune", slug),
+                    do: BrusselsWtfWeb.FollowControl.text(@locale, :unfollow),
+                    else: text(@locale, :follow)}</button>
+                </span>
               </div>
             </div>
-          </fieldset>
-          <div class="flex flex-wrap items-center gap-4">
-            <button type="submit" class="btn btn-primary min-h-11">{text(@locale, :apply)}</button>
+          </details>
+          <p :if={@result_line} class="mt-3 text-sm font-semibold" role="status" data-result-count>
+            {@result_line}
+          </p>
+        </div>
+
+        <section
+          :if={@homepage? and @meeting_rows != []}
+          class="mt-6"
+          aria-labelledby="latest-meetings"
+        >
+          <div class="flex flex-wrap items-end justify-between gap-x-4 border-b-2 border-base-content pb-1">
+            <h2 id="latest-meetings" class="display display-md">{text(@locale, :latest_meetings)}</h2>
             <a
-              :if={not @homepage?}
-              data-reader-reset
-              href={@reset_path}
-              class="inline-flex min-h-11 items-center underline underline-offset-2"
-            >{text(@locale, :reset)}</a>
+              href={BrusselsWtfWeb.PublicShell.section_href("/meetings", @locale, @selection_query)}
+              class="inline-flex min-h-11 items-center gap-1 text-sm font-medium"
+              aria-label={text(@locale, :view_all) <> ": " <> text(@locale, :meetings)}
+            >
+              {text(@locale, :view_all)}<span class="hero-arrow-right-micro size-4" aria-hidden="true"></span>
+            </a>
           </div>
-        </form>
-        <details :if={not @homepage?} class="reader-filters mt-4">
-          <summary class="cursor-pointer py-2 text-sm underline underline-offset-2">
-            {text(@locale, :follow_communes)}
-          </summary>
-          <div class="mt-2 grid gap-3 sm:grid-cols-2">
-            <div :for={{slug, name} <- @communes} class="flex items-center justify-between gap-2">
-              <span>{name}</span>
-              <button
-                type="submit"
-                form={"follow-commune-#{slug}"}
-                class="btn btn-ghost btn-xs"
-                data-follow-control
-                data-unfollow-control={
-                  !!BrusselsWtfWeb.FollowControl.find(@citizen_follows, "commune", slug)
-                }
-              >{if BrusselsWtfWeb.FollowControl.find(@citizen_follows, "commune", slug),
-                do: BrusselsWtfWeb.FollowControl.text(@locale, :unfollow),
-                else: text(@locale, :follow)}</button>
-              <span
-                :if={BrusselsWtfWeb.FollowControl.find(@citizen_follows, "commune", slug)}
-                class="text-sm"
-                data-followed-state
-              >{BrusselsWtfWeb.FollowControl.text(@locale, :following)}</span>
-            </div>
-          </div>
-        </details>
+          <ul class="meeting-cards mt-3">
+            <li :for={row <- @meeting_rows}>
+              <a href={row.href} class="meeting-card">
+                <span class="block font-semibold">{row.commune}</span>
+                <time class="block text-sm" datetime={Date.to_iso8601(row.date)}>
+                  {format_date(row.date, @locale)}
+                </time>
+                <span class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                  <span class="muted">{item_count(row, @locale)}</span>
+                  <BrusselsWtfWeb.PublicShell.status
+                    :if={row.decided == 0}
+                    kind={:unknown}
+                    label={text(@locale, :outcome_unknown)}
+                  />
+                  <BrusselsWtfWeb.PublicShell.status
+                    :if={row.decided > 0}
+                    kind={:decided}
+                    label={decided_count(row, @locale)}
+                  />
+                </span>
+              </a>
+            </li>
+          </ul>
+        </section>
+
+        <section :if={@meetings_index?} class="mt-4" data-meeting-index>
+          <p :if={@meeting_rows == []} class="callout mt-3">{text(@locale, :none_selected)}</p>
+          <ul class="border-t border-base-300">
+            <li :for={row <- @meeting_rows} class="entry" data-commune={row.commune_slug}>
+              <a href={row.href} class="entry-title">
+                {row.commune} ·
+                <time datetime={Date.to_iso8601(row.date)}>{format_date(row.date, @locale)}</time>
+              </a>
+              <p class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                <span class="muted">{item_count(row, @locale)}</span>
+                <BrusselsWtfWeb.PublicShell.status
+                  :if={row.decided == 0}
+                  kind={:unknown}
+                  label={text(@locale, :outcome_unknown)}
+                />
+                <BrusselsWtfWeb.PublicShell.status
+                  :if={row.decided > 0}
+                  kind={:decided}
+                  label={decided_count(row, @locale)}
+                />
+              </p>
+            </li>
+          </ul>
+        </section>
+
+        <p :if={@homepage? and @selected_communes == []} class="callout mt-6" data-none-selected>
+          {text(@locale, :none_selected)}
+        </p>
+
         <section
           :if={@directory? and (@mandates != [] or @page > 1)}
-          class="mt-8 border-t border-base-300 pt-5"
+          class="mt-4"
           aria-labelledby="verified-mandates"
         >
           <h2 id="verified-mandates" class="sr-only">{text(@locale, :verified_mandates)}</h2>
-          <ul class="mt-3 space-y-3 text-sm">
-            <li :for={mandate <- @mandates}>
+          <ul class="border-t border-base-300">
+            <li :for={mandate <- @mandates} class="entry">
               <a
-                class="underline underline-offset-2"
+                class="entry-title"
                 href={"/people/#{mandate.subject_id}?lang=#{@locale}#fact-#{mandate.fact_id}"}
               >
                 {mandate.subject_name}
               </a>
               <p class="mt-1">{BrusselsWtfWeb.PublicMandate.role_label(@locale, mandate)}</p>
-              <p class="mt-1">{mandate.object_name}</p>
+              <p class="muted mt-1 text-sm">{mandate.object_name}</p>
               <BrusselsWtfWeb.PublicMandate.installation_period
                 :if={mandate.state == :documented}
                 relationship={mandate}
                 locale={@locale}
               />
-              <p :if={mandate.state != :documented} class="mt-1 text-base-content/70">
+              <p :if={mandate.state != :documented} class="muted mt-1 text-sm">
                 <time
                   :if={mandate.effective_from}
                   datetime={Date.to_iso8601(mandate.effective_from)}
                 >
-                  {Date.to_iso8601(mandate.effective_from)}
+                  {format_date(mandate.effective_from, @locale)}
                 </time>
                 <span :if={mandate.effective_from && mandate.effective_to}> – </span>
                 <time :if={mandate.effective_to} datetime={Date.to_iso8601(mandate.effective_to)}>
-                  {Date.to_iso8601(mandate.effective_to)}
+                  {format_date(mandate.effective_to, @locale)}
                 </time>
               </p>
               <a
-                class="mt-1 inline-block underline underline-offset-2"
+                class="mt-1 inline-flex min-h-11 items-center gap-1 text-sm"
                 rel="external"
                 href={
                   BrusselsWtfWeb.PublicEvidence.citation_href(%{
@@ -273,7 +492,10 @@ defmodule BrusselsWtfWeb.TimelinePage do
                   })
                 }
               >
-                {text(@locale, :source)}
+                <span class="hero-document-text-micro size-4" aria-hidden="true"></span>{text(
+                  @locale,
+                  :source
+                )}
               </a>
             </li>
           </ul>
@@ -288,66 +510,73 @@ defmodule BrusselsWtfWeb.TimelinePage do
             path={@resource_path}
           />
         </section>
-        <p :if={@directory? and @mandates == []} class="mt-8 text-base-content/80">
+        <p :if={@directory? and @mandates == []} class="callout mt-6">
           {text(@locale, :none_mandates)}
         </p>
+
         <section
           :if={@contested?}
           id="contested-votes"
-          class="mt-8 border-t border-base-300 pt-5"
+          class="mt-4"
           aria-labelledby="coverage-title"
         >
-          <p class="text-sm text-base-content/80">{text(@locale, :contested_intro)}</p>
           <p
             :if={@contested_rows == []}
-            class="mt-3 text-base-content/80"
+            class="callout mt-3"
             data-contested-empty
           >
             {text(@locale, :none_contested)}
           </p>
-          <div :if={@contested_rows != []} class="mt-3 overflow-x-auto">
-            <table class="w-full text-left text-sm">
-              <thead class="border-b border-base-300 text-base-content/70">
+          <div :if={@contested_rows != []} class="mt-3">
+            <BrusselsWtfWeb.PublicShell.vote_legend locale={@locale} />
+            <table class="data-table mt-3">
+              <thead>
                 <tr>
-                  <th scope="col" class="py-2 pr-3 font-medium">{text(@locale, :commune)}</th>
-                  <th scope="col" class="py-2 pr-3 font-medium">{text(@locale, :meeting_date)}</th>
-                  <th scope="col" class="py-2 pr-3 font-medium">{text(@locale, :item)}</th>
-                  <th scope="col" class="py-2 pr-3 font-medium">{text(@locale, :decision)}</th>
-                  <th scope="col" class="py-2 pr-3 text-right font-medium">
-                    {text(@locale, :votes_for)}
-                  </th>
-                  <th scope="col" class="py-2 pr-3 text-right font-medium">
-                    {text(@locale, :votes_against)}
-                  </th>
-                  <th scope="col" class="py-2 text-right font-medium">
-                    {text(@locale, :votes_abstentions)}
-                  </th>
+                  <th scope="col">{text(@locale, :item)}</th>
+                  <th scope="col">{text(@locale, :commune)}</th>
+                  <th scope="col">{text(@locale, :meeting_date)}</th>
+                  <th scope="col">{text(@locale, :decision)}</th>
+                  <th scope="col" class="num">{text(@locale, :votes_for)}</th>
+                  <th scope="col" class="num">{text(@locale, :votes_against)}</th>
+                  <th scope="col" class="num">{text(@locale, :votes_abstentions)}</th>
+                  <th scope="col"><span class="sr-only">{text(@locale, :vote_split)}</span></th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-base-300">
+              <tbody>
                 <tr :for={row <- @contested_rows} data-commune={row.commune_slug}>
-                  <td class="py-2 pr-3 align-top">{row.commune}</td>
-                  <td class="py-2 pr-3 align-top tabular-nums">
-                    <time datetime={Date.to_iso8601(row.date)}>{format_date(row.date)}</time>
+                  <td class="cell-lead">
+                    <a href={row.href} class="entry-title">{row.title}</a>
                   </td>
-                  <td class="py-2 pr-3 align-top">
-                    <a href={row.href} class="underline underline-offset-2">{row.title}</a>
+                  <td data-label={text(@locale, :commune)}>{row.commune}</td>
+                  <td data-label={text(@locale, :meeting_date)}>
+                    <time datetime={Date.to_iso8601(row.date)}>{format_date(row.date, @locale)}</time>
                   </td>
-                  <td class="py-2 pr-3 align-top">
-                    {BrusselsWtfWeb.DispositionLabels.label(@locale, row.disposition)}
+                  <td data-label={text(@locale, :decision)}>
+                    {String.capitalize(
+                      BrusselsWtfWeb.DispositionLabels.label(@locale, row.disposition)
+                    )}
                   </td>
-                  <td class="py-2 pr-3 text-right align-top tabular-nums">{count_cell(row.for)}</td>
-                  <td class={[
-                    "py-2 pr-3 text-right align-top tabular-nums",
-                    (row.against || 0) > 0 && "font-semibold text-error"
-                  ]}>
+                  <td class="num" data-label={text(@locale, :votes_for)}>{count_cell(row.for)}</td>
+                  <td
+                    class={["num", (row.against || 0) > 0 && "vote-against"]}
+                    data-label={text(@locale, :votes_against)}
+                  >
                     {count_cell(row.against)}
                   </td>
-                  <td class={[
-                    "py-2 text-right align-top tabular-nums",
-                    (row.abstentions || 0) > 0 && "font-semibold text-warning"
-                  ]}>
+                  <td
+                    class={["num", (row.abstentions || 0) > 0 && "vote-abstain"]}
+                    data-label={text(@locale, :votes_abstentions)}
+                  >
                     {count_cell(row.abstentions)}
+                  </td>
+                  <td class="cell-bar">
+                    <BrusselsWtfWeb.PublicShell.vote_split
+                      for_votes={row.for}
+                      against={row.against}
+                      abstentions={row.abstentions}
+                      locale={@locale}
+                      label={false}
+                    />
                   </td>
                 </tr>
               </tbody>
@@ -364,62 +593,141 @@ defmodule BrusselsWtfWeb.TimelinePage do
             path={@resource_path}
           />
         </section>
+
+        <section
+          :for={category <- @categories}
+          aria-labelledby={if @homepage?, do: category.id, else: "coverage-title"}
+          class={[
+            if(@homepage? and category.entries == [], do: "mt-4", else: "mt-8 sm:mt-10")
+          ]}
+          data-section={category.id}
+        >
+          <%= if @homepage? and category.entries == [] do %>
+            <div class="flex flex-wrap items-center justify-between gap-x-4 border-y border-base-300 py-2">
+              <h2 id={category.id} class="text-base font-semibold">
+                {text(@locale, category.label)}
+              </h2>
+              <p class="muted min-w-0 flex-1 text-sm">{text(@locale, category.empty)}</p>
+              <a
+                href={category.href}
+                class="inline-flex min-h-11 items-center text-sm"
+                aria-label={text(@locale, :view_all) <> ": " <> text(@locale, category.label)}
+              >{text(@locale, :view_all)}</a>
+            </div>
+          <% else %>
+            <div
+              :if={@homepage?}
+              class="flex flex-wrap items-end justify-between gap-x-4 border-b-2 border-base-content pb-1"
+            >
+              <h2 id={category.id} class="display display-md">{text(@locale, category.label)}</h2>
+              <a
+                href={category.href}
+                class="inline-flex min-h-11 items-center gap-1 text-sm font-medium"
+                aria-label={text(@locale, :view_all) <> ": " <> text(@locale, category.label)}
+              >
+                {text(@locale, :view_all)}<span
+                  class="hero-arrow-right-micro size-4"
+                  aria-hidden="true"
+                ></span>
+              </a>
+            </div>
+            <p :if={@homepage? and category[:lead]} class="measure muted mt-2 text-sm">
+              {text(@locale, category.lead)}
+            </p>
+            <p :if={category.entries == []} class="callout mt-3">
+              {text(@locale, category.empty)}
+            </p>
+            <div :if={@homepage?}>
+              <.timeline_entry :for={entry <- category.entries} entry={entry} locale={@locale} />
+            </div>
+            <div :if={not @homepage?}>
+              <section
+                :for={group <- meeting_groups(category.entries)}
+                class="mt-5"
+                data-meeting-group
+              >
+                <h2 class="flex flex-wrap items-baseline gap-x-2 border-b-2 border-base-content pb-1">
+                  <a href={group.href} class="link-quiet text-base font-semibold">{group.commune}</a>
+                  <time class="muted text-sm" datetime={Date.to_iso8601(group.date)}>
+                    {format_date(group.date, @locale)}
+                  </time>
+                </h2>
+                <.timeline_entry
+                  :for={entry <- group.entries}
+                  entry={entry}
+                  locale={@locale}
+                  grouped={true}
+                />
+              </section>
+              <.pager
+                :if={@page > 1 or @more_results?}
+                label={text(@locale, :results_pages)}
+                page={@page}
+                more?={@more_results?}
+                locale={@locale}
+                selected={@selected_communes}
+                q={@q}
+                path={@resource_path}
+              />
+            </div>
+          <% end %>
+        </section>
       </div>
-
-      <section
-        :for={category <- @categories}
-        aria-labelledby={if @homepage?, do: category.id, else: "coverage-title"}
-        class="mt-8 border-t border-base-300 pt-4"
-      >
-        <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <h2 :if={@homepage?} id={category.id} class="text-xl sm:text-2xl font-semibold">
-            {text(@locale, category.label)}
-          </h2>
-          <a
-            :if={@homepage?}
-            href={category.href}
-            class="inline-flex min-h-11 items-center text-sm underline underline-offset-2"
-            aria-label={text(@locale, :view_all) <> ": " <> text(@locale, category.label)}
-          >{text(@locale, :view_all)}</a>
-        </div>
-        <p :if={category.entries == []} class="mt-3 text-base-content/80">
-          {text(@locale, category.empty)}
-        </p>
-        <div class="mt-2">
-          <.timeline_entry :for={entry <- category.entries} entry={entry} locale={@locale} />
-        </div>
-      </section>
-      <nav class="mt-8 border-t border-base-300 pt-4 text-sm" aria-label={text(@locale, :explore)}>
-        <ul class="flex flex-wrap gap-x-6 gap-y-2">
-          <li :if={not @directory?}>
-            <a
-              class="inline-flex min-h-11 items-center underline underline-offset-2"
-              href={@directory_path}
-            >{text(@locale, :verified_mandates)}</a>
-          </li>
-          <li :if={not @contested?}>
-            <a
-              class="inline-flex min-h-11 items-center underline underline-offset-2"
-              href={@contested_path}
-            >{text(@locale, :contested_votes)}</a>
-          </li>
-          <li>
-            <a
-              class="inline-flex min-h-11 items-center underline underline-offset-2"
-              href={"/feed?lang=" <> @locale}
-            >{text(@locale, :your_follows)}</a>
-          </li>
-          <li :for={category <- categories()} :if={not @homepage?}>
-            <a
-              class="inline-flex min-h-11 items-center underline underline-offset-2"
-              href={selection_path(category.path, @locale, @selected_communes)}
-            >{text(@locale, category.label)}</a>
-          </li>
-        </ul>
-      </nav>
-
-      <BrusselsWtfWeb.PublicationComponents.footer locale={@locale} />
     </main>
+    <BrusselsWtfWeb.PublicationComponents.footer locale={@locale} />
+    """
+  end
+
+  attr :communes, :list, required: true
+  attr :selected, :list, required: true
+  attr :locale, :string, required: true
+  attr :path, :string, required: true
+  attr :homepage?, :boolean, required: true
+  attr :contested?, :boolean, required: true
+  attr :q, :string, required: true
+  attr :reset_path, :string, default: nil
+
+  defp commune_form(assigns) do
+    ~H"""
+    <form
+      method="get"
+      action={@path}
+      data-reader-communes
+      data-auto-submit
+      class={["mt-5 space-y-3", not @homepage? && "chips-plain"]}
+    >
+      <input type="hidden" name="lang" value={@locale} />
+      <input type="hidden" name="communes_submitted" value="1" />
+      <label :if={not @homepage? and not @contested?} class="block text-sm font-semibold">
+        {text(@locale, :search)}
+        <span class="mt-1 flex gap-2">
+          <input type="search" name="q" value={@q} class="input input-bordered min-h-11 w-full" />
+          <button type="submit" class="btn btn-neutral min-h-11">{text(@locale, :search)}</button>
+        </span>
+      </label>
+      <fieldset>
+        <legend class={["mb-2 text-sm font-semibold", @homepage? && "sr-only sm:not-sr-only"]}>
+          {text(@locale, :communes)}
+        </legend>
+        <div class="flex flex-wrap gap-2">
+          <label :for={{slug, name} <- @communes} class="chip">
+            <input type="checkbox" name="commune[]" value={slug} checked={slug in @selected} />
+            <span class="chip-mark chip-mark-off hero-plus-micro" aria-hidden="true"></span>
+            <span class="chip-mark chip-mark-on hero-check-micro" aria-hidden="true"></span>
+            <span>{name}</span>
+          </label>
+        </div>
+      </fieldset>
+      <div class="filter-submit flex flex-wrap items-center gap-4">
+        <button type="submit" class="btn btn-neutral min-h-11">{text(@locale, :apply)}</button>
+      </div>
+      <a
+        :if={@reset_path && @q != ""}
+        data-reader-reset
+        href={@reset_path}
+        class="inline-flex min-h-11 items-center text-sm"
+      >{text(@locale, :reset)}</a>
+    </form>
     """
   end
 
@@ -466,48 +774,98 @@ defmodule BrusselsWtfWeb.TimelinePage do
 
   attr :entry, :map, required: true
   attr :locale, :string, required: true
+  attr :grouped, :boolean, default: false
 
   defp timeline_entry(assigns) do
+    assigns =
+      assigns
+      |> assign(:amount, BrusselsWtfWeb.PublicShell.amount_in(assigns.entry.title))
+      |> assign(:topic, BrusselsWtfWeb.PublicShell.topic_of(assigns.entry.title))
+
     ~H"""
-    <article
-      class="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-x-4 gap-y-1 border-b border-base-300 py-3"
-      data-commune={@entry.commune_slug}
-    >
-      <a href={@entry.href} class="min-w-0 flex-1 font-medium underline-offset-2 hover:underline">
-        {@entry.title}
+    <article class="entry" data-commune={@entry.commune_slug} data-group={@entry.group}>
+      <BrusselsWtfWeb.PublicShell.kicker topic={@topic} amount={@amount} locale={@locale} />
+      <a href={@entry.href} class="entry-title">
+        <BrusselsWtfWeb.PublicShell.title_parts title={@entry.title} />
       </a>
-      <p class="shrink-0 text-sm text-base-content/70">
-        {@entry.commune} ·
-        <time datetime={Date.to_iso8601(@entry.date)}>{format_date(@entry.date)}</time>
-        <span :if={@entry.group == :coming and @entry.date == BrusselsWtfWeb.MeetingTime.today()}> · {text(
-          @locale,
-          :today
-        )}</span>
+      <p :if={show_summary?(@entry)} class="entry-summary measure muted mt-1 text-sm leading-5">
+        {@entry.summary}
+      </p>
+      <p class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+        <BrusselsWtfWeb.PublicShell.status
+          kind={status_kind(@entry)}
+          label={status_label(@entry, @locale)}
+        />
+        <BrusselsWtfWeb.PublicShell.vote_split
+          :if={@entry.contested?}
+          for_votes={elem(@entry.votes, 0)}
+          against={elem(@entry.votes, 1)}
+          abstentions={elem(@entry.votes, 2)}
+          locale={@locale}
+        />
+        <span :if={not @grouped} class="font-medium">{@entry.commune}</span>
+        <span class="muted">
+          <time :if={not @grouped} datetime={Date.to_iso8601(@entry.date)}>
+            {format_date(@entry.date, @locale)}
+          </time>
+          <span :if={not @grouped and @entry.item_number}> · </span>
+          <span :if={@entry.item_number}>{text(@locale, :item)} {@entry.item_number}</span>
+          <span :if={@entry.group == :coming and @entry.date == BrusselsWtfWeb.MeetingTime.today()}>
+            · {text(@locale, :today)}
+          </span>
+        </span>
+        <span :if={@entry.vote_line} class="muted" data-vote-line>{@entry.vote_line}</span>
       </p>
     </article>
     """
   end
 
-  attr :locale, :string, required: true
-  attr :path, :string, required: true
-
-  defp language_nav(assigns) do
-    ~H"""
-    <nav aria-label="Language">
-      <ul class="flex gap-1 text-sm">
-        <li :for={{code, label} <- [{"fr", "FR"}, {"nl", "NL"}, {"en", "EN"}]}>
-          <a
-            href={@path <> if(String.ends_with?(@path, "?"), do: "lang=", else: "&lang=") <> code}
-            lang={code}
-            hreflang={code}
-            aria-current={if code == @locale, do: "page"}
-            class="inline-flex min-h-11 min-w-9 items-center justify-center underline underline-offset-2"
-          >{label}</a>
-        </li>
-      </ul>
-    </nav>
-    """
+  defp meeting_groups(entries) do
+    entries
+    |> Enum.chunk_by(&{&1.commune_slug, &1.date})
+    |> Enum.map(fn [first | _] = group ->
+      %{
+        commune: first.commune,
+        date: first.date,
+        href: first.href |> String.split("#") |> hd(),
+        entries: group
+      }
+    end)
   end
+
+  defp show_summary?(%{summary: summary, title: title}) when is_binary(summary),
+    do: String.length(summary) > 40 and String.jaro_distance(summary, title) < 0.85
+
+  defp show_summary?(_entry), do: false
+
+  defp status_kind(%{group: :coming}), do: :coming
+  defp status_kind(%{group: :awaiting}), do: :awaiting
+  defp status_kind(%{disposition: disposition}) when not is_nil(disposition), do: disposition
+  defp status_kind(_entry), do: :decided
+
+  defp status_label(%{group: :coming}, locale), do: text(locale, :proposal)
+  defp status_label(%{group: :awaiting}, locale), do: text(locale, :outcome_unknown)
+
+  defp status_label(%{disposition: disposition}, locale) when not is_nil(disposition),
+    do: String.capitalize(BrusselsWtfWeb.DispositionLabels.label(locale, disposition))
+
+  defp status_label(_entry, locale), do: text(locale, :decision)
+
+  defp vote_line(nil, _locale), do: nil
+
+  defp vote_line(decision, locale) do
+    BrusselsWtfWeb.PublicShell.vote_text(
+      locale,
+      decision.votes_for,
+      decision.votes_against,
+      decision.abstentions
+    )
+  end
+
+  defp contested?(nil), do: false
+
+  defp contested?(decision),
+    do: (decision.votes_against || 0) > 0 or (decision.abstentions || 0) > 0
 
   defp entry(%{page: page, item: item, variant: variant, state: state}, locale, selected) do
     variant = variant || unavailable_coverage_variant(locale)
@@ -525,6 +883,9 @@ defmodule BrusselsWtfWeb.TimelinePage do
       state: state,
       group: BrusselsWtfWeb.MeetingTime.group(state, page.council_meeting.scheduled_on),
       disposition: decision && decision.disposition,
+      contested?: contested?(decision),
+      vote_line: vote_line(decision, locale),
+      votes: decision && {decision.votes_for, decision.votes_against, decision.abstentions},
       outcome: item.published_outcome || :unknown,
       evidences: BrusselsWtfWeb.PublicEvidence.for_item(item),
       dossiers: Enum.map(item.dossier_links, & &1.dossier),
@@ -605,7 +966,19 @@ defmodule BrusselsWtfWeb.TimelinePage do
   defp commune_name(locale, slug, name),
     do: BrusselsWtfWeb.CommuneLabels.name(locale, slug, name)
 
-  defp format_date(date), do: Date.to_iso8601(date)
+  defp tracking_line(locale, meetings, items) do
+    text(locale, :tracking)
+    |> String.replace("%{meetings}", Integer.to_string(meetings))
+    |> String.replace("%{items}", Integer.to_string(items))
+  end
+
+  defp item_count(row, locale),
+    do: String.replace(text(locale, :results), "%{count}", Integer.to_string(row.total))
+
+  defp decided_count(row, locale),
+    do: String.replace(text(locale, :decided_count), "%{count}", Integer.to_string(row.decided))
+
+  defp format_date(date, locale), do: BrusselsWtfWeb.PublicDate.long(date, locale)
 
   defp count_cell(nil), do: "—"
   defp count_cell(value), do: value
@@ -627,22 +1000,22 @@ defmodule BrusselsWtfWeb.TimelinePage do
       verified_mandates: "Verified public mandates",
       title: "What’s happening in your commune?",
       view_all: "View all",
-      back: "Back to overview",
+      back: "Back",
       reset: "Reset search",
       follow_communes: "Follow commune updates",
-      your_follows: "Your follows",
+      your_follows: "Personal feed",
       explore: "Explore coverage",
       none_mandates: "No verified public mandates in this selection.",
       intro:
-        "Upcoming proposals, unresolved outcomes, and documented decisions from four Brussels communes.",
+        "Agendas, votes and decisions from four Brussels councils, each linked to its official document.",
       communes: "Communes",
       follow: "Follow",
-      apply: "Apply selection",
+      apply: "Update",
       search: "Search",
       sections: "Sections",
       today: "Scheduled today",
       coming: "Coming up",
-      awaiting: "Awaiting documented outcome",
+      awaiting: "Outcome unknown",
       none_awaiting: "No past proposals awaiting a documented outcome in this selection.",
       filters: "Filter coverage",
       previously: "What they decided",
@@ -666,7 +1039,22 @@ defmodule BrusselsWtfWeb.TimelinePage do
       meeting_date: "Meeting date",
       votes_for: "For",
       votes_against: "Against",
-      votes_abstentions: "Abst.",
+      votes_abstentions: "Abstained",
+      latest_meetings: "Latest meetings",
+      decided_count: "%{count} decisions",
+      tracking: "Tracking %{meetings} meetings and %{items} agenda items so far.",
+      meetings: "Meetings",
+      lead_meetings: "Every meeting we cover, newest first.",
+      vote_split: "Vote split",
+      results: "%{count} items",
+      page: "Page",
+      results_pages: "Result pages",
+      all_communes: "all four communes",
+      none_selected: "Choose at least one commune to see its coverage.",
+      lead_coming: "Proposals on upcoming agendas. Nothing here has been decided yet.",
+      lead_awaiting:
+        "The meeting has passed, but no official record of the outcome is attached yet.",
+      lead_decided: "Outcomes documented in official council records.",
       source: "Source"
     }
   end
@@ -685,22 +1073,22 @@ defmodule BrusselsWtfWeb.TimelinePage do
       dossiers: "Dossiers",
       title: "Que se passe-t-il dans votre commune ?",
       view_all: "Tout voir",
-      back: "Retour à l’aperçu",
+      back: "Retour",
       reset: "Réinitialiser la recherche",
       follow_communes: "Suivre les nouvelles des communes",
       your_follows: "Vos suivis",
       explore: "Explorer l’actualité",
       none_mandates: "Aucun mandat public vérifié dans cette sélection.",
       intro:
-        "Propositions à venir, résultats non documentés et décisions officielles de quatre communes bruxelloises.",
+        "Ordres du jour, votes et décisions de quatre conseils bruxellois, chacun relié à son document officiel.",
       communes: "Communes",
       follow: "Suivre",
-      apply: "Appliquer la sélection",
+      apply: "Mettre à jour",
       search: "Rechercher",
       sections: "Sections",
       today: "Prévu aujourd’hui",
       coming: "À venir",
-      awaiting: "En attente d’un résultat documenté",
+      awaiting: "Résultat inconnu",
       none_awaiting: "Aucune proposition passée sans résultat documenté dans cette sélection.",
       filters: "Filtrer les articles",
       previously: "Ce qu’ils ont décidé",
@@ -724,7 +1112,23 @@ defmodule BrusselsWtfWeb.TimelinePage do
       meeting_date: "Date de la séance",
       votes_for: "Pour",
       votes_against: "Contre",
-      votes_abstentions: "Abst.",
+      votes_abstentions: "Abstention",
+      latest_meetings: "Dernières séances",
+      decided_count: "%{count} décisions",
+      tracking: "%{meetings} séances et %{items} points suivis à ce jour.",
+      meetings: "Séances",
+      lead_meetings: "Toutes les séances couvertes, de la plus récente à la plus ancienne.",
+      vote_split: "Répartition des votes",
+      results: "%{count} points",
+      page: "Page",
+      results_pages: "Pages de résultats",
+      all_communes: "les quatre communes",
+      none_selected: "Choisissez au moins une commune pour voir son actualité.",
+      lead_coming:
+        "Propositions inscrites aux prochains ordres du jour. Rien n’est encore décidé.",
+      lead_awaiting:
+        "La séance a eu lieu, mais aucun document officiel du résultat n’est encore joint.",
+      lead_decided: "Résultats documentés dans les documents officiels du conseil.",
       source: "Source"
     }
   end
@@ -742,32 +1146,32 @@ defmodule BrusselsWtfWeb.TimelinePage do
       dossiers: "Dossiers",
       title: "Wat gebeurt er in uw gemeente?",
       view_all: "Alles bekijken",
-      back: "Terug naar het overzicht",
+      back: "Terug",
       reset: "Zoekopdracht wissen",
       follow_communes: "Gemeentenieuws volgen",
       your_follows: "Uw gevolgde updates",
       explore: "Berichtgeving verkennen",
       none_mandates: "Geen geverifieerde openbare mandaten in deze selectie.",
       intro:
-        "Komende voorstellen, niet-gedocumenteerde resultaten en officiële besluiten uit vier Brusselse gemeenten.",
+        "Agenda’s, stemmingen en besluiten van vier Brusselse gemeenteraden, telkens met het officiële document.",
       communes: "Gemeenten",
       follow: "Volgen",
-      apply: "Selectie toepassen",
+      apply: "Bijwerken",
       search: "Zoeken",
       sections: "Onderdelen",
       today: "Vandaag gepland",
       coming: "Binnenkort",
-      awaiting: "In afwachting van een gedocumenteerde uitkomst",
+      awaiting: "Uitkomst onbekend",
       none_awaiting: "Geen eerdere voorstellen zonder gedocumenteerde uitkomst in deze selectie.",
       filters: "Berichten filteren",
-      previously: "Wat ze besloten",
-      unknown_heading: "Resultaat nog niet gedocumenteerd",
+      previously: "Wat ze beslisten",
+      unknown_heading: "Uitkomst nog niet gedocumenteerd",
       decided: "Wat ze beslisten",
       none_coming: "Geen komende berichtgeving.",
       none_decided: "Geen gedocumenteerde besluiten.",
       item: "Agendapunt",
       proposal: "Voorstel",
-      outcome_unknown: "Resultaat onbekend",
+      outcome_unknown: "Uitkomst onbekend",
       decision: "Besluit",
       provenance: "Herkomst van de inhoud",
       mandates_pages: "Mandatenpagina's",
@@ -781,7 +1185,22 @@ defmodule BrusselsWtfWeb.TimelinePage do
       meeting_date: "Datum van de zitting",
       votes_for: "Voor",
       votes_against: "Tegen",
-      votes_abstentions: "Onth.",
+      votes_abstentions: "Onthouding",
+      latest_meetings: "Laatste vergaderingen",
+      decided_count: "%{count} besluiten",
+      tracking: "Tot nu toe %{meetings} vergaderingen en %{items} agendapunten gevolgd.",
+      meetings: "Vergaderingen",
+      lead_meetings: "Alle behandelde vergaderingen, de nieuwste eerst.",
+      vote_split: "Stemverdeling",
+      results: "%{count} punten",
+      page: "Pagina",
+      results_pages: "Resultaatpagina’s",
+      all_communes: "de vier gemeenten",
+      none_selected: "Kies minstens één gemeente om de berichtgeving te zien.",
+      lead_coming: "Voorstellen op komende agenda’s. Hier is nog niets beslist.",
+      lead_awaiting:
+        "De vergadering heeft plaatsgevonden, maar er is nog geen officieel verslag van de uitkomst.",
+      lead_decided: "Uitkomsten gedocumenteerd in officiële raadsdocumenten.",
       source: "Bron"
     }
   end

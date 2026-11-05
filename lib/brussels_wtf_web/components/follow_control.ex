@@ -37,7 +37,12 @@ defmodule BrusselsWtfWeb.FollowControl do
         <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
         <input type="hidden" name="target_type" value={@type} />
         <input type="hidden" name="target_identifier" value={@identifier} />
-        <button type="submit" class="btn btn-sm" data-follow-control data-unfollow-control={!!@follow}>
+        <button
+          type="submit"
+          class="btn btn-sm min-h-11"
+          data-follow-control
+          data-unfollow-control={!!@follow}
+        >
           {if @follow, do: text(@locale, :unfollow), else: @label}
         </button>
       </form>

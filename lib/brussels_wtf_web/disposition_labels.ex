@@ -6,12 +6,13 @@ defmodule BrusselsWtfWeb.DispositionLabels do
   def label("fr", :rejected), do: "rejetée"
   def label("fr", :amended), do: "amendée"
   def label("fr", :withdrawn), do: "retirée"
-  def label("fr", :other), do: "autre"
+  def label("fr", :other), do: "décision enregistrée"
   def label("nl", :approved), do: "goedgekeurd"
   def label("nl", :postponed), do: "uitgesteld"
   def label("nl", :rejected), do: "verworpen"
   def label("nl", :amended), do: "gewijzigd"
   def label("nl", :withdrawn), do: "ingetrokken"
-  def label("nl", :other), do: "andere"
+  def label("nl", :other), do: "besluit geregistreerd"
+  def label(_locale, :other), do: "decision recorded"
   def label(_locale, value), do: value |> to_string() |> String.replace("_", " ")
 end

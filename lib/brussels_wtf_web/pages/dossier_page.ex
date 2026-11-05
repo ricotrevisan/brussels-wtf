@@ -40,31 +40,16 @@ defmodule BrusselsWtfWeb.DossierPage do
   @impl Dstar.Page
   def render(assigns) do
     ~H"""
-    <a href="#content" class="sr-only focus:not-sr-only focus:absolute focus:p-3 focus:bg-base-100">
-      {text(@locale, :skip)}
-    </a>
-    <header class="border-b border-base-300">
-      <div class="mx-auto flex max-w-4xl items-center justify-between gap-4 px-4 py-4">
-        <Layouts.brand_link data-reader-back href={"/?lang=" <> @locale} />
-        <nav aria-label="Language">
-          <ul class="flex gap-3 text-sm">
-            <li :for={{code, label} <- [{"fr", "FR"}, {"nl", "NL"}, {"en", "EN"}]}>
-              <a
-                href={"/dossiers/#{@dossier.slug}?lang=#{code}"}
-                lang={code}
-                hreflang={code}
-                aria-current={if code == @locale, do: "page"}
-                class="underline underline-offset-2"
-              >{label}</a>
-            </li>
-          </ul>
-        </nav>
-      </div>
-    </header>
+    <BrusselsWtfWeb.PublicShell.header
+      locale={@locale}
+      reader_back={true}
+      current="/meetings"
+      lang_href={fn code -> "/dossiers/#{@dossier.slug}?lang=" <> code end}
+    />
 
-    <main id="content" class="mx-auto max-w-4xl px-4 py-8" tabindex="-1">
-      <p class="text-sm text-base-content/70">{text(@locale, :dossier)}</p>
-      <h1 class="mt-2 text-3xl font-semibold">
+    <main id="content" class="site-container py-6 sm:py-8" tabindex="-1">
+      <p class="eyebrow">{text(@locale, :dossier)}</p>
+      <h1 class="display display-lg mt-1">
         {text(@locale, :title)}: {dossier_title(@dossier, @locale)}
       </h1>
       <BrusselsWtfWeb.FollowControl.control
@@ -75,38 +60,56 @@ defmodule BrusselsWtfWeb.DossierPage do
         label={text(@locale, :follow)}
       />
 
-      <ol class="mt-8 border-l border-base-300 pl-6">
+      <p :if={@entries == []} class="callout measure mt-6" data-dossier-empty>
+        {text(@locale, :empty)}
+      </p>
+      <ol :if={@entries != []} class="timeline mt-8 border-l-2 border-base-300 pl-6">
         <li :for={entry <- @entries} class="relative pb-8">
           <span
             aria-hidden="true"
-            class="absolute -left-[1.7rem] top-2 size-3 rounded-full bg-base-content"
+            class={[
+              "timeline-dot",
+              (entry.disposition && "timeline-dot-decided") || "timeline-dot-unknown"
+            ]}
           ></span>
-          <p class="text-sm text-base-content/70">
+          <p class="eyebrow">
             {entry.commune} ·
-            <time datetime={Date.to_iso8601(entry.date)}>{Date.to_iso8601(entry.date)}</time>
+            <time datetime={Date.to_iso8601(entry.date)}>
+              {BrusselsWtfWeb.PublicDate.long(entry.date, @locale)}
+            </time>
             · {text(@locale, :item)} {entry.item_number}
           </p>
-          <h2 class="mt-2 text-xl font-semibold">
-            <a href={entry.href} class="underline underline-offset-3">{entry.title}</a>
+          <h2 class="mt-1 text-lg font-semibold leading-snug">
+            <a href={entry.href} class="entry-title">{entry.title}</a>
           </h2>
-          <p class="mt-2">{entry.summary}</p>
-          <p :for={evidence <- entry.evidences} class="mt-2 text-sm">
+          <p class="mt-1.5">
+            <BrusselsWtfWeb.PublicShell.status
+              kind={entry.disposition || :unknown}
+              label={state_label(@locale, entry.disposition)}
+            />
+          </p>
+          <p class="measure mt-2 leading-6">{entry.summary}</p>
+          <p :for={evidence <- entry.evidences} class="mt-1 text-sm">
             <a
               href={BrusselsWtfWeb.PublicEvidence.citation_href(evidence)}
               rel="external"
-              class="underline underline-offset-2"
+              class="inline-flex min-h-11 items-center gap-1.5"
             >
+              <span class="hero-document-text-micro size-4 shrink-0" aria-hidden="true"></span>
               {if evidence.source_title == "Authoritative municipal source",
-                do: source_title(@locale),
+                do: evidence.location || source_title(@locale),
                 else: evidence.source_title}
             </a>
-            <span :if={evidence.synthetic} class="block font-medium text-warning">
+            <span :if={evidence.synthetic} class="tone-unknown block font-medium">
               {text(@locale, :synthetic_reference)}
             </span>
           </p>
-          <details class="mt-3 text-sm">
-            <summary class="cursor-pointer underline underline-offset-2">
-              {text(@locale, :report_link)}
+          <details class="disclosure text-sm">
+            <summary>
+              <span class="hero-flag-micro size-4" aria-hidden="true"></span>{text(
+                @locale,
+                :report_link
+              )}
             </summary>
             <form
               method="post"
@@ -123,14 +126,13 @@ defmodule BrusselsWtfWeb.DossierPage do
                   class="textarea textarea-bordered mt-1 w-full"
                 ></textarea>
               </label>
-              <button type="submit" class="btn btn-sm mt-2">{text(@locale, :submit_report)}</button>
+              <button type="submit" class="btn btn-sm mt-2 min-h-11">{text(@locale, :submit_report)}</button>
             </form>
           </details>
         </li>
       </ol>
-
-      <BrusselsWtfWeb.PublicationComponents.footer locale={@locale} />
     </main>
+    <BrusselsWtfWeb.PublicationComponents.footer locale={@locale} />
     """
   end
 
@@ -146,6 +148,20 @@ defmodule BrusselsWtfWeb.DossierPage do
     |> Enum.flat_map(&entry(&1, locale))
     |> Enum.sort_by(& &1.date, {:asc, Date})
   end
+
+  defp dossier_disposition(item) do
+    case loaded_or_nil(Map.get(item, :published_decision)) do
+      nil -> nil
+      decision -> decision.disposition
+    end
+  end
+
+  defp state_label("fr", nil), do: "Résultat inconnu"
+  defp state_label("nl", nil), do: "Uitkomst onbekend"
+  defp state_label(_locale, nil), do: "Outcome unknown"
+
+  defp state_label(locale, disposition),
+    do: String.capitalize(BrusselsWtfWeb.DispositionLabels.label(locale, disposition))
 
   defp dossier_title(dossier, locale),
     do: dossier.localized_titles[locale] || dossier.title
@@ -201,6 +217,7 @@ defmodule BrusselsWtfWeb.DossierPage do
       [
         %{
           link_id: link.id,
+          disposition: dossier_disposition(item),
           commune: commune_name(locale, meeting.commune.slug, meeting.commune.name),
           date: meeting.scheduled_on,
           item_number: item.published_item_number || item.item_number,
@@ -236,7 +253,7 @@ defmodule BrusselsWtfWeb.DossierPage do
   defp commune_name("nl", "forest", _name), do: "Vorst"
   defp commune_name(_locale, _slug, name), do: name
 
-  defp text("fr", :skip), do: "Aller au contenu"
+  defp text("fr", :empty), do: "Aucun point publié n’est encore lié à ce dossier."
   defp text("fr", :dossier), do: "Dossier en cours"
   defp text("fr", :title), do: "Chronologie du dossier"
   defp text("fr", :item), do: "Point"
@@ -251,7 +268,7 @@ defmodule BrusselsWtfWeb.DossierPage do
   defp text("fr", :report_link), do: "Signaler un lien de dossier incorrect"
   defp text("fr", :report_reason), do: "Pourquoi ce lien est-il incorrect ?"
   defp text("fr", :submit_report), do: "Envoyer le signalement"
-  defp text("nl", :skip), do: "Naar inhoud"
+  defp text("nl", :empty), do: "Er is nog geen gepubliceerd agendapunt aan dit dossier gekoppeld."
   defp text("nl", :dossier), do: "Lopend dossier"
   defp text("nl", :title), do: "Dossiertijdlijn"
   defp text("nl", :item), do: "Agendapunt"
@@ -266,7 +283,7 @@ defmodule BrusselsWtfWeb.DossierPage do
   defp text("nl", :report_link), do: "Een onjuiste dossierlink melden"
   defp text("nl", :report_reason), do: "Waarom is deze link onjuist?"
   defp text("nl", :submit_report), do: "Melding versturen"
-  defp text(_locale, :skip), do: "Skip to content"
+  defp text(_locale, :empty), do: "No published agenda item is linked to this dossier yet."
   defp text(_locale, :dossier), do: "Continuing dossier"
   defp text(_locale, :title), do: "Dossier timeline"
   defp text(_locale, :item), do: "Agenda item"

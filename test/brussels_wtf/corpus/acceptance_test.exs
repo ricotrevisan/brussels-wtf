@@ -437,9 +437,9 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
     # the adopted operative act is acknowledgement of executive decisions, not
     # approval of the underlying contracts. Item 20 is a real budget approval.
     for {locale, other, approved, acknowledgement} <- [
-          {"fr", "autre", "approuvée", "Le conseil prend connaissance"},
-          {"nl", "andere", "goedgekeurd", "De raad neemt kennis"},
-          {"en", "other", "approved", "The council took note"}
+          {"fr", "décision enregistrée", "approuvée", "Le conseil prend connaissance"},
+          {"nl", "besluit geregistreerd", "goedgekeurd", "De raad neemt kennis"},
+          {"en", "decision recorded", "approved", "The council took note"}
         ] do
       document =
         conn
@@ -1091,9 +1091,9 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
       assert corrected.publication_metadata["gate_result"]["ready"]
 
       for {locale, other, approved} <- [
-            {"fr", "autre", "approuvée"},
-            {"nl", "andere", "goedgekeurd"},
-            {"en", "other", "approved"}
+            {"fr", "décision enregistrée", "approuvée"},
+            {"nl", "besluit geregistreerd", "goedgekeurd"},
+            {"en", "decision recorded", "approved"}
           ] do
         html =
           conn

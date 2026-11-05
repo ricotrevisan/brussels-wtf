@@ -155,7 +155,7 @@ defmodule BrusselsWtfWeb.IxellesMinutesDecisionSeamTest do
     # The published page still says unknown about the point the minutes could not resolve.
     english = build_conn() |> get(@path <> "?lang=en") |> html_response(200)
     assert english =~ grant.stable_anchor
-    assert english =~ "Unknown outcome"
+    assert english =~ "Outcome unknown"
   end
 
   test "unresolved points are counted in one case that does not block the page", %{

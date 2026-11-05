@@ -19,10 +19,10 @@ defmodule BrusselsWtfWeb.ContestedVotesPageTest do
       {:approved, %{}}
     ])
 
-    for {locale, heading, commune, disposition} <- [
-          {"en", "Contested votes", "Forest", "approved"},
-          {"fr", "Votes contestés", "Forest", "approuvée"},
-          {"nl", "Betwiste stemmingen", "Vorst", "goedgekeurd"}
+    for {locale, heading, commune, disposition, date} <- [
+          {"en", "Contested votes", "Forest", "Approved", "4 May 2026"},
+          {"fr", "Votes contestés", "Forest", "Approuvée", "4 mai 2026"},
+          {"nl", "Betwiste stemmingen", "Vorst", "Goedgekeurd", "4 mei 2026"}
         ] do
       document = conn |> recycle() |> get("#{@path}?lang=#{locale}") |> document()
 
@@ -39,13 +39,14 @@ defmodule BrusselsWtfWeb.ContestedVotesPageTest do
       cells = first["td"] |> Enum.map(&(LazyHTML.text(&1) |> String.trim()))
 
       assert cells == [
-               commune,
-               "2026-05-04",
                "forest newer item-1 #{locale}",
+               commune,
+               date,
                disposition,
                "23",
                "1",
-               "10"
+               "10",
+               ""
              ]
 
       href = first["a"] |> LazyHTML.attribute("href") |> List.first()

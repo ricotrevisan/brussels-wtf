@@ -17,10 +17,13 @@ defmodule BrusselsWtf.Council.PublicTimeline do
       |> DateTime.shift_zone!("Europe/Brussels", Tzdata.TimeZoneDatabase)
       |> DateTime.to_date()
 
-    entries =
+    pages =
       Council.list_published_meeting_pages!()
       |> prefer_real_corpus()
       |> Enum.filter(&(&1.council_meeting.commune.slug in selected))
+
+    entries =
+      pages
       |> Enum.flat_map(fn page ->
         for item <- page.council_meeting.agenda_items, item.published? do
           decision = loaded_or_nil(item.published_decision)
@@ -42,10 +45,54 @@ defmodule BrusselsWtf.Council.PublicTimeline do
       |> Enum.sort_by(& &1.page.council_meeting.scheduled_on, {:desc, Date})
       |> Enum.group_by(& &1.group)
 
-    Map.new(groups, fn group ->
+    groups
+    |> Map.new(fn group ->
       matching = Map.get(entries, group, [])
-      {group, if(limit, do: Enum.take(matching, limit), else: matching)}
+      {group, cap(matching, limit, Keyword.get(opts, :balance, false))}
     end)
+    |> Map.put(:meetings, Enum.sort_by(pages, & &1.council_meeting.scheduled_on, {:desc, Date}))
+  end
+
+  defp cap(matching, nil, _balance), do: matching
+  defp cap(matching, limit, false), do: Enum.take(matching, limit)
+
+  # A preview takes the newest item from each commune in turn, so one prolific council
+  # cannot hide the others. Within a commune, and on the page, newest still comes first.
+  defp cap(matching, limit, true) do
+    matching
+    |> Enum.group_by(& &1.page.council_meeting.commune.slug)
+    |> Map.values()
+    |> Enum.map(&routine_last/1)
+    |> round_robin([])
+    |> Enum.take(limit)
+    |> Enum.sort_by(& &1.page.council_meeting.scheduled_on, {:desc, Date})
+  end
+
+  # Approving the previous minutes is routine at every meeting, so it does not lead a preview.
+  defp routine_last(queue) do
+    Enum.sort_by(
+      queue,
+      fn entry ->
+        {Date.to_gregorian_days(entry.page.council_meeting.scheduled_on) * -1, routine?(entry)}
+      end
+    )
+  end
+
+  defp routine?(%{item: item}),
+    do: Regex.match?(~r/proc[eè]s-verbal|notulen/iu, item.source_wording || "")
+
+  defp round_robin([], taken), do: Enum.reverse(taken)
+
+  defp round_robin(queues, taken) do
+    heads =
+      queues
+      |> Enum.map(&hd/1)
+      |> Enum.sort_by(& &1.page.council_meeting.scheduled_on, {:desc, Date})
+
+    round_robin(
+      queues |> Enum.map(&tl/1) |> Enum.reject(&(&1 == [])),
+      Enum.reverse(heads) ++ taken
+    )
   end
 
   defp search_text(%{page: page, item: item, variant: variant}, names) do

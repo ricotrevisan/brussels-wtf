@@ -45,7 +45,7 @@ defmodule BrusselsWtfWeb.MeetingVoteTallyTest do
 
       document = LazyHTML.from_document(html)
 
-      assert document["#vote-tally-heading"] |> LazyHTML.text() == heading
+      assert document["#vote-tally-heading"] |> LazyHTML.text() |> String.trim() == heading
       assert document["[data-vote-stats]"] |> LazyHTML.text() |> String.trim() == stats
 
       assert [row] = Enum.to_list(rows(html))
