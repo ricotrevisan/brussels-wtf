@@ -22,27 +22,24 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
   @impl Dstar.Page
   def render(assigns) do
     ~H"""
-    <main class="mx-auto max-w-4xl px-4 py-6">
-      <header class="flex justify-between gap-4">
-        <a data-reader-back href={"/?lang=#{@locale}"} class="font-semibold">brussels.wtf</a>
-        <nav aria-label="Language" class="flex gap-3">
-          <a
-            :for={locale <- ~w(fr nl en)}
-            href={"#{@resource_path}?lang=#{locale}"}
-            hreflang={locale}
-            lang={locale}
-            class="underline"
-          >{String.upcase(locale)}</a>
-        </nav>
-      </header>
-      <h1 class="mt-8 text-2xl font-semibold">{@page_title}</h1>
+    <BrusselsWtfWeb.PublicShell.header
+      locale={@locale}
+      reader_back={true}
+      current={@resource_path}
+      lang_href={fn code -> "#{@resource_path}?lang=#{code}" end}
+    />
+    <main id="content" class="site-container info-page py-6 sm:py-8" tabindex="-1">
+      <h1 class="display display-lg">{@page_title}</h1>
       <%= if @coverage? do %>
-        <p class="mt-4 leading-7">{text(@locale, :scope)}</p>
+        <p class="measure mt-4 leading-6">{text(@locale, :scope)}</p>
         <p class="mt-3">
-          {text(@locale, :window)}: {Date.to_iso8601(@status.first)} – {Date.to_iso8601(@status.last)}
+          {text(@locale, :window)}: {BrusselsWtfWeb.PublicDate.long(@status.first, @locale)} – {BrusselsWtfWeb.PublicDate.long(
+            @status.last,
+            @locale
+          )}
         </p>
-        <section :for={commune <- @status.communes} class="mt-8 border-t border-base-300 pt-4">
-          <h2 class="text-xl font-semibold">
+        <section :for={commune <- @status.communes} class="mt-8 border-t-2 border-base-content pt-3">
+          <h2 class="display display-md">
             {BrusselsWtfWeb.CommuneLabels.name(@locale, commune["slug"], commune["name"])}
           </h2>
           <p class="mt-2 text-sm">
@@ -52,12 +49,16 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
             {text(@locale, :attempted)}: {timestamp(commune["attempted_at"], @locale)}
           </p>
           <p class="mt-2">
-            <a href={commune["index_url"]} class="underline">{text(@locale, :official)}</a>
+            <a href={commune["index_url"]} class="inline-flex min-h-11 items-center underline">{text(
+              @locale,
+              :official
+            )}</a>
           </p>
           <ul class="mt-3 space-y-4">
             <li :for={meeting <- Enum.filter(@status.meetings, &(&1["slug"] == commune["slug"]))}>
-              <time datetime={Date.to_iso8601(meeting["scheduled_on"])}>{Date.to_iso8601(
-                meeting["scheduled_on"]
+              <time datetime={Date.to_iso8601(meeting["scheduled_on"])}>{BrusselsWtfWeb.PublicDate.long(
+                meeting["scheduled_on"],
+                @locale
               )}</time>
               <%= if meeting["published"] do %>
                 ·
@@ -102,13 +103,13 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
       <% else %>
         <p
           :for={key <- [:purpose, :method, :outcomes, :corrections, :retention, :readership]}
-          class="mt-5 leading-7"
+          class="measure mt-5 leading-6"
         >
           {text(@locale, key)}
         </p>
       <% end %>
-      <BrusselsWtfWeb.PublicationComponents.footer locale={@locale} />
     </main>
+    <BrusselsWtfWeb.PublicationComponents.footer locale={@locale} />
     """
   end
 
@@ -123,8 +124,11 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
   defp count(locale, key, value), do: "#{text(locale, key)}: #{value}."
 
   defp timestamp(nil, locale), do: text(locale, :unverified)
-  defp timestamp(%NaiveDateTime{} = date, _locale), do: NaiveDateTime.to_iso8601(date) <> " UTC"
-  defp timestamp(date, _locale), do: DateTime.to_iso8601(date)
+
+  defp timestamp(%NaiveDateTime{} = date, locale),
+    do: date |> DateTime.from_naive!("Etc/UTC") |> BrusselsWtfWeb.PublicDate.long_datetime(locale)
+
+  defp timestamp(date, locale), do: BrusselsWtfWeb.PublicDate.long_datetime(date, locale)
 
   defp text(locale, key) do
     %{
@@ -151,7 +155,7 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
         window: "Document discovery window",
         checked: "Last successful official index check",
         attempted: "Latest check attempt (not confirmed successful)",
-        official: "Open the official municipal index",
+        official: "Open the commune’s official page",
         partial: "Read selected coverage",
         revision: "Publication revision",
         pending: "Source discovered; coverage not yet published",
@@ -167,7 +171,7 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
         method:
           "Explanations are AI-generated from retained official source evidence; French is the editorial source for machine translations into Dutch and English. A human-reviewed label is used only when a human review actually took place. Citations retain the official location, retrieval date and checksum; original-language excerpts remain source material.",
         outcomes:
-          "An agenda establishes what was scheduled, not what was adopted. When a meeting date passes without a verified final record, its items move to ‘Awaiting documented outcome’. This changes neither their evidence nor their outcome. Dossiers connect continuing matters only when the evidence supports that link.",
+          "An agenda establishes what was scheduled, not what was adopted. When a meeting date passes without a verified final record, its items move to ‘Outcome unknown’. This changes neither their evidence nor their outcome. Dossiers connect continuing matters only when the evidence supports that link.",
         corrections:
           "Use ‘Report an error in this item’ below any published item to send a private correction with its exact context. Reports enter editorial review and never change public facts automatically. Factual corrections update all three languages together and retain dated publication history. Incorrect dossier links can also be reported from the dossier page.",
         retention:
@@ -200,7 +204,7 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
         window: "Période de découverte des documents",
         checked: "Dernière vérification réussie de l’index officiel",
         attempted: "Dernière tentative (réussite non confirmée)",
-        official: "Ouvrir l’index communal officiel",
+        official: "Ouvrir la page officielle de la commune",
         partial: "Lire la sélection publiée",
         revision: "Révision de publication",
         pending: "Source découverte ; couverture non encore publiée",
@@ -248,7 +252,7 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
         window: "Periode voor documentontdekking",
         checked: "Laatste geslaagde controle van de officiële index",
         attempted: "Laatste poging (succes niet bevestigd)",
-        official: "Open de officiële gemeentelijke index",
+        official: "Open de officiële pagina van de gemeente",
         partial: "Lees de gepubliceerde selectie",
         revision: "Publicatierevisie",
         pending: "Bron ontdekt; verslag nog niet gepubliceerd",

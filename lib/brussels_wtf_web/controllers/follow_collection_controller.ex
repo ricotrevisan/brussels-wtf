@@ -100,13 +100,29 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
 
         html(
           private_headers(conn),
-          ~s(<!doctype html><html lang="#{locale}"><head><title>#{copy(locale, :feed)}</title></head><body><main><h1>#{copy(locale, :feed)}</h1><p>#{copy(locale, :synced)}</p>#{retention_notice}#{following}<ul data-registered-feed>#{items}</ul></main></body></html>)
+          BrusselsWtfWeb.PublicShell.document(
+            locale: locale,
+            path: "/feed",
+            current: "/feed",
+            title: copy(locale, :feed),
+            body:
+              ~s(<p class="measure muted mt-2">#{copy(locale, :synced)}</p>#{retention_notice}#{following}<ul class="feed-list mt-4" data-registered-feed>#{items}</ul>#{BrusselsWtfWeb.PublicShell.feed_empty(locale)})
+          )
         )
 
       _ ->
         html(
           conn,
-          ~s(<!doctype html><html lang="#{locale}"><head><meta name="csrf-token" content="#{csrf}"><title>#{copy(locale, :feed)}</title><script defer src="/assets/js/personal_feed_entry.js"></script></head><body><main><h1>#{copy(locale, :feed)}</h1><p>#{copy(locale, :privacy)}</p><ul data-personal-feed></ul><noscript>#{copy(locale, :javascript)}</noscript></main></body></html>)
+          BrusselsWtfWeb.PublicShell.document(
+            locale: locale,
+            path: "/feed",
+            current: "/feed",
+            title: copy(locale, :feed),
+            head:
+              ~s(<meta name="csrf-token" content="#{csrf}"><script defer src="/assets/js/personal_feed_entry.js"></script>),
+            body:
+              ~s(<p class="measure muted mt-2">#{copy(locale, :privacy)}</p><ul class="feed-list mt-4" data-personal-feed></ul>#{BrusselsWtfWeb.PublicShell.feed_empty(locale)}<noscript>#{copy(locale, :javascript)}</noscript>)
+          )
         )
     end
   end

@@ -50,38 +50,21 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
   @impl Dstar.Page
   def render(assigns) do
     ~H"""
-    <a href="#content" class="sr-only focus:not-sr-only focus:absolute focus:p-3 focus:bg-base-100">
-      {text(@locale, :skip)}
-    </a>
-    <header class="border-b border-base-300">
-      <div class="mx-auto flex max-w-4xl items-center justify-between gap-4 px-4 py-4">
-        <Layouts.brand_link href={"/?lang=" <> @locale} />
-        <nav aria-label={text(@locale, :language)}>
-          <ul class="flex gap-3 text-sm">
-            <li :for={{code, label} <- [{"fr", "FR"}, {"nl", "NL"}, {"en", "EN"}]}>
-              <a
-                href={@resource_path <> "?lang=" <> code}
-                lang={code}
-                hreflang={code}
-                aria-current={if code == @locale, do: "page"}
-                class="underline underline-offset-2"
-              >{label}</a>
-            </li>
-          </ul>
-        </nav>
-      </div>
-    </header>
+    <BrusselsWtfWeb.PublicShell.header
+      locale={@locale}
+      lang_href={fn code -> @resource_path <> "?lang=" <> code end}
+    />
 
-    <main id="content" class="mx-auto max-w-4xl px-4 py-8 text-base-content" tabindex="-1">
+    <main id="content" class="site-container py-6 text-base-content sm:py-8" tabindex="-1">
       <a
         data-reader-back
         href={"/?lang=" <> @locale}
-        class="mb-5 inline-block underline underline-offset-2"
+        class="inline-flex min-h-11 items-center text-sm font-medium"
       >
         {text(@locale, :back)}
       </a>
-      <p class="text-sm text-base-content/70">{profile_label(@locale, @profile)}</p>
-      <h1 class="mt-2 text-3xl font-semibold tracking-tight">{profile_name(@profile)}</h1>
+      <p class="eyebrow mt-1">{profile_label(@locale, @profile)}</p>
+      <h1 class="display display-lg mt-1">{profile_name(@profile)}</h1>
       <BrusselsWtfWeb.FollowControl.control
         follow={
           BrusselsWtfWeb.FollowControl.find(
@@ -427,7 +410,7 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
   defp en_text do
     %{
       skip: "Skip to content",
-      back: "Back to coverage",
+      back: "Back",
       follow: "Follow updates about this profile",
       language: "Language",
       company_profile: "Company profile",
@@ -460,7 +443,7 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
   defp fr_text do
     %{
       skip: "Aller au contenu",
-      back: "Retour à l’actualité",
+      back: "Retour",
       follow: "Suivre les mises à jour de ce profil",
       language: "Langue",
       company_profile: "Profil d’entreprise",
@@ -493,7 +476,7 @@ defmodule BrusselsWtfWeb.PublicProfilePage do
   defp nl_text do
     %{
       skip: "Naar inhoud",
-      back: "Terug naar berichtgeving",
+      back: "Terug",
       follow: "Updates over dit profiel volgen",
       language: "Taal",
       company_profile: "Bedrijfsprofiel",

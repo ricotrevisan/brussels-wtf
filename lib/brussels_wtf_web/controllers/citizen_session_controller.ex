@@ -26,7 +26,7 @@ defmodule BrusselsWtfWeb.CitizenSessionController do
     "en" => %{
       title: "Citizen account",
       email: "Email",
-      send: "Send magic link",
+      send: "Email me a sign-in link",
       confirm: "Confirming sign in…",
       invalid: "This link is invalid or expired."
     }
@@ -320,10 +320,12 @@ defmodule BrusselsWtfWeb.CitizenSessionController do
   end
 
   defp page(conn, title, content) do
-    "<!doctype html><html lang=\"" <>
-      locale(conn) <>
-      "\"><head><meta name=\"referrer\" content=\"no-referrer\"><title>" <>
-      title <>
-      "</title></head><body><main><h1>" <> title <> "</h1>" <> content <> "</main></body></html>"
+    BrusselsWtfWeb.PublicShell.document(
+      locale: locale(conn),
+      path: conn.request_path,
+      title: title,
+      head: ~s(<meta name="referrer" content="no-referrer">),
+      body: content
+    )
   end
 end

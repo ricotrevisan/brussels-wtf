@@ -5,10 +5,32 @@ defmodule BrusselsWtfWeb.PublicationComponents do
 
   def footer(assigns) do
     ~H"""
-    <footer class="mt-10 border-t border-base-300 pt-4 text-sm">
-      <a href={"/coverage?lang=#{@locale}"} class="underline">{copy(@locale, :coverage)}</a>
-      <span class="mx-2">·</span>
-      <a href={"/about?lang=#{@locale}"} class="underline">{copy(@locale, :about)}</a>
+    <footer class="site-footer">
+      <div class="site-container grid gap-6 py-8 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <div>
+          <img
+            src="/images/brand/logo-horizontal-dark.svg"
+            alt="brussels.wtf"
+            width="180"
+            height="43"
+          />
+          <p class="measure mt-2 text-sm leading-6">{copy(@locale, :promise)}</p>
+        </div>
+        <ul class="text-sm">
+          <li>
+            <a href={"/coverage?lang=#{@locale}"} class="inline-flex min-h-11 items-center underline">{copy(
+              @locale,
+              :coverage
+            )}</a>
+          </li>
+          <li>
+            <a href={"/about?lang=#{@locale}"} class="inline-flex min-h-11 items-center underline">{copy(
+              @locale,
+              :about
+            )}</a>
+          </li>
+        </ul>
+      </div>
     </footer>
     """
   end
@@ -18,8 +40,10 @@ defmodule BrusselsWtfWeb.PublicationComponents do
 
   def correction_form(assigns) do
     ~H"""
-    <details :if={BrusselsWtf.Suggestions.enabled?()} class="mt-5 text-sm">
-      <summary class="cursor-pointer underline">{copy(@locale, :correct)}</summary>
+    <details :if={BrusselsWtf.Suggestions.enabled?()} class="disclosure mt-3 text-sm">
+      <summary>
+        <span class="hero-flag-micro size-4" aria-hidden="true"></span>{copy(@locale, :correct)}
+      </summary>
       <p class="mt-2">{copy(@locale, :private)}</p>
       <form
         method="post"
@@ -47,7 +71,7 @@ defmodule BrusselsWtfWeb.PublicationComponents do
           tabindex="-1"
           autocomplete="off"
         /></label>
-        <button class="btn btn-sm" type="submit">{copy(@locale, :send)}</button>
+        <button class="btn btn-sm min-h-11" type="submit">{copy(@locale, :send)}</button>
       </form>
     </details>
     """
@@ -56,6 +80,8 @@ defmodule BrusselsWtfWeb.PublicationComponents do
   defp copy(locale, key) do
     %{
       "en" => %{
+        promise:
+          "Council agendas, votes and decisions from Ixelles, Uccle, Forest and the City of Brussels, in French, Dutch and English. Published items link to the official municipal document, and AI-written or machine-translated text is labelled.",
         coverage: "Coverage and source checks",
         about: "About and corrections",
         correct: "Report an error in this item",
@@ -66,6 +92,8 @@ defmodule BrusselsWtfWeb.PublicationComponents do
         send: "Send private correction"
       },
       "fr" => %{
+        promise:
+          "Ordres du jour, votes et décisions des conseils d’Ixelles, Uccle, Forest et de la Ville de Bruxelles, en français, néerlandais et anglais. Les points publiés renvoient au document communal officiel, et les textes rédigés par IA ou traduits automatiquement sont signalés.",
         coverage: "Couverture et vérification des sources",
         about: "À propos et corrections",
         correct: "Signaler une erreur dans ce point",
@@ -76,6 +104,8 @@ defmodule BrusselsWtfWeb.PublicationComponents do
         send: "Envoyer la correction en privé"
       },
       "nl" => %{
+        promise:
+          "Agenda’s, stemmingen en besluiten van de gemeenteraden van Elsene, Ukkel, Vorst en de Stad Brussel, in het Frans, Nederlands en Engels. Gepubliceerde punten verwijzen naar het officiële gemeentelijke document, en door AI geschreven of machinaal vertaalde tekst wordt vermeld.",
         coverage: "Dekking en broncontroles",
         about: "Over de site en correcties",
         correct: "Een fout in dit punt melden",

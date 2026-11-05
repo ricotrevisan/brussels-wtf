@@ -34,9 +34,9 @@ defmodule BrusselsWtfWeb.MeetingVoteTallyTest do
       set_votes!("demo-brussels", %{votes_for: 23, votes_against: 1, abstentions: 10})
 
     for {locale, heading, stats} <- [
-          {"en", "Vote tally", "Decisions: 1 · unanimous: 0 · contested: 1"},
-          {"fr", "Résultats des votes", "Décisions : 1 · unanimes : 0 · contestées : 1"},
-          {"nl", "Stemmingsresultaten", "Besluiten: 1 · unaniem: 0 · betwist: 1"}
+          {"en", "Vote tally", "Decisions: 1 · unanimous: 0 · not unanimous: 1"},
+          {"fr", "Résultats des votes", "Décisions : 1 · unanimes : 0 · non unanimes : 1"},
+          {"nl", "Stemmingsresultaten", "Besluiten: 1 · unaniem: 0 · niet unaniem: 1"}
         ] do
       html =
         conn
@@ -45,7 +45,7 @@ defmodule BrusselsWtfWeb.MeetingVoteTallyTest do
 
       document = LazyHTML.from_document(html)
 
-      assert document["#vote-tally-heading"] |> LazyHTML.text() == heading
+      assert document["#vote-tally-heading"] |> LazyHTML.text() |> String.trim() == heading
       assert document["[data-vote-stats]"] |> LazyHTML.text() |> String.trim() == stats
 
       assert [row] = Enum.to_list(rows(html))
@@ -64,6 +64,26 @@ defmodule BrusselsWtfWeb.MeetingVoteTallyTest do
 
       assert [_row] = Enum.to_list(rows(filtered))
     end
+  end
+
+  test "the tally view can show every vote and offers the link only when rows are hidden", %{
+    conn: conn
+  } do
+    set_votes!("demo-brussels", %{votes_for: 23, votes_against: 1, abstentions: 10})
+
+    default =
+      conn |> get("/meetings/city-of-brussels/demo-brussels?lang=en") |> html_response(200)
+
+    # With nothing hidden, no "show all" link is needed.
+    refute default =~ "votes=all"
+    assert [_row] = Enum.to_list(rows(default))
+
+    everything =
+      conn
+      |> get("/meetings/city-of-brussels/demo-brussels?lang=en&votes=all")
+      |> html_response(200)
+
+    assert [_row] = Enum.to_list(rows(everything))
   end
 
   test "a decision without a recorded tally renders no tally table", %{conn: conn} do

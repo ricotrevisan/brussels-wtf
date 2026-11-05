@@ -15,7 +15,7 @@ defmodule BrusselsWtfWeb.TemporalCoverageTest do
     assert Enum.count(document["#coming-up ~ div article"]) == 0
     assert Enum.count(document[~s(section[aria-labelledby="awaiting-outcome"] article)]) > 0
     assert html =~ "What they decided"
-    assert html =~ "Awaiting documented outcome"
+    assert html =~ "Outcome unknown"
   end
 
   test "calendar passage never changes the published decision state", %{conn: conn} do

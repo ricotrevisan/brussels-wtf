@@ -65,6 +65,12 @@ defmodule BrusselsWtfWeb.PublicDescription do
       "en" =>
         "Municipal council decisions with at least one recorded vote against or abstention, with their official citations."
     },
+    meetings: %{
+      "fr" =>
+        "Toutes les séances couvertes des conseils communaux, de la plus récente à la plus ancienne.",
+      "nl" => "Alle behandelde gemeenteraadsvergaderingen, van de nieuwste naar de oudste.",
+      "en" => "Every covered municipal council meeting, newest first."
+    },
     mandates: %{
       "fr" => "Mandats publics dans les conseils communaux, établis par des sources officielles.",
       "nl" =>

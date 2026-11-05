@@ -17,10 +17,13 @@ defmodule BrusselsWtf.Council.PublicTimeline do
       |> DateTime.shift_zone!("Europe/Brussels", Tzdata.TimeZoneDatabase)
       |> DateTime.to_date()
 
-    entries =
+    pages =
       Council.list_published_meeting_pages!()
       |> prefer_real_corpus()
       |> Enum.filter(&(&1.council_meeting.commune.slug in selected))
+
+    entries =
+      pages
       |> Enum.flat_map(fn page ->
         for item <- page.council_meeting.agenda_items, item.published? do
           decision = loaded_or_nil(item.published_decision)
@@ -39,13 +42,86 @@ defmodule BrusselsWtf.Council.PublicTimeline do
       |> Enum.filter(fn entry ->
         needle == "" or String.contains?(search_text(entry, names), needle)
       end)
+      |> Enum.sort_by(&agenda_position/1)
       |> Enum.sort_by(& &1.page.council_meeting.scheduled_on, {:desc, Date})
       |> Enum.group_by(& &1.group)
 
-    Map.new(groups, fn group ->
+    groups
+    |> Map.new(fn group ->
       matching = Map.get(entries, group, [])
-      {group, if(limit, do: Enum.take(matching, limit), else: matching)}
+      {group, cap(matching, limit, Keyword.get(opts, :balance, false))}
     end)
+    |> Map.put(:meetings, Enum.sort_by(pages, & &1.council_meeting.scheduled_on, {:desc, Date}))
+  end
+
+  defp cap(matching, nil, _balance), do: matching
+  defp cap(matching, limit, false), do: Enum.take(matching, limit)
+
+  # A preview takes the newest item from each commune in turn, so one prolific council
+  # cannot hide the others. Within a commune, and on the page, newest still comes first.
+  defp cap(matching, limit, true) do
+    matching
+    |> Enum.group_by(& &1.page.council_meeting.commune.slug)
+    |> Map.values()
+    |> Enum.map(&routine_last/1)
+    |> round_robin([])
+    |> Enum.take(limit)
+    |> Enum.sort_by(& &1.page.council_meeting.scheduled_on, {:desc, Date})
+  end
+
+  # A stated, content-neutral rule: within a meeting, items naming an amount or with a split
+  # vote lead, and recurring formalities come last. The readers' page says so.
+  defp routine_last(queue) do
+    Enum.sort_by(
+      queue,
+      fn entry ->
+        {Date.to_gregorian_days(entry.page.council_meeting.scheduled_on) * -1,
+         preview_rank(entry)}
+      end
+    )
+  end
+
+  defp agenda_position(%{item: item}) do
+    number = item.published_item_number || item.item_number
+
+    case Integer.parse(number || "") do
+      {value, ""} -> {0, value, ""}
+      _ -> {1, 0, number || ""}
+    end
+  end
+
+  defp preview_rank(%{item: item, variant: variant}) do
+    decision = loaded_or_nil(item.published_decision)
+    split? = decision && ((decision.votes_against || 0) > 0 or (decision.abstentions || 0) > 0)
+    money? = Regex.match?(~r/EUR|€/u, (variant && variant.title) || item.source_wording || "")
+
+    cond do
+      routine_item?(item) -> 2
+      split? || money? -> 0
+      true -> 1
+    end
+  end
+
+  @doc "Formalities that recur at most meetings: minutes, credentials and absences."
+  def routine_item?(item) do
+    Regex.match?(
+      ~r/proc[eè]s-verbal|notulen|v[ée]rification des pouvoirs|prestation de serment|geloofsbrieven|eedaflegging|emp[êe]chement|verhindering/iu,
+      item.source_wording || ""
+    )
+  end
+
+  defp round_robin([], taken), do: Enum.reverse(taken)
+
+  defp round_robin(queues, taken) do
+    heads =
+      queues
+      |> Enum.map(&hd/1)
+      |> Enum.sort_by(& &1.page.council_meeting.scheduled_on, {:desc, Date})
+
+    round_robin(
+      queues |> Enum.map(&tl/1) |> Enum.reject(&(&1 == [])),
+      Enum.reverse(heads) ++ taken
+    )
   end
 
   defp search_text(%{page: page, item: item, variant: variant}, names) do

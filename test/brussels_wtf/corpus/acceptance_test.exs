@@ -340,7 +340,7 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
       |> html_response(200)
       |> LazyHTML.from_document()
 
-    assert forest_html["[data-vote-stats]"] |> LazyHTML.text() =~ "contested: 1"
+    assert forest_html["[data-vote-stats]"] |> LazyHTML.text() =~ "not unanimous: 1"
 
     assert [contested] =
              forest_html["#vote-tally tbody tr[data-vote-status=contested]"] |> Enum.to_list()
@@ -437,9 +437,9 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
     # the adopted operative act is acknowledgement of executive decisions, not
     # approval of the underlying contracts. Item 20 is a real budget approval.
     for {locale, other, approved, acknowledgement} <- [
-          {"fr", "autre", "approuvée", "Le conseil prend connaissance"},
-          {"nl", "andere", "goedgekeurd", "De raad neemt kennis"},
-          {"en", "other", "approved", "The council took note"}
+          {"fr", "décision enregistrée", "approuvée", "Le conseil prend connaissance"},
+          {"nl", "besluit geregistreerd", "goedgekeurd", "De raad neemt kennis"},
+          {"en", "decision recorded", "approved", "The council took note"}
         ] do
       document =
         conn
@@ -654,7 +654,7 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
       |> html_response(200)
       |> LazyHTML.from_document()
 
-    assert html["[data-vote-stats]"] |> LazyHTML.text() =~ "unanimous: 2 · contested: 1"
+    assert html["[data-vote-stats]"] |> LazyHTML.text() =~ "unanimous: 2 · not unanimous: 1"
     assert [row] = html["#vote-tally tbody tr[data-vote-status=contested]"] |> Enum.to_list()
 
     assert row["td"] |> Enum.map(&(LazyHTML.text(&1) |> String.trim())) |> Enum.slice(3, 3) ==
@@ -1091,9 +1091,9 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
       assert corrected.publication_metadata["gate_result"]["ready"]
 
       for {locale, other, approved} <- [
-            {"fr", "autre", "approuvée"},
-            {"nl", "andere", "goedgekeurd"},
-            {"en", "other", "approved"}
+            {"fr", "décision enregistrée", "approuvée"},
+            {"nl", "besluit geregistreerd", "goedgekeurd"},
+            {"en", "decision recorded", "approved"}
           ] do
         html =
           conn

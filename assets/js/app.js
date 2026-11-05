@@ -28,6 +28,7 @@ import topbar from "../vendor/topbar"
 import {enhanceReaderNavigation} from "./reader_navigation.mjs"
 import {enhanceCommuneSelection} from "./reader_preferences.mjs"
 import {enhancePersonalFeed} from "./personal_feed.mjs"
+import {enhanceAgenda, enhanceFilters} from "./reader_enhance.mjs"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
@@ -37,7 +38,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
 })
 
 // Show progress bar on live navigation and form submits
-topbar.config({barColors: {0: "#29d"}, shadowColor: "rgba(0, 0, 0, .3)"})
+topbar.config({barColors: {0: "#111111"}, shadowColor: "rgba(0, 0, 0, .15)"})
 window.addEventListener("phx:page-loading-start", _info => topbar.show(300))
 window.addEventListener("phx:page-loading-stop", _info => topbar.hide())
 
@@ -55,6 +56,8 @@ window.liveSocket = liveSocket
 let readerStorage
 try { readerStorage = window.localStorage } catch (_) { /* Storage may be disabled. */ }
 enhanceCommuneSelection(window, document, readerStorage)
+enhanceFilters(window, document, () => topbar.show(0))
+enhanceAgenda(window, document)
 enhancePersonalFeed(window, document, readerStorage)
 
 // The lines below enable quality of life phoenix_live_reload

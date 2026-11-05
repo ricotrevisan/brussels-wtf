@@ -14,7 +14,13 @@ defmodule BrusselsWtfWeb.MeetingPage do
         locale_available = not is_nil(variant)
         withdrawn = page.publication_status == :draft and not is_nil(page.withdrawn_at)
         resource_path = BrusselsWtfWeb.PublicUrl.meeting_path(commune, municipal_id)
-        contested_only = params["votes"] == "contested"
+
+        tally_view =
+          case params["votes"] do
+            "all" -> :all
+            "contested" -> :contested
+            _ -> :default
+          end
 
         assign(conn,
           page_title:
@@ -45,7 +51,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
             ),
           revision_history: page.publication_revisions,
           locale: locale,
-          contested_only: contested_only,
+          tally_view: tally_view,
           commune_name: commune_name(locale, commune, page.council_meeting.commune.name),
           items:
             if(locale_available and not withdrawn,
@@ -76,68 +82,92 @@ defmodule BrusselsWtfWeb.MeetingPage do
   @impl Dstar.Page
   def render(assigns) do
     ~H"""
-    <a href="#content" class="sr-only focus:not-sr-only focus:absolute focus:p-3 focus:bg-base-100">
-      {text(@locale, :skip)}
-    </a>
-    <header class="border-b border-base-300">
-      <div class="mx-auto flex max-w-4xl items-center justify-between gap-4 px-4 py-4">
-        <Layouts.brand_link data-reader-back href={"/?lang=" <> @locale} />
-        <nav aria-label="Language">
-          <ul class="flex gap-3 text-sm">
-            <li :for={{code, label} <- [{"fr", "FR"}, {"nl", "NL"}, {"en", "EN"}]}>
-              <a
-                href={@resource_path <> "?lang=" <> code}
-                lang={code}
-                hreflang={code}
-                aria-current={if code == @locale, do: "page"}
-                class="underline underline-offset-2"
-              >{label}</a>
-            </li>
-          </ul>
-        </nav>
-      </div>
-    </header>
+    <BrusselsWtfWeb.PublicShell.header
+      locale={@locale}
+      reader_back={true}
+      current="/meetings"
+      lang_href={fn code -> @resource_path <> "?lang=" <> code end}
+    />
 
-    <main id="content" class="mx-auto max-w-4xl px-4 py-8 text-base-content" tabindex="-1">
-      <p class="text-sm text-base-content/70">
+    <main id="content" class="site-container py-5 text-base-content sm:py-7" tabindex="-1">
+      <a
+        data-reader-back
+        href={"/?lang=" <> @locale}
+        class="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium"
+      >
+        <span class="hero-arrow-left-micro size-4" aria-hidden="true"></span>{text(
+          @locale,
+          :back_to_results
+        )}
+      </a>
+      <p :if={@withdrawn or not @locale_available} class="eyebrow mt-1">
         {@commune_name} ·
         <time datetime={Date.to_iso8601(@meeting_page.council_meeting.scheduled_on)}>
-          {format_date(@meeting_page.council_meeting.scheduled_on)}
+          {format_date(@meeting_page.council_meeting.scheduled_on, @locale)}
         </time>
       </p>
-      <h1 class="mt-2 text-3xl font-semibold tracking-tight">
+      <h1 class="display display-lg mt-1" data-meeting-title>
         <%= cond do %>
           <% @withdrawn -> %>
             {text(@locale, :withdrawn_title)}
           <% @locale_available -> %>
-            {@variant.title}
+            {@commune_name} · {format_date(@meeting_page.council_meeting.scheduled_on, @locale)}
           <% true -> %>
             {text(@locale, :unavailable_title)}
         <% end %>
       </h1>
-      <p
-        :if={not @withdrawn and not @locale_available}
-        class="mt-5 border-l-4 border-warning pl-3 leading-7"
-      >
+      <p :if={not @withdrawn and @locale_available} class="muted mt-1 text-sm">
+        {@variant.title}
+      </p>
+      <p :if={not @withdrawn and not @locale_available} class="callout callout-unknown measure mt-5">
         {text(@locale, :unavailable_explanation)}
       </p>
-      <p
+      <div
         :if={not @withdrawn and @meeting_page.revision_published_at}
-        class="mt-3 text-sm text-base-content/70"
+        class="mt-2 flex flex-wrap items-center gap-x-4 text-sm"
       >
-        {text(@locale, :revision)}
-        <time datetime={DateTime.to_iso8601(@meeting_page.revision_published_at)}>
-          {format_datetime(@meeting_page.revision_published_at)}
-        </time>
-      </p>
+        <a
+          href={@meeting_page.citation_url}
+          rel="external"
+          class="inline-flex min-h-11 items-center gap-1.5 font-semibold"
+        >
+          <span class="hero-document-text-micro size-4" aria-hidden="true"></span>{text(
+            @locale,
+            :official_document
+          )}
+        </a>
+        <span class="muted">
+          {text(@locale, :revision)}
+          <time datetime={DateTime.to_iso8601(@meeting_page.revision_published_at)}>
+            {format_datetime(@meeting_page.revision_published_at, @locale)}
+          </time>
+        </span>
+      </div>
 
-      <section :if={@withdrawn} class="mt-8 border-l-4 border-warning pl-4">
-        <h2 class="text-xl font-semibold">{text(@locale, :withdrawn_heading)}</h2>
-        <p class="mt-2 leading-7">{@withdrawal_reason || text(@locale, :withdrawn_explanation)}</p>
-        <p :if={@meeting_page.withdrawn_at} class="mt-2 text-sm text-base-content/70">
+      <.meeting_stats :if={not @withdrawn and @items != []} items={@items} locale={@locale} />
+
+      <details
+        :if={not @withdrawn and Enum.any?(@items, &(display_state(&1) != :decision))}
+        class="disclosure mt-2"
+        data-outcome-note
+      >
+        <summary>
+          <span class="hero-information-circle-micro size-4" aria-hidden="true"></span>{text(
+            @locale,
+            :agenda_note_title
+          )}
+          <span class="chevron hero-chevron-down-micro" aria-hidden="true"></span>
+        </summary>
+        <p class="disclosure-body measure text-sm leading-6">{text(@locale, :agenda_note)}</p>
+      </details>
+
+      <section :if={@withdrawn} class="callout callout-unknown mt-6">
+        <h2 class="display display-md">{text(@locale, :withdrawn_heading)}</h2>
+        <p class="mt-2 leading-6">{@withdrawal_reason || text(@locale, :withdrawn_explanation)}</p>
+        <p :if={@meeting_page.withdrawn_at} class="muted mt-2 text-sm">
           {text(@locale, :withdrawn_on)}
           <time datetime={DateTime.to_iso8601(@meeting_page.withdrawn_at)}>
-            {format_datetime(@meeting_page.withdrawn_at)}
+            {format_datetime(@meeting_page.withdrawn_at, @locale)}
           </time>
         </p>
       </section>
@@ -154,72 +184,181 @@ defmodule BrusselsWtfWeb.MeetingPage do
         </section>
       </div>
 
-      <section :if={not @withdrawn and @corrections != []} class="mt-8 border-y border-base-300 py-4">
+      <section :if={not @withdrawn and @corrections != []} class="callout mt-5">
         <h2 class="font-semibold">{text(@locale, :corrections)}</h2>
         <ul class="mt-2 space-y-2 text-sm">
           <li :for={correction <- @corrections}>
             <time datetime={DateTime.to_iso8601(correction.published_at)}>
-              {format_datetime(correction.published_at)}
+              {format_datetime(correction.published_at, @locale)}
             </time>
             · {correction.note}
           </li>
         </ul>
       </section>
 
-      <p class="mt-4 text-sm">
-        <a data-reader-back href={"/?lang=" <> @locale} class="underline">{text(
-          @locale,
-          :back_to_results
-        )}</a>
-      </p>
-      <details :if={not @withdrawn and @revision_history != []} class="mt-5 text-sm">
-        <summary class="cursor-pointer underline">{text(@locale, :history)}</summary>
-        <p class="mt-2">{text(@locale, :historical_warning)}</p>
-        <section
-          :for={revision <- @revision_history}
-          id={"revision-#{revision.id}"}
-          tabindex="-1"
-          class="mt-4 scroll-mt-4 border-t border-base-300 pt-3"
-        >
-          <h2 class="font-semibold">{format_datetime(revision.published_at)}</h2>
-          <ul class="mt-2 space-y-2">
-            <li :for={{_key, item} <- Enum.sort(revision.content["items"] || %{})}>
-              <p>{get_in(item, ["variants", @locale, "title"])}</p>
-              <p class="text-base-content/70">{get_in(item, ["variants", @locale, "summary"])}</p>
-            </li>
-          </ul>
-        </section>
+      <details :if={not @withdrawn and @revision_history != []} class="disclosure mt-2 text-sm">
+        <summary>
+          <span class="chevron hero-chevron-down-micro" aria-hidden="true"></span>{text(
+            @locale,
+            :history
+          )}
+        </summary>
+        <div class="disclosure-body measure">
+          <p>{text(@locale, :historical_warning)}</p>
+          <section
+            :for={revision <- @revision_history}
+            id={"revision-#{revision.id}"}
+            tabindex="-1"
+            class="mt-4 scroll-mt-4 border-t border-base-300 pt-3"
+          >
+            <h2 class="font-semibold">{format_datetime(revision.published_at, @locale)}</h2>
+            <ul class="mt-2 space-y-2">
+              <li :for={{_key, item} <- Enum.sort(revision.content["items"] || %{})}>
+                <p>{get_in(item, ["variants", @locale, "title"])}</p>
+                <p class="muted">{get_in(item, ["variants", @locale, "summary"])}</p>
+              </li>
+            </ul>
+          </section>
+        </div>
       </details>
       <.vote_tally
         :if={not @withdrawn}
         items={@items}
         locale={@locale}
         resource_path={@resource_path}
-        contested_only={@contested_only}
+        view={@tally_view}
       />
-      <div :if={not @withdrawn} class="mt-9 divide-y divide-base-300">
-        <.coverage_item :for={item <- @items} item={item} page={@meeting_page} locale={@locale} />
-      </div>
+      <section :if={not @withdrawn and @items != []} class="mt-7" aria-labelledby="agenda-heading">
+        <div class="agenda-head flex flex-wrap items-end justify-between gap-x-4 gap-y-2 border-b-2 border-base-content pb-2">
+          <h2 id="agenda-heading" class="display display-md">{text(@locale, :agenda)}</h2>
+          <div class="agenda-tools hidden items-center gap-2" data-agenda-tools>
+            <label class="flex min-w-0 items-center gap-2 text-sm">
+              <span class="filter-label font-semibold">{text(@locale, :filter_label)}</span>
+              <input
+                type="search"
+                data-agenda-filter
+                placeholder={text(@locale, :filter_agenda)}
+                class="input input-bordered input-sm min-h-11 w-44 sm:w-56"
+              />
+            </label>
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm min-h-11"
+              data-expand-all
+              data-expand-label={text(@locale, :expand_all)}
+              data-collapse-label={text(@locale, :collapse_all)}
+            >{text(@locale, :expand_all)}</button>
+          </div>
+        </div>
+        <div class="topic-filters mt-2 hidden flex-wrap gap-1.5" data-topic-filters>
+          <button
+            :for={{topic, count} <- agenda_topics(@items)}
+            type="button"
+            class="topic-chip"
+            data-topic-filter={topic}
+          >
+            {BrusselsWtfWeb.PublicShell.topic_label(@locale, topic)}
+            <span class="muted">{count}</span>
+          </button>
+        </div>
+        <p class="mt-2 hidden items-center gap-3 text-sm font-semibold" data-agenda-result>
+          <span role="status" data-agenda-count data-of={text(@locale, :of_items)}></span>
+          <button type="button" class="btn btn-ghost btn-sm min-h-11" data-clear-filter>
+            {text(@locale, :clear_filter)}
+          </button>
+        </p>
+        <p
+          :if={all_unknown?(@items)}
+          class="mt-2 flex flex-wrap items-center gap-2 text-sm"
+          data-uniform-state
+        >
+          <BrusselsWtfWeb.PublicShell.status kind={:unknown} label={text(@locale, :outcome_unknown)} />
+          <span class="muted">{text(@locale, :all_items)}</span>
+        </p>
+        <.coverage_item
+          :for={item <- @items}
+          item={item}
+          page={@meeting_page}
+          locale={@locale}
+          uniform={all_unknown?(@items)}
+        />
+      </section>
 
       <section
         :if={not @withdrawn and @historical_items != []}
-        class="mt-6 border-l-4 border-warning pl-3"
+        class="callout callout-unknown mt-6"
       >
         <p>{text(@locale, :retired_item)}</p>
         <p :for={item <- @historical_items} id={item.stable_anchor} class="scroll-mt-4" tabindex="-1">
           {text(@locale, :item)} {item.published_item_number}: {text(@locale, :retired_item)}
         </p>
       </section>
-
-      <BrusselsWtfWeb.PublicationComponents.footer locale={@locale} />
     </main>
+    <BrusselsWtfWeb.PublicationComponents.footer locale={@locale} />
+    """
+  end
+
+  attr :items, :list, required: true
+  attr :locale, :string, required: true
+
+  defp meeting_stats(assigns) do
+    decisions =
+      assigns.items
+      |> Enum.filter(&(display_state(&1) == :decision))
+
+    assigns =
+      assign(assigns,
+        total: length(assigns.items),
+        decided: length(decisions),
+        awaiting: length(assigns.items) - length(decisions),
+        contested:
+          Enum.count(decisions, &(VoteTally.classify(&1.published_decision) == :contested))
+      )
+
+    ~H"""
+    <div class="kpi-row mt-4" data-meeting-stats role="group" aria-label={text(@locale, :agenda)}>
+      <.kpi value={@total} label={text(@locale, :stat_items)} filter="all" />
+      <.kpi
+        :if={@decided > 0}
+        value={@decided}
+        label={text(@locale, :stat_decided)}
+        filter="decision"
+        tone="tone-decided"
+      />
+      <.kpi
+        value={@awaiting}
+        label={text(@locale, :stat_awaiting)}
+        filter="unknown"
+        tone={@awaiting > 0 && "tone-unknown"}
+      />
+      <.kpi
+        :if={@decided > 0}
+        value={@contested}
+        label={text(@locale, :stat_contested)}
+        filter="contested"
+      />
+    </div>
+    """
+  end
+
+  attr :value, :integer, required: true
+  attr :label, :string, required: true
+  attr :filter, :string, required: true
+  attr :tone, :any, default: nil
+
+  defp kpi(assigns) do
+    ~H"""
+    <a class="kpi" href="#agenda-heading" data-state-filter={@filter}>
+      <span class={["kpi-value", @tone]}>{@value}</span>
+      <span class="kpi-label">{@label}</span>
+    </a>
     """
   end
 
   attr :items, :list, required: true
   attr :locale, :string, required: true
   attr :resource_path, :string, required: true
-  attr :contested_only, :boolean, default: false
+  attr :view, :atom, default: :default
 
   defp vote_tally(assigns) do
     rows =
@@ -249,7 +388,16 @@ defmodule BrusselsWtfWeb.MeetingPage do
     }
 
     visible =
-      if assigns.contested_only, do: Enum.filter(rows, &(&1.status == :contested)), else: rows
+      cond do
+        assigns.view == :all ->
+          rows
+
+        assigns.view == :contested or stats.contested > 0 ->
+          Enum.filter(rows, &(&1.status == :contested))
+
+        true ->
+          rows
+      end
 
     assigns = assign(assigns, rows: rows, visible: visible, stats: stats)
 
@@ -258,76 +406,83 @@ defmodule BrusselsWtfWeb.MeetingPage do
       :if={@stats.unanimous + @stats.contested > 0}
       id="vote-tally"
       aria-labelledby="vote-tally-heading"
-      class="mt-9 scroll-mt-4"
+      class="mt-5 scroll-mt-4"
       tabindex="-1"
     >
-      <h2 id="vote-tally-heading" class="text-xl font-semibold">{text(@locale, :vote_tally)}</h2>
-      <p class="mt-1 text-sm text-base-content/70" data-vote-stats>
-        {tally_stats(@locale, @stats)}
-      </p>
-      <p class="mt-2 text-sm">
-        <a
-          :if={not @contested_only and @stats.contested > 0}
-          href={@resource_path <> "?lang=" <> @locale <> "&votes=contested#vote-tally"}
-          class="underline underline-offset-2"
-        >{text(@locale, :show_contested)}</a>
-        <a
-          :if={@contested_only}
-          href={@resource_path <> "?lang=" <> @locale <> "#vote-tally"}
-          class="underline underline-offset-2"
-        >{text(@locale, :show_all_votes)}</a>
-      </p>
-      <p :if={@visible == []} class="mt-3 text-sm">{text(@locale, :no_contested_votes)}</p>
-      <div :if={@visible != []} class="mt-3 overflow-x-auto">
-        <table class="w-full text-left text-sm">
-          <thead class="border-b border-base-300 text-base-content/70">
-            <tr>
-              <th scope="col" class="py-2 pr-3 font-medium">#</th>
-              <th scope="col" class="py-2 pr-3 font-medium">{text(@locale, :item)}</th>
-              <th scope="col" class="py-2 pr-3 font-medium">{text(@locale, :decision)}</th>
-              <th scope="col" class="py-2 pr-3 text-right font-medium">
-                {text(@locale, :votes_for)}
-              </th>
-              <th scope="col" class="py-2 pr-3 text-right font-medium">
-                {text(@locale, :votes_against)}
-              </th>
-              <th scope="col" class="py-2 pr-3 text-right font-medium">
-                {text(@locale, :votes_abstentions)}
-              </th>
-              <th scope="col" class="py-2 font-medium">
-                <span class="sr-only">{text(@locale, :vote_split)}</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-base-300">
-            <tr :for={row <- @visible} data-vote-status={row.status}>
-              <td class="py-2 pr-3 align-top tabular-nums">{row.number}</td>
-              <td class="py-2 pr-3 align-top">
-                <a href={"#" <> row.anchor} class="underline underline-offset-2">{row.title}</a>
-              </td>
-              <td class="py-2 pr-3 align-top">
-                {BrusselsWtfWeb.DispositionLabels.label(@locale, row.disposition)}
-              </td>
-              <td class="py-2 pr-3 text-right align-top tabular-nums">{count_cell(row.for)}</td>
-              <td class={[
-                "py-2 pr-3 text-right align-top tabular-nums",
-                (row.against || 0) > 0 && "font-semibold text-error"
-              ]}>
-                {count_cell(row.against)}
-              </td>
-              <td class={[
-                "py-2 pr-3 text-right align-top tabular-nums",
-                (row.abstentions || 0) > 0 && "font-semibold text-warning"
-              ]}>
-                {count_cell(row.abstentions)}
-              </td>
-              <td class="w-28 py-2 align-top">
-                <.vote_bar row={row} locale={@locale} />
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <details class="disclosure border-y border-base-300" open={@view != :default}>
+        <summary class="w-full justify-between py-1">
+          <span>
+            <span
+              id="vote-tally-heading"
+              class="block text-base font-semibold"
+              role="heading"
+              aria-level="2"
+            >
+              {text(@locale, :vote_tally)}
+            </span>
+            <span class="muted block text-sm font-normal" data-vote-stats>
+              {tally_stats(@locale, @stats)}
+            </span>
+          </span>
+          <span class="chevron hero-chevron-down-micro shrink-0" aria-hidden="true"></span>
+        </summary>
+        <div class="disclosure-body">
+          <p class="flex flex-wrap items-center justify-between gap-x-4 text-sm">
+            <BrusselsWtfWeb.PublicShell.vote_legend locale={@locale} />
+            <a
+              :if={@view == :all and @stats.contested > 0}
+              href={@resource_path <> "?lang=" <> @locale <> "&votes=contested#vote-tally"}
+              class="inline-flex min-h-11 items-center font-medium"
+            >{text(@locale, :show_contested)}</a>
+            <a
+              :if={@view != :all and length(@visible) < length(@rows)}
+              href={@resource_path <> "?lang=" <> @locale <> "&votes=all#vote-tally"}
+              class="inline-flex min-h-11 items-center font-medium"
+            >{text(@locale, :show_all_votes)}</a>
+          </p>
+          <p :if={@visible == []} class="mt-3 text-sm">{text(@locale, :no_contested_votes)}</p>
+          <table :if={@visible != []} class="data-table mt-2">
+            <thead>
+              <tr>
+                <th scope="col">#</th>
+                <th scope="col">{text(@locale, :item)}</th>
+                <th scope="col">{text(@locale, :decision)}</th>
+                <th scope="col" class="num">{text(@locale, :votes_for)}</th>
+                <th scope="col" class="num">{text(@locale, :votes_against)}</th>
+                <th scope="col" class="num">{text(@locale, :votes_abstentions)}</th>
+                <th scope="col"><span class="sr-only">{text(@locale, :vote_split)}</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr :for={row <- @visible} data-vote-status={row.status}>
+                <td data-label="#" class="tabular-nums">{row.number}</td>
+                <td class="cell-lead">
+                  <a href={"#" <> row.anchor} class="entry-title font-medium">{row.title}</a>
+                </td>
+                <td data-label={text(@locale, :decision)}>
+                  {String.capitalize(BrusselsWtfWeb.DispositionLabels.label(@locale, row.disposition))}
+                </td>
+                <td class="num" data-label={text(@locale, :votes_for)}>{count_cell(row.for)}</td>
+                <td
+                  class={["num", (row.against || 0) > 0 && "vote-against"]}
+                  data-label={text(@locale, :votes_against)}
+                >
+                  {count_cell(row.against)}
+                </td>
+                <td
+                  class={["num", (row.abstentions || 0) > 0 && "vote-abstain"]}
+                  data-label={text(@locale, :votes_abstentions)}
+                >
+                  {count_cell(row.abstentions)}
+                </td>
+                <td class="cell-bar w-28">
+                  <.vote_bar :if={row.status != :unanimous} row={row} locale={@locale} />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </details>
     </section>
     """
   end
@@ -359,13 +514,13 @@ defmodule BrusselsWtfWeb.MeetingPage do
     ~H"""
     <div
       :if={@segments != []}
-      class="mt-1 flex h-2 w-full overflow-hidden rounded-full bg-base-300"
+      class="vote-bar mt-1"
       role="img"
       aria-label={vote_summary(@row, @locale)}
     >
       <span :for={{class, width} <- @segments} class={class} style={"width: #{width}%"}></span>
     </div>
-    <span :if={@segments == []} class="text-base-content/60">
+    <span :if={@segments == []} class="muted">
       {text(@locale, :vote_not_recorded)}
     </span>
     """
@@ -397,6 +552,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
   attr :item, :any, required: true
   attr :page, :any, required: true
   attr :locale, :string, required: true
+  attr :uniform, :boolean, default: false
 
   defp coverage_item(assigns) do
     variant =
@@ -417,149 +573,249 @@ defmodule BrusselsWtfWeb.MeetingPage do
       |> assign(:fact_paths, BrusselsWtf.Identity.PublicFactPaths.for_item(assigns.item))
 
     ~H"""
-    <article id={@item.stable_anchor} class="scroll-mt-4 py-7" tabindex="-1">
-      <p class="text-sm font-medium text-base-content/70">
-        {text(@locale, :item)} {public_item_number(@item)}
-      </p>
-      <h2 class="mt-2 text-2xl font-semibold leading-snug">{@coverage_variant.title}</h2>
-
-      <div class="mt-4 space-y-3">
-        <div :if={@proposals != []}>
-          <h3 class="font-semibold">{text(@locale, :proposal)}</h3>
-          <p class="mt-1 leading-7">
-            {proposal_copy(@coverage_variant, @display_state, @locale, @past)}
-          </p>
-          <details :if={@source_proposals != []} class="mt-3 text-sm">
-            <summary class="cursor-pointer">{text(@locale, :proposal_interpretation)}</summary>
-            <p :for={proposal <- @source_proposals} lang="und" class="mt-3 text-sm leading-6">
-              {proposal.text}
-            </p>
-          </details>
-          <p
-            :if={@source_proposals != [] and (@item.published_outcome || :unknown) == :unknown}
-            class="mt-2 text-sm"
-          >
-            {unknown_outcome_label(@locale)}
-          </p>
-        </div>
-
-        <div
-          :if={@display_state in [:proposal, :unknown]}
-          class="border-l-4 border-warning pl-3"
-        >
-          <h3 class="font-semibold">{text(@locale, :outcome_unknown)}</h3>
-          <p
-            :if={@page.council_meeting.scheduled_on == BrusselsWtfWeb.MeetingTime.today()}
-            class="mt-1 text-sm"
-          >
-            {text(@locale, :today)}
-          </p>
-          <p :if={@past} class="mt-1 text-sm">{text(@locale, :past_explanation)}</p>
-          <p class="mt-1 text-sm">{text(@locale, :unknown_explanation)}</p>
-        </div>
-
-        <div :if={@display_state == :decision} class="border-l-4 border-success pl-3">
-          <h3 class="font-semibold">
-            {text(@locale, :decision)}: {BrusselsWtfWeb.DispositionLabels.label(
-              @locale,
-              loaded_value(@item.published_decision, :disposition)
-            )}
-          </h3>
-          <p class="mt-1 leading-7">
-            {@coverage_variant.decision_summary || text(@locale, :decision_copy_unavailable)}
-          </p>
-          <p :if={vote_summary(@item.published_decision, @locale)} class="mt-2 text-sm">
-            {vote_summary(@item.published_decision, @locale)}
-          </p>
-        </div>
-      </div>
-
-      <div class="mt-4 flex flex-wrap gap-2" aria-label={text(@locale, :provenance)}>
-        <span
-          :for={label <- provenance_labels(@coverage_variant.provenance, @locale)}
-          class="badge badge-outline"
-        >
-          {label}
-        </span>
-      </div>
-
-      <div :if={@item.dossier_links != []} class="mt-5 text-sm">
-        <p class="font-medium">{text(@locale, :dossiers)}</p>
-        <ul class="mt-1 list-disc pl-5">
-          <li :for={link <- @item.dossier_links}>
-            <a
-              href={"/dossiers/#{link.dossier.slug}?lang=#{@locale}"}
-              class="underline underline-offset-2"
-            >{Map.get(link.dossier.localized_titles || %{}, @locale, link.dossier.title)}</a>
-          </li>
-        </ul>
-      </div>
-
-      <section aria-label={text(@locale, :evidence)} class="mt-6">
-        <h3 class="font-semibold">{text(@locale, :evidence)}</h3>
-        <ul :if={@evidences != []} class="mt-2 space-y-3">
-          <li :for={evidence <- @evidences} class="text-sm">
-            <a
-              href={BrusselsWtfWeb.PublicEvidence.citation_href(evidence)}
-              rel="external"
-              class="underline underline-offset-2"
-            >
-              {evidence_title(evidence, @locale)}
-            </a>
-            <span :if={evidence.synthetic} class="block font-medium text-warning">
-              {text(@locale, :synthetic_reference)}
+    <article
+      id={@item.stable_anchor}
+      class="agenda-item"
+      tabindex="-1"
+      data-state={if @display_state == :decision, do: "decision", else: "unknown"}
+      data-contested={contested_item?(@item, @display_state) && "true"}
+      data-agenda-item
+      data-topic={
+        BrusselsWtfWeb.PublicShell.topic_of(@item.source_wording || @coverage_variant.title)
+      }
+    >
+      <details>
+        <summary class="agenda-row">
+          <span class="agenda-number">
+            <span class="sr-only">{text(@locale, :item)}</span>
+            {public_item_number(@item)}
+            <span
+              class={[
+                BrusselsWtfWeb.PublicShell.topic_icon(
+                  BrusselsWtfWeb.PublicShell.topic_of(@item.source_wording)
+                ),
+                "agenda-topic size-4"
+              ]}
+              aria-hidden="true"
+            ></span>
+          </span>
+          <span class="min-w-0">
+            <h2 class="agenda-title">
+              <BrusselsWtfWeb.PublicShell.title_parts title={@coverage_variant.title} />
+            </h2>
+          </span>
+          <span :if={not @uniform} class="agenda-meta">
+            <span class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+              <BrusselsWtfWeb.PublicShell.status
+                kind={row_status(@item, @display_state)}
+                label={row_label(@item, @display_state, @locale)}
+              />
+              <BrusselsWtfWeb.PublicShell.vote_split
+                :if={contested_item?(@item, @display_state)}
+                for_votes={@item.published_decision.votes_for}
+                against={@item.published_decision.votes_against}
+                abstentions={@item.published_decision.abstentions}
+                locale={@locale}
+              />
+              <span
+                :if={@display_state == :decision and vote_summary(@item.published_decision, @locale)}
+                class="muted"
+              >
+                {vote_summary(@item.published_decision, @locale)}
+              </span>
             </span>
-            <span :if={not evidence.synthetic} class="block text-base-content/70">
-              {evidence.location} · {text(@locale, :retrieved)}
-              <time datetime={DateTime.to_iso8601(evidence.retrieved_at)}>
-                {format_datetime(evidence.retrieved_at)}
-              </time>
-              <details :if={evidence.checksum} class="mt-1">
-                <summary class="cursor-pointer">{text(@locale, :source_details)}</summary>
-                SHA-256 <code class="break-all">{evidence.checksum}</code>
-              </details>
-            </span>
-          </li>
-        </ul>
-        <p :if={@evidences == []} class="mt-2 text-sm">
-          <a href={@page.citation_url} rel="external" class="underline underline-offset-2">
-            {text(@locale, :source)}
-          </a>
-        </p>
-      </section>
-      <section
-        :if={@fact_paths != []}
-        class="mt-5"
-        aria-labelledby={"fact-paths-" <> @item.stable_anchor}
-      >
-        <h3 id={"fact-paths-" <> @item.stable_anchor} class="font-semibold">
-          {text(@locale, :fact_paths)}
-        </h3>
-        <ol class="mt-3 space-y-4">
-          <li :for={path <- @fact_paths} class="border-l-2 border-base-300 pl-4">
-            <ol class="space-y-3">
-              <li :for={edge <- path.edges}>
-                <p class="font-semibold">{Map.fetch!(edge.labels, @locale)}</p>
-                <p class="mt-1">{edge.subject_name} — {edge.object_name}</p>
-                <p :if={edge.effective_from} class="mt-1 text-sm text-base-content/70">
-                  <time datetime={Date.to_iso8601(edge.effective_from)}>
-                    {Date.to_iso8601(edge.effective_from)}
-                  </time>
+          </span>
+          <span class="chevron agenda-chevron hero-chevron-down-micro" aria-hidden="true"></span>
+        </summary>
+
+        <div class="agenda-body">
+          <div class="measure space-y-4">
+            <div :if={@display_state == :decision} class="callout callout-decided">
+              <h3 class="font-semibold">
+                {text(@locale, :decision)}: {BrusselsWtfWeb.DispositionLabels.label(
+                  @locale,
+                  loaded_value(@item.published_decision, :disposition)
+                )}
+              </h3>
+              <p class="mt-1 leading-6">
+                {@coverage_variant.decision_summary || text(@locale, :decision_copy_unavailable)}
+              </p>
+            </div>
+
+            <div :if={@proposals != []}>
+              <h3 class="font-semibold">{text(@locale, :proposal)}</h3>
+              <p class="mt-1 leading-6">
+                {proposal_copy(@coverage_variant, @display_state, @locale, @past)}
+              </p>
+            </div>
+
+            <div :if={@display_state in [:proposal, :unknown]} class="callout callout-unknown text-sm">
+              <h3 class="font-semibold">{text(@locale, :outcome_unknown)}</h3>
+              <p
+                :if={@page.council_meeting.scheduled_on == BrusselsWtfWeb.MeetingTime.today()}
+                class="mt-1"
+              >
+                {text(@locale, :today)}
+              </p>
+              <p :if={@past} class="mt-1">{text(@locale, :past_explanation)}</p>
+              <p class="mt-1">{text(@locale, :unknown_explanation)}</p>
+            </div>
+
+            <details :if={@source_proposals != []} class="disclosure">
+              <summary>
+                <span class="chevron hero-chevron-down-micro" aria-hidden="true"></span>{text(
+                  @locale,
+                  :proposal_interpretation
+                )}
+              </summary>
+              <div class="disclosure-body">
+                <p :for={proposal <- @source_proposals} lang="und" class="text-sm leading-6">
+                  {proposal.text}
                 </p>
-                <p class="mt-1 text-sm">
-                  <a href={edge.citation_url} rel="external" class="underline underline-offset-2">
-                    {text(@locale, :source)}
+              </div>
+            </details>
+
+            <div :if={@item.dossier_links != []} class="text-sm">
+              <h3 class="font-semibold">{text(@locale, :dossiers)}</h3>
+              <ul class="mt-1">
+                <li :for={link <- @item.dossier_links}>
+                  <a
+                    href={"/dossiers/#{link.dossier.slug}?lang=#{@locale}"}
+                    class="inline-flex min-h-11 items-center gap-1.5"
+                  >
+                    <span class="hero-folder-open-micro size-4" aria-hidden="true"></span>
+                    {Map.get(link.dossier.localized_titles || %{}, @locale, link.dossier.title)}
                   </a>
-                </p>
-              </li>
-            </ol>
-          </li>
-        </ol>
-      </section>
-      <BrusselsWtfWeb.PublicationComponents.correction_form locale={@locale} item_id={@item.id} />
+                </li>
+              </ul>
+            </div>
+
+            <section aria-label={text(@locale, :evidence)}>
+              <h3 class="font-semibold">{text(@locale, :evidence)}</h3>
+              <ul :if={@evidences != []} class="mt-1 text-sm">
+                <li :for={evidence <- @evidences}>
+                  <a
+                    href={BrusselsWtfWeb.PublicEvidence.citation_href(evidence)}
+                    rel="external"
+                    class="inline-flex min-h-11 items-center gap-1.5 py-1"
+                  >
+                    <span class="hero-document-text-micro size-4 shrink-0" aria-hidden="true"></span>
+                    <span>{evidence_title(evidence, @locale)}</span>
+                  </a>
+                  <span :if={evidence.synthetic} class="tone-unknown block font-medium">
+                    {text(@locale, :synthetic_reference)}
+                  </span>
+                  <details :if={not evidence.synthetic} class="disclosure">
+                    <summary class="muted font-normal">
+                      <span class="chevron hero-chevron-down-micro" aria-hidden="true"></span>{text(
+                        @locale,
+                        :source_details
+                      )}
+                    </summary>
+                    <div class="disclosure-body muted">
+                      {text(@locale, :retrieved)}
+                      <time datetime={DateTime.to_iso8601(evidence.retrieved_at)}>
+                        {format_datetime(evidence.retrieved_at, @locale)}
+                      </time>
+                      <span :if={evidence.checksum} class="block">
+                        SHA-256 <code class="break-all">{evidence.checksum}</code>
+                      </span>
+                    </div>
+                  </details>
+                </li>
+              </ul>
+              <p :if={@evidences == []} class="mt-1 text-sm">
+                <a
+                  href={@page.citation_url}
+                  rel="external"
+                  class="inline-flex min-h-11 items-center gap-1.5"
+                >
+                  <span class="hero-document-text-micro size-4" aria-hidden="true"></span>
+                  {text(@locale, :source)}
+                </a>
+              </p>
+            </section>
+
+            <p
+              :if={@coverage_variant.provenance != []}
+              class="muted flex flex-wrap items-center gap-x-3 gap-y-1 text-sm"
+              aria-label={text(@locale, :provenance)}
+            >
+              <span
+                :for={{icon, label} <- provenance_labels(@coverage_variant.provenance, @locale)}
+                class="inline-flex items-center gap-1"
+              >
+                <span class={[icon, "size-4"]} aria-hidden="true"></span>{label}
+              </span>
+            </p>
+
+            <section :if={@fact_paths != []} aria-labelledby={"fact-paths-" <> @item.stable_anchor}>
+              <h3 id={"fact-paths-" <> @item.stable_anchor} class="font-semibold">
+                {text(@locale, :fact_paths)}
+              </h3>
+              <ol class="mt-3 space-y-4">
+                <li :for={path <- @fact_paths} class="border-l-2 border-base-300 pl-4">
+                  <ol class="space-y-3">
+                    <li :for={edge <- path.edges}>
+                      <p class="font-semibold">{Map.fetch!(edge.labels, @locale)}</p>
+                      <p class="mt-1">{edge.subject_name} — {edge.object_name}</p>
+                      <p :if={edge.effective_from} class="muted mt-1 text-sm">
+                        <time datetime={Date.to_iso8601(edge.effective_from)}>
+                          {format_date(edge.effective_from, @locale)}
+                        </time>
+                      </p>
+                      <p class="mt-1 text-sm">
+                        <a
+                          href={edge.citation_url}
+                          rel="external"
+                          class="inline-flex min-h-11 items-center"
+                        >
+                          {text(@locale, :source)}
+                        </a>
+                      </p>
+                    </li>
+                  </ol>
+                </li>
+              </ol>
+            </section>
+            <BrusselsWtfWeb.PublicationComponents.correction_form locale={@locale} item_id={@item.id} />
+          </div>
+        </div>
+      </details>
     </article>
     """
   end
+
+  defp agenda_topics(items) do
+    items
+    |> Enum.map(&BrusselsWtfWeb.PublicShell.topic_of(&1.source_wording))
+    |> Enum.frequencies()
+    |> Enum.sort_by(fn {_topic, count} -> -count end)
+  end
+
+  defp all_unknown?(items), do: Enum.all?(items, &(display_state(&1) != :decision))
+
+  defp contested_item?(item, :decision),
+    do: VoteTally.classify(item.published_decision) == :contested
+
+  defp contested_item?(_item, _state), do: false
+
+  defp row_status(_item, state) when state in [:proposal, :unknown], do: :unknown
+
+  defp row_status(item, _state),
+    do: loaded_value(item.published_decision, :disposition) || :decided
+
+  defp row_label(_item, state, locale) when state in [:proposal, :unknown],
+    do: text(locale, :outcome_unknown)
+
+  defp row_label(item, _state, locale),
+    do:
+      String.capitalize(
+        BrusselsWtfWeb.DispositionLabels.label(
+          locale,
+          loaded_value(item.published_decision, :disposition)
+        )
+      )
 
   defp unavailable_coverage_variant(locale) do
     %{
@@ -605,7 +861,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
   defp evidence_title(evidence, locale) do
     case evidence.source_title do
       "Authoritative municipal source" ->
-        text(locale, :source) <> " · " <> to_string(evidence.location)
+        evidence.location || text(locale, :source)
 
       title ->
         title
@@ -649,39 +905,21 @@ defmodule BrusselsWtfWeb.MeetingPage do
         locale
       )
 
-  defp vote_summary(decision, locale) do
-    values = [decision.votes_for, decision.votes_against, decision.abstentions]
-
-    if Enum.all?(values, &is_nil/1) do
-      nil
-    else
-      [
-        vote_part(locale, :for, decision.votes_for),
-        vote_part(locale, :against, decision.votes_against),
-        vote_part(locale, :abstentions, decision.abstentions)
-      ]
-      |> Enum.reject(&is_nil/1)
-      |> Enum.join(", ")
-    end
-  end
-
-  defp vote_part(_locale, _kind, nil), do: nil
-  defp vote_part("fr", :for, value), do: "#{value} pour"
-  defp vote_part("fr", :against, value), do: "#{value} contre"
-  defp vote_part("fr", :abstentions, value), do: "#{value} abstention(s)"
-  defp vote_part("nl", :for, value), do: "#{value} voor"
-  defp vote_part("nl", :against, value), do: "#{value} tegen"
-  defp vote_part("nl", :abstentions, value), do: "#{value} onthouding(en)"
-  defp vote_part(_locale, :for, value), do: "#{value} for"
-  defp vote_part(_locale, :against, value), do: "#{value} against"
-  defp vote_part(_locale, :abstentions, value), do: "#{value} abstention(s)"
+  defp vote_summary(decision, locale),
+    do:
+      BrusselsWtfWeb.PublicShell.vote_text(
+        locale,
+        decision.votes_for,
+        decision.votes_against,
+        decision.abstentions
+      )
 
   defp provenance_labels(values, locale) do
     labels = %{
       "en" => %{
         ai_generated: "AI-generated",
-        machine_translated: "machine-translated",
-        human_reviewed: "human-reviewed"
+        machine_translated: "Machine-translated",
+        human_reviewed: "Human-reviewed"
       },
       "fr" => %{
         ai_generated: "Généré par IA",
@@ -695,8 +933,12 @@ defmodule BrusselsWtfWeb.MeetingPage do
       }
     }
 
-    Enum.map(values, &labels[locale][&1])
+    Enum.map(values, &{provenance_icon(&1), labels[locale][&1]})
   end
+
+  defp provenance_icon(:ai_generated), do: "hero-sparkles-micro"
+  defp provenance_icon(:machine_translated), do: "hero-language-micro"
+  defp provenance_icon(_value), do: "hero-user-micro"
 
   defp commune_name("fr", "city-of-brussels", _name), do: "Ville de Bruxelles"
   defp commune_name("nl", "city-of-brussels", _name), do: "Stad Brussel"
@@ -705,12 +947,10 @@ defmodule BrusselsWtfWeb.MeetingPage do
   defp commune_name("nl", "forest", _name), do: "Vorst"
   defp commune_name(_locale, _slug, name), do: name
 
-  defp format_date(date), do: Date.to_iso8601(date)
-  defp format_datetime(datetime), do: Calendar.strftime(datetime, "%Y-%m-%d %H:%M UTC")
+  defp format_date(date, locale), do: BrusselsWtfWeb.PublicDate.long(date, locale)
 
-  defp unknown_outcome_label("fr"), do: "Résultat inconnu"
-  defp unknown_outcome_label("nl"), do: "Onbekende uitkomst"
-  defp unknown_outcome_label(_locale), do: "Unknown outcome"
+  defp format_datetime(datetime, locale),
+    do: BrusselsWtfWeb.PublicDate.long_datetime(datetime, locale)
 
   defp text("fr", key), do: Map.fetch!(fr_text(), key)
   defp text("nl", key), do: Map.fetch!(nl_text(), key)
@@ -719,14 +959,14 @@ defmodule BrusselsWtfWeb.MeetingPage do
   defp en_text do
     %{
       skip: "Skip to content",
-      fact_paths: "Fact paths",
-      today: "Scheduled today",
       past_explanation:
         "The meeting date has passed. Its final outcome is not yet documented here.",
+      fact_paths: "Fact paths",
+      today: "Scheduled today",
       past_proposal:
         "The agenda records this proposal. No authoritative final outcome is attached.",
       proposal_interpretation: "Source-backed proposal interpretation",
-      source_details: "Source verification details",
+      source_details: "Verification details",
       unavailable_title: "Coverage unavailable in English",
       item_unavailable: "Agenda-item coverage unavailable in English",
       unavailable_explanation:
@@ -739,8 +979,8 @@ defmodule BrusselsWtfWeb.MeetingPage do
       history: "Dated publication history",
       historical_warning:
         "Earlier wording is retained for transparency and may contain errors corrected in the current version.",
-      back_to_results: "Back to results",
-      revision: "Page revision:",
+      back_to_results: "Back",
+      revision: "Updated",
       item: "Agenda item",
       proposal: "Proposal",
       outcome_unknown: "Outcome unknown",
@@ -748,8 +988,8 @@ defmodule BrusselsWtfWeb.MeetingPage do
       decision: "Decision",
       provenance: "Content provenance",
       dossiers: "Continuing dossier",
-      evidence: "Evidence and citations",
-      source: "Authoritative source",
+      evidence: "Sources",
+      source: "Official source",
       retrieved: "Retrieved",
       withdrawn_title: "Meeting coverage withdrawn",
       withdrawn_heading: "This coverage has been withdrawn",
@@ -757,15 +997,31 @@ defmodule BrusselsWtfWeb.MeetingPage do
       withdrawn_on: "Withdrawn:",
       item_withdrawn: "Coverage for this agenda item is temporarily unavailable.",
       corrections: "Corrections",
+      official_document: "Official document",
+      agenda: "Agenda",
+      all_items: "applies to every item below.",
+      agenda_note_title: "What “Outcome unknown” means",
+      agenda_note:
+        "An item stays Outcome unknown until an official record of its outcome is attached. Only items the council votes on are published, so numbers can skip.",
+      filter_agenda: "Filter this agenda",
+      of_items: "%{shown} of %{total} items",
+      clear_filter: "Clear filter",
+      filter_label: "Filter",
+      expand_all: "Open all",
+      collapse_all: "Close all",
+      stat_items: "Items",
+      stat_decided: "Decisions",
+      stat_awaiting: "Outcome unknown",
+      stat_contested: "Not unanimous",
       vote_tally: "Vote tally",
-      tally_stats: "Decisions: %{total} · unanimous: %{unanimous} · contested: %{contested}",
+      tally_stats: "Decisions: %{total} · unanimous: %{unanimous} · not unanimous: %{contested}",
       tally_not_recorded: " · no recorded tally: %{count}",
-      show_contested: "Show contested votes only",
+      show_contested: "Show votes that were not unanimous",
       show_all_votes: "Show all decisions",
-      no_contested_votes: "No contested vote is recorded for this meeting.",
+      no_contested_votes: "Every recorded vote at this meeting was unanimous.",
       votes_for: "For",
       votes_against: "Against",
-      votes_abstentions: "Abst.",
+      votes_abstentions: "Abstained",
       vote_split: "Vote split",
       vote_not_recorded: "Not recorded"
     }
@@ -774,14 +1030,14 @@ defmodule BrusselsWtfWeb.MeetingPage do
   defp fr_text do
     %{
       skip: "Aller au contenu",
-      fact_paths: "Chemins de faits",
-      today: "Prévu aujourd’hui",
       past_explanation:
         "La date de la réunion est passée. Son résultat final n’est pas encore documenté ici.",
+      fact_paths: "Chemins de faits",
+      today: "Prévu aujourd’hui",
       past_proposal:
         "L’ordre du jour présente cette proposition. Aucun résultat final officiel n’est joint.",
       proposal_interpretation: "Interprétation de la proposition fondée sur les sources",
-      source_details: "Détails de vérification de la source",
+      source_details: "Détails de vérification",
       unavailable_title: "Contenu indisponible en français",
       item_unavailable: "Contenu du point indisponible en français",
       unavailable_explanation:
@@ -795,8 +1051,8 @@ defmodule BrusselsWtfWeb.MeetingPage do
       history: "Historique daté des publications",
       historical_warning:
         "Les anciens textes sont conservés par transparence et peuvent contenir des erreurs corrigées dans la version actuelle.",
-      back_to_results: "Retour aux résultats",
-      revision: "Révision de la page :",
+      back_to_results: "Retour",
+      revision: "Mis à jour le",
       item: "Point",
       proposal: "Proposition",
       outcome_unknown: "Résultat inconnu",
@@ -804,7 +1060,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
       decision: "Décision",
       provenance: "Provenance du contenu",
       dossiers: "Dossier en cours",
-      evidence: "Preuves et citations",
+      evidence: "Sources",
       source: "Source officielle",
       retrieved: "Récupérée",
       withdrawn_title: "Contenu de la réunion retiré",
@@ -814,15 +1070,31 @@ defmodule BrusselsWtfWeb.MeetingPage do
       withdrawn_on: "Retiré le :",
       item_withdrawn: "Le contenu de ce point est temporairement indisponible.",
       corrections: "Corrections",
+      official_document: "Document officiel",
+      agenda: "Ordre du jour",
+      all_items: "vaut pour tous les points ci-dessous.",
+      agenda_note_title: "Que signifie « Résultat inconnu » ?",
+      agenda_note:
+        "Un point reste en Résultat inconnu tant qu’aucun document officiel de son résultat n’est joint. Seuls les points soumis au vote sont publiés, la numérotation peut donc sauter.",
+      filter_agenda: "Filtrer cet ordre du jour",
+      of_items: "%{shown} points sur %{total}",
+      clear_filter: "Effacer le filtre",
+      filter_label: "Filtrer",
+      expand_all: "Tout ouvrir",
+      collapse_all: "Tout fermer",
+      stat_items: "Points",
+      stat_decided: "Décisions",
+      stat_awaiting: "Résultat inconnu",
+      stat_contested: "Pas unanimes",
       vote_tally: "Résultats des votes",
-      tally_stats: "Décisions : %{total} · unanimes : %{unanimous} · contestées : %{contested}",
+      tally_stats: "Décisions : %{total} · unanimes : %{unanimous} · non unanimes : %{contested}",
       tally_not_recorded: " · sans décompte documenté : %{count}",
-      show_contested: "Afficher uniquement les votes contestés",
+      show_contested: "Afficher les votes non unanimes",
       show_all_votes: "Afficher toutes les décisions",
-      no_contested_votes: "Aucun vote contesté n’est documenté pour cette réunion.",
+      no_contested_votes: "Tous les votes documentés de cette réunion sont unanimes.",
       votes_for: "Pour",
       votes_against: "Contre",
-      votes_abstentions: "Abst.",
+      votes_abstentions: "Abstention",
       vote_split: "Répartition des votes",
       vote_not_recorded: "Non documenté"
     }
@@ -831,14 +1103,14 @@ defmodule BrusselsWtfWeb.MeetingPage do
   defp nl_text do
     %{
       skip: "Naar inhoud",
-      fact_paths: "Feitenpaden",
-      today: "Vandaag gepland",
       past_explanation:
         "De vergaderdatum is verstreken. De definitieve uitkomst is hier nog niet gedocumenteerd.",
+      fact_paths: "Feitenpaden",
+      today: "Vandaag gepland",
       past_proposal:
         "De agenda vermeldt dit voorstel. Er is geen officiële definitieve uitkomst toegevoegd.",
       proposal_interpretation: "Brononderbouwde interpretatie van het voorstel",
-      source_details: "Details voor bronverificatie",
+      source_details: "Verificatiedetails",
       unavailable_title: "Inhoud niet beschikbaar in het Nederlands",
       item_unavailable: "Inhoud van het agendapunt niet beschikbaar in het Nederlands",
       unavailable_explanation:
@@ -851,16 +1123,16 @@ defmodule BrusselsWtfWeb.MeetingPage do
       history: "Gedateerde publicatiegeschiedenis",
       historical_warning:
         "Eerdere teksten worden voor transparantie bewaard en kunnen fouten bevatten die in de huidige versie zijn gecorrigeerd.",
-      back_to_results: "Terug naar resultaten",
-      revision: "Paginarevisie:",
+      back_to_results: "Terug",
+      revision: "Bijgewerkt op",
       item: "Agendapunt",
       proposal: "Voorstel",
-      outcome_unknown: "Resultaat onbekend",
+      outcome_unknown: "Uitkomst onbekend",
       unknown_explanation: "Aan dit punt is geen officieel eindverslag gekoppeld.",
       decision: "Besluit",
       provenance: "Herkomst van de inhoud",
       dossiers: "Lopend dossier",
-      evidence: "Bewijs en citaten",
+      evidence: "Bronnen",
       source: "Officiële bron",
       retrieved: "Opgehaald",
       withdrawn_title: "Vergaderbericht ingetrokken",
@@ -870,15 +1142,31 @@ defmodule BrusselsWtfWeb.MeetingPage do
       withdrawn_on: "Ingetrokken op:",
       item_withdrawn: "Het bericht over dit agendapunt is tijdelijk niet beschikbaar.",
       corrections: "Correcties",
+      official_document: "Officieel document",
+      agenda: "Agenda",
+      all_items: "geldt voor alle punten hieronder.",
+      agenda_note_title: "Wat “Uitkomst onbekend” betekent",
+      agenda_note:
+        "Een punt blijft op Uitkomst onbekend staan tot een officieel document van de uitkomst is toegevoegd. Alleen punten waarover de raad stemt worden gepubliceerd, dus nummers kunnen ontbreken.",
+      filter_agenda: "Deze agenda filteren",
+      of_items: "%{shown} van %{total} punten",
+      clear_filter: "Filter wissen",
+      filter_label: "Filter",
+      expand_all: "Alles openen",
+      collapse_all: "Alles sluiten",
+      stat_items: "Punten",
+      stat_decided: "Besluiten",
+      stat_awaiting: "Uitkomst onbekend",
+      stat_contested: "Niet unaniem",
       vote_tally: "Stemmingsresultaten",
-      tally_stats: "Besluiten: %{total} · unaniem: %{unanimous} · betwist: %{contested}",
+      tally_stats: "Besluiten: %{total} · unaniem: %{unanimous} · niet unaniem: %{contested}",
       tally_not_recorded: " · zonder gedocumenteerde stemming: %{count}",
-      show_contested: "Alleen betwiste stemmingen tonen",
+      show_contested: "Niet-unanieme stemmingen tonen",
       show_all_votes: "Alle besluiten tonen",
-      no_contested_votes: "Voor deze vergadering is geen betwiste stemming gedocumenteerd.",
+      no_contested_votes: "Alle gedocumenteerde stemmingen van deze vergadering waren unaniem.",
       votes_for: "Voor",
       votes_against: "Tegen",
-      votes_abstentions: "Onth.",
+      votes_abstentions: "Onthouding",
       vote_split: "Stemverdeling",
       vote_not_recorded: "Niet gedocumenteerd"
     }

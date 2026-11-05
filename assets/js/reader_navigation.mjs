@@ -1,5 +1,5 @@
 // Resource identity is stable across languages; fragments identify the item being read.
-const resultPaths = new Set(['/', '/coverage/coming-up', '/coverage/awaiting-outcome', '/coverage/decisions', '/mandates'])
+const resultPaths = new Set(['/', '/coverage/coming-up', '/coverage/awaiting-outcome', '/coverage/decisions', '/mandates', '/meetings'])
 const normalizedPath = path => path.replace(/\/+$/, '') || '/'
 
 export function enhanceReaderNavigation(window, document, storage) {
