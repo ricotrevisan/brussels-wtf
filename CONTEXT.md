@@ -166,7 +166,11 @@ The runtime policy that decides whether meeting coverage processors may run. `di
 
 ## Generation budget
 
-A calendar-month hard limit on paid coverage cost. Each paid call reserves a conservative maximum cost before execution and reconciles that reservation with the final cost or keeps it reserved when the outcome is uncertain. Exhausted or unavailable budget fails closed before provider use.
+A calendar-month ledger of paid coverage cost, optionally with an app-side hard limit. Each paid call reserves an estimated cost before execution and reconciles that reservation with the final cost, or keeps the estimate when the outcome is uncertain. With a limit, the estimate is a guaranteed maximum (per-stage provider price caps), and exhausted or unavailable budget fails closed before provider use. Without a limit the ledger only records spend, a call settles at its actual cost, and the provider account's own limits are the ceiling (ADR 0007).
+
+## Provider credit check
+
+An hourly, and post-402, reading of the paid provider's remaining key and account credit. A change to low, exhausted or recovered alerts Rico on Discord through Drummer once. When credit is back, every page whose open publication case says the provider was out of credit gets one new publish job.
 
 ## Coverage batch
 

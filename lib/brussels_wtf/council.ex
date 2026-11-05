@@ -102,6 +102,10 @@ defmodule BrusselsWtf.Council do
       define :find_reusable_coverage_run, action: :reusable_success, not_found_error?: false
     end
 
+    resource BrusselsWtf.Council.ProviderCreditCheck do
+      define :record_provider_credit_check, action: :record
+    end
+
     resource BrusselsWtf.Council.CoverageBudget do
       define :get_coverage_budget_by_period, action: :by_period, args: [:period_start]
     end
