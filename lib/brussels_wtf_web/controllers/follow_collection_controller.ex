@@ -118,6 +118,7 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
          {:ok, [_ | _]} <- Follow.import_citizen_follows(citizen, [{type, identifier}]) do
       redirect(conn, to: "/feed?lang=#{conn.assigns.locale}")
     else
+      {:error, :expired} -> redirect(conn, to: "/citizen/sign-in?lang=#{conn.assigns.locale}")
       _ -> send_resp(conn, 422, "")
     end
   end
