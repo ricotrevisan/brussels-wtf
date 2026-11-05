@@ -177,7 +177,11 @@ defmodule BrusselsWtfWeb.TimelinePage do
 
         Map.merge(category, %{
           entries: entries,
-          lead: lead_key(category.path),
+          lead:
+            if(category.path == "/coverage/decisions",
+              do: :lead_decided_home,
+              else: lead_key(category.path)
+            ),
           href: selection_path(category.path, locale, selected)
         })
       end)
@@ -217,6 +221,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       disposition: row.disposition,
       contested?: true,
       vote_line: vote_line(item.published_decision, locale),
+      topic_source: item.source_wording,
       votes: {row.for, row.against, row.abstentions},
       href: row.href
     }
@@ -313,12 +318,12 @@ defmodule BrusselsWtfWeb.TimelinePage do
 
     <main id="content" class="reader-coverage text-base-content" tabindex="-1">
       <div :if={@homepage?} class="hero-band" data-tracked={@tracked_items}>
-        <div class="site-container hero-grid py-5 sm:py-10">
+        <div class="site-container hero-grid py-4 sm:py-10">
           <div>
             <h1 id="coverage-title" class="display display-xl measure">{@title}</h1>
             <p class="measure mt-3 text-base leading-6 sm:text-lg sm:leading-6">
               {text(@locale, :intro)}
-              <span :if={@tracked_items > 0} class="font-semibold">
+              <span :if={@tracked_items > 0} class="hidden font-semibold sm:inline">
                 {tracking_line(@locale, @tracked_meetings, @tracked_items)}
               </span>
             </p>
@@ -332,22 +337,15 @@ defmodule BrusselsWtfWeb.TimelinePage do
               q=""
             />
           </div>
-          <img
-            src={~p"/images/brand/icon-light.svg"}
-            alt=""
-            class="hero-mark"
-            width="220"
-            height="220"
-          />
+          <span class="hero-sticker" aria-hidden="true">
+            <img src={~p"/images/brand/icon-dark.svg"} alt="" width="200" height="200" />
+          </span>
         </div>
       </div>
 
       <div class="site-container">
         <div :if={not @homepage?} class="pt-5 sm:pt-7">
-          <a href={@home_path} class="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium">
-            <span class="hero-arrow-left-micro size-4" aria-hidden="true"></span>{text(@locale, :back)}
-          </a>
-          <h1 id="coverage-title" class="display display-lg mt-1">{@title}</h1>
+          <h1 id="coverage-title" class="display display-lg">{@title}</h1>
           <p :if={@lead} class="measure muted mt-2">{@lead}</p>
           <form
             :for={{slug, _name} <- @communes}
@@ -407,49 +405,6 @@ defmodule BrusselsWtfWeb.TimelinePage do
             {@result_line}
           </p>
         </div>
-
-        <section
-          :if={@homepage? and @meeting_rows != []}
-          class="mt-6"
-          aria-labelledby="latest-meetings"
-        >
-          <div class="flex flex-wrap items-end justify-between gap-x-4 border-b-2 border-base-content pb-1">
-            <h2 id="latest-meetings" class="display display-md">{text(@locale, :latest_meetings)}</h2>
-            <a
-              href={BrusselsWtfWeb.PublicShell.section_href("/meetings", @locale, @selection_query)}
-              class="inline-flex min-h-11 items-center gap-1 text-sm font-medium"
-              aria-label={text(@locale, :view_all) <> ": " <> text(@locale, :meetings)}
-            >
-              {text(@locale, :view_all)}<span class="hero-arrow-right-micro size-4" aria-hidden="true"></span>
-            </a>
-          </div>
-          <ul class="meeting-cards mt-3">
-            <li :for={row <- @meeting_rows}>
-              <a href={row.href} class="meeting-card">
-                <span class="block font-semibold">{row.commune}</span>
-                <time class="block text-sm" datetime={Date.to_iso8601(row.date)}>
-                  {format_date(row.date, @locale)}
-                </time>
-                <span :if={row.highlight} class="card-highlight muted mt-1 text-sm leading-5">
-                  {row.highlight}
-                </span>
-                <span class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-                  <span class="muted">{item_count(row, @locale)}</span>
-                  <BrusselsWtfWeb.PublicShell.status
-                    :if={row.decided == 0}
-                    kind={:unknown}
-                    label={text(@locale, :outcome_unknown)}
-                  />
-                  <BrusselsWtfWeb.PublicShell.status
-                    :if={row.decided > 0}
-                    kind={:decided}
-                    label={decided_count(row, @locale)}
-                  />
-                </span>
-              </a>
-            </li>
-          </ul>
-        </section>
 
         <section :if={@meetings_index?} class="mt-4" data-meeting-index>
           <p :if={@meeting_rows == []} class="callout mt-3">{text(@locale, :none_selected)}</p>
@@ -627,6 +582,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
 
         <section
           :for={category <- @categories}
+          :if={not (@homepage? and @selected_communes == [])}
           aria-labelledby={if @homepage?, do: category.id, else: "coverage-title"}
           class={[
             if(@homepage? and category.entries == [], do: "mt-4", else: "mt-8 sm:mt-10")
@@ -707,6 +663,49 @@ defmodule BrusselsWtfWeb.TimelinePage do
               />
             </div>
           <% end %>
+        </section>
+
+        <section
+          :if={@homepage? and @meeting_rows != []}
+          class="mt-8 sm:mt-10"
+          aria-labelledby="latest-meetings"
+        >
+          <div class="flex flex-wrap items-end justify-between gap-x-4 border-b-2 border-base-content pb-1">
+            <h2 id="latest-meetings" class="display display-md">{text(@locale, :latest_meetings)}</h2>
+            <a
+              href={BrusselsWtfWeb.PublicShell.section_href("/meetings", @locale, @selection_query)}
+              class="inline-flex min-h-11 items-center gap-1 text-sm font-medium"
+              aria-label={text(@locale, :view_all) <> ": " <> text(@locale, :meetings)}
+            >
+              {text(@locale, :view_all)}<span class="hero-arrow-right-micro size-4" aria-hidden="true"></span>
+            </a>
+          </div>
+          <ul class="meeting-cards mt-3">
+            <li :for={row <- @meeting_rows}>
+              <a href={row.href} class="meeting-card">
+                <span class="block font-semibold">{row.commune}</span>
+                <time class="block text-sm" datetime={Date.to_iso8601(row.date)}>
+                  {format_date(row.date, @locale)}
+                </time>
+                <span :if={row.highlight} class="card-highlight muted mt-1 text-sm leading-5">
+                  {row.highlight}
+                </span>
+                <span class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                  <span class="muted">{item_count(row, @locale)}</span>
+                  <BrusselsWtfWeb.PublicShell.status
+                    :if={row.decided == 0}
+                    kind={:unknown}
+                    label={text(@locale, :outcome_unknown)}
+                  />
+                  <BrusselsWtfWeb.PublicShell.status
+                    :if={row.decided > 0}
+                    kind={:decided}
+                    label={decided_count(row, @locale)}
+                  />
+                </span>
+              </a>
+            </li>
+          </ul>
         </section>
       </div>
     </main>
@@ -823,7 +822,10 @@ defmodule BrusselsWtfWeb.TimelinePage do
         :amount,
         BrusselsWtfWeb.PublicShell.amount_in(assigns.entry.title, assigns.locale)
       )
-      |> assign(:topic, BrusselsWtfWeb.PublicShell.topic_of(assigns.entry.title))
+      |> assign(
+        :topic,
+        BrusselsWtfWeb.PublicShell.topic_of(assigns.entry[:topic_source] || assigns.entry.title)
+      )
 
     ~H"""
     <article class="entry" data-commune={@entry.commune_slug} data-group={@entry.group}>
@@ -859,7 +861,11 @@ defmodule BrusselsWtfWeb.TimelinePage do
             · {text(@locale, :today)}
           </span>
         </span>
-        <span :if={@entry.vote_line} class="muted" data-vote-line>{@entry.vote_line}</span>
+        <span
+          :if={@entry.vote_line}
+          class={[(@entry.contested? && "font-semibold") || "muted"]}
+          data-vote-line
+        >{@entry.vote_line}</span>
       </p>
     </article>
     """
@@ -930,6 +936,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       disposition: decision && decision.disposition,
       contested?: contested?(decision),
       vote_line: vote_line(decision, locale),
+      topic_source: item.source_wording,
       votes: decision && {decision.votes_for, decision.votes_against, decision.abstentions},
       outcome: item.published_outcome || :unknown,
       evidences: BrusselsWtfWeb.PublicEvidence.for_item(item),
@@ -1100,8 +1107,10 @@ defmodule BrusselsWtfWeb.TimelinePage do
       lead_coming: "Proposals on upcoming agendas. Nothing here has been decided yet.",
       lead_awaiting:
         "The meeting has passed, but no official record of the outcome is attached yet.",
-      lead_decided:
+      lead_decided_home:
         "Newest meeting first. Items naming an amount or with a split vote lead; recurring formalities come last.",
+      lead_decided:
+        "Outcomes documented in official records, newest meeting first, in agenda order.",
       source: "Source"
     }
   end
@@ -1176,8 +1185,10 @@ defmodule BrusselsWtfWeb.TimelinePage do
         "Propositions inscrites aux prochains ordres du jour. Rien n’est encore décidé.",
       lead_awaiting:
         "La séance a eu lieu, mais aucun document officiel du résultat n’est encore joint.",
-      lead_decided:
+      lead_decided_home:
         "La séance la plus récente d’abord. Les points avec un montant ou un vote partagé passent devant ; les formalités récurrentes en dernier.",
+      lead_decided:
+        "Résultats documentés dans les documents officiels, séance la plus récente d’abord, dans l’ordre de l’agenda.",
       source: "Source"
     }
   end
@@ -1250,8 +1261,10 @@ defmodule BrusselsWtfWeb.TimelinePage do
       lead_coming: "Voorstellen op komende agenda’s. Hier is nog niets beslist.",
       lead_awaiting:
         "De vergadering heeft plaatsgevonden, maar er is nog geen officieel verslag van de uitkomst.",
-      lead_decided:
+      lead_decided_home:
         "Nieuwste vergadering eerst. Punten met een bedrag of verdeelde stemming staan vooraan; terugkerende formaliteiten als laatste.",
+      lead_decided:
+        "Uitkomsten uit officiële documenten, nieuwste vergadering eerst, in agendavolgorde.",
       source: "Bron"
     }
   end

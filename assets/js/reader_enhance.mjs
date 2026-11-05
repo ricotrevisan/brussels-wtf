@@ -64,6 +64,7 @@ export function enhanceAgenda(window, document) {
         wanted === "contested" ? item.dataset.contested !== "true" :
         wanted === "all" ? false : item.dataset.state !== wanted
     })
+    topics.forEach(button => button.setAttribute("aria-pressed", "false"))
     tiles.forEach(tile => tile.setAttribute("aria-pressed", String(tile.dataset.stateFilter === wanted)))
     report(wanted === "all")
   }
@@ -77,10 +78,20 @@ export function enhanceAgenda(window, document) {
         .replace("%{shown}", shown).replace("%{total}", items.length)
     }
   }
+  const topics = [...document.querySelectorAll("[data-topic-filter]")]
+  document.querySelector("[data-topic-filters]")?.classList.replace("hidden", "flex")
+  const clearPressed = () => [...tiles, ...topics].forEach(el => el.setAttribute("aria-pressed", "false"))
+  topics.forEach(button => button.addEventListener("click", () => {
+    const wanted = button.dataset.topicFilter
+    items.forEach(item => { item.hidden = item.dataset.topic !== wanted })
+    clearPressed()
+    button.setAttribute("aria-pressed", "true")
+    report(false)
+  }))
   document.querySelector("[data-clear-filter]")?.addEventListener("click", () => {
     if (filter) filter.value = ""
     applyState("all")
-    tiles.forEach(tile => tile.setAttribute("aria-pressed", "false"))
+    clearPressed()
   })
   tiles.forEach(tile => tile.addEventListener("click", () => applyState(tile.dataset.stateFilter)))
 

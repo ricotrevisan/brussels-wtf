@@ -216,11 +216,21 @@ defmodule BrusselsWtfWeb.PublicShell do
            title
          ) do
       [_, lead, rest] -> {lead <> ".", rest}
-      _ -> {title, nil}
+      _ -> split_at_clause(title)
     end
   end
 
   def split_title(title), do: {title, nil}
+
+  # A long title with no sentence break still gets a shorter lead, at its first clause.
+  defp split_at_clause(title) do
+    with true <- String.length(title) > 90,
+         [_, lead, rest] <- Regex.run(~r/^(.{40,}?[,;:–])\s+(.+)$/su, title) do
+      {lead, rest}
+    else
+      _ -> {title, nil}
+    end
+  end
 
   attr :topic, :any, required: true
   attr :amount, :string, default: nil
@@ -258,6 +268,8 @@ defmodule BrusselsWtfWeb.PublicShell do
   end
 
   def topic_of(_title), do: :topic_general
+
+  def topic_label(locale, topic), do: copy(locale, topic)
 
   defp topic_icon(:topic_subsidy), do: "hero-banknotes-micro"
   defp topic_icon(:topic_settlement), do: "hero-document-check-micro"

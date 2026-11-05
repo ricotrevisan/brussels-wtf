@@ -108,8 +108,8 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
           {text(@locale, key)}
         </p>
       <% end %>
-      <BrusselsWtfWeb.PublicationComponents.footer locale={@locale} />
     </main>
+    <BrusselsWtfWeb.PublicationComponents.footer locale={@locale} />
     """
   end
 

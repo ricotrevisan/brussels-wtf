@@ -340,7 +340,7 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
       |> html_response(200)
       |> LazyHTML.from_document()
 
-    assert forest_html["[data-vote-stats]"] |> LazyHTML.text() =~ "contested: 1"
+    assert forest_html["[data-vote-stats]"] |> LazyHTML.text() =~ "not unanimous: 1"
 
     assert [contested] =
              forest_html["#vote-tally tbody tr[data-vote-status=contested]"] |> Enum.to_list()
@@ -654,7 +654,7 @@ defmodule BrusselsWtf.Corpus.AcceptanceTest do
       |> html_response(200)
       |> LazyHTML.from_document()
 
-    assert html["[data-vote-stats]"] |> LazyHTML.text() =~ "unanimous: 2 · contested: 1"
+    assert html["[data-vote-stats]"] |> LazyHTML.text() =~ "unanimous: 2 · not unanimous: 1"
     assert [row] = html["#vote-tally tbody tr[data-vote-status=contested]"] |> Enum.to_list()
 
     assert row["td"] |> Enum.map(&(LazyHTML.text(&1) |> String.trim())) |> Enum.slice(3, 3) ==

@@ -23,6 +23,15 @@ defmodule BrusselsWtfWeb.PublicShellTest do
       assert PublicShell.split_title(numbered) == {numbered, nil}
     end
 
+    test "splits a long title without sentences at its first clause, keeping every word" do
+      title =
+        "Installation of panels via the purchasing centre, for the grand hall of the municipal stadium and its annexes"
+
+      {lead, rest} = PublicShell.split_title(title)
+      assert lead == "Installation of panels via the purchasing centre,"
+      assert lead <> " " <> rest == title
+    end
+
     test "leaves a short first sentence attached" do
       title = "Motion. Accelerate the ecological transition"
       assert PublicShell.split_title(title) == {title, nil}

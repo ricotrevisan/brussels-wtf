@@ -244,6 +244,17 @@ defmodule BrusselsWtfWeb.MeetingPage do
             >{text(@locale, :expand_all)}</button>
           </div>
         </div>
+        <div class="topic-filters mt-2 hidden flex-wrap gap-1.5" data-topic-filters>
+          <button
+            :for={{topic, count} <- agenda_topics(@items)}
+            type="button"
+            class="topic-chip"
+            data-topic-filter={topic}
+          >
+            {BrusselsWtfWeb.PublicShell.topic_label(@locale, topic)}
+            <span class="muted">{count}</span>
+          </button>
+        </div>
         <p class="mt-2 hidden items-center gap-3 text-sm font-semibold" data-agenda-result>
           <span role="status" data-agenda-count data-of={text(@locale, :of_items)}></span>
           <button type="button" class="btn btn-ghost btn-sm min-h-11" data-clear-filter>
@@ -554,6 +565,9 @@ defmodule BrusselsWtfWeb.MeetingPage do
       data-state={if @display_state == :decision, do: "decision", else: "unknown"}
       data-contested={contested_item?(@item, @display_state) && "true"}
       data-agenda-item
+      data-topic={
+        BrusselsWtfWeb.PublicShell.topic_of(@item.source_wording || @coverage_variant.title)
+      }
     >
       <details>
         <summary class="agenda-row">
@@ -746,6 +760,13 @@ defmodule BrusselsWtfWeb.MeetingPage do
       </details>
     </article>
     """
+  end
+
+  defp agenda_topics(items) do
+    items
+    |> Enum.map(&BrusselsWtfWeb.PublicShell.topic_of(&1.source_wording))
+    |> Enum.frequencies()
+    |> Enum.sort_by(fn {_topic, count} -> -count end)
   end
 
   defp all_unknown?(items), do: Enum.all?(items, &(display_state(&1) != :decision))

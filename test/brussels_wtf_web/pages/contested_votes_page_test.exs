@@ -84,7 +84,7 @@ defmodule BrusselsWtfWeb.ContestedVotesPageTest do
       |> document()
 
     assert Enum.to_list(empty["#contested-votes tbody tr"]) == []
-    assert LazyHTML.text(empty["[data-contested-empty]"]) =~ "Aucun vote contesté"
+    assert LazyHTML.text(empty["[data-contested-empty]"]) =~ "Aucun vote partagé"
   end
 
   test "paginates 25 decisions per page and keeps language and communes in pager links", %{
