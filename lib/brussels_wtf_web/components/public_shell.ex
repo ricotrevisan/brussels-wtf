@@ -208,10 +208,10 @@ defmodule BrusselsWtfWeb.PublicShell do
   """
   def title_parts(%{headline: headline} = assigns) when is_binary(headline) do
     ~H"""
-    <span class="title-lead title-hanging" data-headline>
-      <.ai_mark locale={@locale} />{@headline}
+    <span class="title-lead" data-headline>
+      {keep_figures(@headline)}<.ai_mark locale={@locale} />
     </span>
-    <span class="title-official" data-official-title>{@title}</span>
+    <span class="title-official" data-official-title>{keep_figures(@title)}</span>
     """
   end
 
@@ -223,6 +223,16 @@ defmodule BrusselsWtfWeb.PublicShell do
     <span class="title-lead">{@lead}</span>{" "}<span :if={@rest} class="title-rest">{@rest}</span>
     """
   end
+
+  @doc "Keeps an amount on one line by binding its digit groups and currency sign."
+  def keep_figures(text) when is_binary(text) do
+    text
+    |> String.replace(~r/(\d) (?=\d{3}\b)/u, "\\1\u00A0")
+    |> String.replace(~r/(\d) (?=(?:€|EUR)\b|€)/u, "\\1\u00A0")
+    |> String.replace(~r/((?:€|EUR)) (?=\d)/u, "\\1\u00A0")
+  end
+
+  def keep_figures(text), do: text
 
   attr :locale, :string, required: true
 

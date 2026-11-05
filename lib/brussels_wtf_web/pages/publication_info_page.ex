@@ -31,7 +31,15 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
     <main id="content" class="site-container info-page py-6 sm:py-8" tabindex="-1">
       <h1 class="display display-lg">{@page_title}</h1>
       <%= if @coverage? do %>
-        <p class="measure mt-4 leading-6">{text(@locale, :scope)}</p>
+        <p class="measure mt-4 leading-6">{lead_sentences(text(@locale, :scope))}</p>
+        <details :if={rest_sentences(text(@locale, :scope))} class="disclosure">
+          <summary>
+            {how_we_check(@locale)}<span class="chevron hero-chevron-down-micro" aria-hidden="true"></span>
+          </summary>
+          <p class="disclosure-body measure text-sm leading-6">
+            {rest_sentences(text(@locale, :scope))}
+          </p>
+        </details>
         <p class="mt-3">
           {text(@locale, :window)}: {BrusselsWtfWeb.PublicDate.long(@status.first, @locale)} – {BrusselsWtfWeb.PublicDate.long(
             @status.last,
@@ -122,6 +130,22 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
   # French typography puts a non-breaking space before the colon.
   defp count("fr", key, value), do: "#{text("fr", key)}\u00A0: #{value}."
   defp count(locale, key, value), do: "#{text(locale, key)}: #{value}."
+
+  # The first two sentences say what the page is; the mechanics wait behind a disclosure.
+  defp lead_sentences(copy), do: copy |> sentences() |> Enum.take(2) |> Enum.join(" ")
+
+  defp rest_sentences(copy) do
+    case copy |> sentences() |> Enum.drop(2) do
+      [] -> nil
+      rest -> Enum.join(rest, " ")
+    end
+  end
+
+  defp sentences(copy), do: String.split(copy, ~r/(?<=[.!?])\s+/u)
+
+  defp how_we_check("fr"), do: "Comment nous vérifions"
+  defp how_we_check("nl"), do: "Hoe we controleren"
+  defp how_we_check(_locale), do: "How we check"
 
   defp timestamp(nil, locale), do: text(locale, :unverified)
 

@@ -116,7 +116,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
             {text(@locale, :unavailable_title)}
         <% end %>
       </h1>
-      <p :if={not @withdrawn and @locale_available} class="muted mt-1 text-sm">
+      <p :if={not @withdrawn and @locale_available} class="muted mt-1 hidden text-sm sm:block">
         {@variant.title}
       </p>
       <p :if={not @withdrawn and not @locale_available} class="callout callout-unknown measure mt-5">
@@ -270,10 +270,6 @@ defmodule BrusselsWtfWeb.MeetingPage do
             {text(@locale, :clear_filter)}
           </button>
         </p>
-        <BrusselsWtfWeb.PublicShell.ai_key
-          :if={Enum.any?(@items, &has_headline?(&1, @locale))}
-          locale={@locale}
-        />
         <p
           :if={all_unknown?(@items)}
           class="mt-2 flex flex-wrap items-center gap-2 text-sm"
@@ -288,6 +284,10 @@ defmodule BrusselsWtfWeb.MeetingPage do
           page={@meeting_page}
           locale={@locale}
           uniform={all_unknown?(@items)}
+        />
+        <BrusselsWtfWeb.PublicShell.ai_key
+          :if={Enum.any?(@items, &has_headline?(&1, @locale))}
+          locale={@locale}
         />
       </section>
 
@@ -465,10 +465,10 @@ defmodule BrusselsWtfWeb.MeetingPage do
               <tr :for={row <- @visible} data-vote-status={row.status}>
                 <td data-label="#" class="tabular-nums">{row.number}</td>
                 <td class="cell-lead">
-                  <a href={"#" <> row.anchor} class="entry-title font-medium"><BrusselsWtfWeb.PublicShell.ai_mark
+                  <a href={"#" <> row.anchor} class="entry-title font-medium">{row.title}<BrusselsWtfWeb.PublicShell.ai_mark
                     :if={row.ai_headline?}
                     locale={@locale}
-                  />{row.title}</a>
+                  /></a>
                 </td>
                 <td data-label={text(@locale, :decision)}>
                   {String.capitalize(BrusselsWtfWeb.DispositionLabels.label(@locale, row.disposition))}

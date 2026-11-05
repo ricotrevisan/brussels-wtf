@@ -408,11 +408,6 @@ defmodule BrusselsWtfWeb.TimelinePage do
           </p>
         </div>
 
-        <BrusselsWtfWeb.PublicShell.ai_key
-          :if={Enum.any?(@categories, fn c -> Enum.any?(c.entries, & &1[:headline]) end)}
-          locale={@locale}
-        />
-
         <section :if={@meetings_index?} class="mt-4" data-meeting-index>
           <p :if={@meeting_rows == []} class="callout mt-3">{text(@locale, :none_selected)}</p>
           <ul class="border-t border-base-300">
@@ -595,7 +590,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
           :if={not (@homepage? and @selected_communes == [])}
           aria-labelledby={if @homepage?, do: category.id, else: "coverage-title"}
           class={[
-            if(@homepage? and category.entries == [], do: "mt-4", else: "mt-8 sm:mt-10")
+            if(@homepage? and category.entries == [], do: "mt-4", else: "mt-5 sm:mt-10")
           ]}
           data-section={category.id}
         >
@@ -717,6 +712,11 @@ defmodule BrusselsWtfWeb.TimelinePage do
             </li>
           </ul>
         </section>
+
+        <BrusselsWtfWeb.PublicShell.ai_key
+          :if={Enum.any?(@categories, fn c -> Enum.any?(c.entries, & &1[:headline]) end)}
+          locale={@locale}
+        />
       </div>
     </main>
     <BrusselsWtfWeb.PublicationComponents.footer locale={@locale} />
@@ -740,9 +740,8 @@ defmodule BrusselsWtfWeb.TimelinePage do
       data-reader-communes
       data-auto-submit
       class={[
-        "mt-5 space-y-3",
-        not @homepage? && "chips-plain",
-        length(@selected) == length(@communes) && "all-on"
+        "mt-4 space-y-2",
+        not @homepage? && "chips-plain"
       ]}
     >
       <input type="hidden" name="lang" value={@locale} />
