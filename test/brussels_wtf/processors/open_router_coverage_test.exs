@@ -159,7 +159,9 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverageTest do
     for message <- [
           "No endpoints found that support the requested parameters. private prompt",
           "No endpoints found matching your data policy. secret-test-key",
-          "No endpoints found that match your preferences. private prompt"
+          "No endpoints found that match your preferences. private prompt",
+          # Observed 2026-11-05 when the primary model's listed price rose above its cap.
+          "No endpoints found that satisfy the max price for this request"
         ] do
       Req.Test.expect(Provider, &Req.Test.transport_error(&1, :econnrefused))
 
