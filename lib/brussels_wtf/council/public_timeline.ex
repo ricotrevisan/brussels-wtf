@@ -42,6 +42,7 @@ defmodule BrusselsWtf.Council.PublicTimeline do
       |> Enum.filter(fn entry ->
         needle == "" or String.contains?(search_text(entry, names), needle)
       end)
+      |> Enum.sort_by(&agenda_position/1)
       |> Enum.sort_by(& &1.page.council_meeting.scheduled_on, {:desc, Date})
       |> Enum.group_by(& &1.group)
 
@@ -78,7 +79,19 @@ defmodule BrusselsWtf.Council.PublicTimeline do
     )
   end
 
-  defp routine?(%{item: item}),
+  defp agenda_position(%{item: item}) do
+    number = item.published_item_number || item.item_number
+
+    case Integer.parse(number || "") do
+      {value, ""} -> {0, value, ""}
+      _ -> {1, 0, number || ""}
+    end
+  end
+
+  defp routine?(%{item: item}), do: routine_item?(item)
+
+  @doc "Approving the previous minutes recurs at every meeting."
+  def routine_item?(item),
     do: Regex.match?(~r/proc[eè]s-verbal|notulen/iu, item.source_wording || "")
 
   defp round_robin([], taken), do: Enum.reverse(taken)

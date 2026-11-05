@@ -8,7 +8,12 @@ defmodule BrusselsWtfWeb.PublicationComponents do
     <footer class="site-footer">
       <div class="site-container grid gap-6 py-8 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <div>
-          <p class="display display-md">brussels.wtf</p>
+          <img
+            src="/images/brand/logo-horizontal-dark.svg"
+            alt="brussels.wtf"
+            width="180"
+            height="43"
+          />
           <p class="measure mt-2 text-sm leading-6">{copy(@locale, :promise)}</p>
         </div>
         <ul class="text-sm">

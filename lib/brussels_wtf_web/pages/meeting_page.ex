@@ -130,7 +130,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
             :official_document
           )}
         </a>
-        <span class="muted hidden sm:inline">
+        <span class="muted">
           {text(@locale, :revision)}
           <time datetime={DateTime.to_iso8601(@meeting_page.revision_published_at)}>
             {format_datetime(@meeting_page.revision_published_at, @locale)}
@@ -225,9 +225,9 @@ defmodule BrusselsWtfWeb.MeetingPage do
       <section :if={not @withdrawn and @items != []} class="mt-7" aria-labelledby="agenda-heading">
         <div class="agenda-head flex flex-wrap items-end justify-between gap-x-4 gap-y-2 border-b-2 border-base-content pb-2">
           <h2 id="agenda-heading" class="display display-md">{text(@locale, :agenda)}</h2>
-          <div class="hidden flex-wrap items-center gap-2" data-agenda-tools>
+          <div class="agenda-tools hidden items-center gap-2" data-agenda-tools>
             <label class="flex min-w-0 items-center gap-2 text-sm">
-              <span class="font-semibold">{text(@locale, :filter_label)}</span>
+              <span class="filter-label font-semibold">{text(@locale, :filter_label)}</span>
               <input
                 type="search"
                 data-agenda-filter
@@ -319,7 +319,6 @@ defmodule BrusselsWtfWeb.MeetingPage do
         value={@contested}
         label={text(@locale, :stat_contested)}
         filter="contested"
-        tone={@contested > 0 && "tone-contested"}
       />
     </div>
     """
@@ -964,7 +963,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
       stat_items: "Items",
       stat_decided: "Decisions",
       stat_awaiting: "Outcome unknown",
-      stat_contested: "Contested",
+      stat_contested: "Not unanimous",
       vote_tally: "Vote tally",
       tally_stats: "Decisions: %{total} · unanimous: %{unanimous} · contested: %{contested}",
       tally_not_recorded: " · no recorded tally: %{count}",
@@ -1037,7 +1036,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
       stat_items: "Points",
       stat_decided: "Décisions",
       stat_awaiting: "Résultat inconnu",
-      stat_contested: "Contestés",
+      stat_contested: "Pas unanimes",
       vote_tally: "Résultats des votes",
       tally_stats: "Décisions : %{total} · unanimes : %{unanimous} · contestées : %{contested}",
       tally_not_recorded: " · sans décompte documenté : %{count}",
@@ -1109,7 +1108,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
       stat_items: "Punten",
       stat_decided: "Besluiten",
       stat_awaiting: "Uitkomst onbekend",
-      stat_contested: "Betwist",
+      stat_contested: "Niet unaniem",
       vote_tally: "Stemmingsresultaten",
       tally_stats: "Besluiten: %{total} · unaniem: %{unanimous} · betwist: %{contested}",
       tally_not_recorded: " · zonder gedocumenteerde stemming: %{count}",

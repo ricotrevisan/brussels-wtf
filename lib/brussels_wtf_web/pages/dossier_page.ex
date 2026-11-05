@@ -63,7 +63,7 @@ defmodule BrusselsWtfWeb.DossierPage do
       <p :if={@entries == []} class="callout measure mt-6" data-dossier-empty>
         {text(@locale, :empty)}
       </p>
-      <ol :if={@entries != []} class="timeline mt-8 border-l-2 border-base-300 pl-6">
+      <ol :if={@entries != []} class="dossier-rail mt-8 border-l-2 border-base-300 pl-6">
         <li :for={entry <- @entries} class="relative pb-8">
           <span
             aria-hidden="true"

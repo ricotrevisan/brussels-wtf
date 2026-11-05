@@ -30,17 +30,26 @@ defmodule BrusselsWtfWeb.PublicShellTest do
   end
 
   describe "amount_in/1" do
-    test "quotes the first amount verbatim" do
-      assert PublicShell.amount_in("A subsidy amounting to EUR 20,000.00 and more") ==
-               "EUR 20,000.00"
-
-      assert PublicShell.amount_in("Settlement for 43,300.56 EUR incl. VAT") == "43,300.56 EUR"
-      assert PublicShell.amount_in("Subvention de 20 000 € pour un festival") == "20 000 €"
+    test "writes the first amount one way per language" do
+      assert PublicShell.amount_in("Subsidy amounting to EUR 20,000.00 and more", "en") == "€20,000"
+      assert PublicShell.amount_in("Settlement for 43,300.56 EUR incl. VAT", "en") == "€43,300.56"
+      assert PublicShell.amount_in("Subvention de 20 000 € pour un festival", "fr") == "20 000 €"
+      assert PublicShell.amount_in("Transaction de 43.300,56 EUR TVAC", "fr") == "43 300,56 €"
+      assert PublicShell.amount_in("Dading voor 1.250 EUR", "nl") == "€ 1.250"
     end
 
     test "ignores titles without money" do
-      assert PublicShell.amount_in("Works agreement no. 2026-108") == nil
-      assert PublicShell.amount_in(nil) == nil
+      assert PublicShell.amount_in("Works agreement no. 2026-108", "en") == nil
+      assert PublicShell.amount_in(nil, "en") == nil
+    end
+  end
+
+  describe "topic_of/1" do
+    test "labels by fixed keywords and falls back to a general label" do
+      assert PublicShell.topic_of("Subvention pour un festival") == :topic_subsidy
+      assert PublicShell.topic_of("Settlement agreement with SCOLARES") == :topic_settlement
+      assert PublicShell.topic_of("Designation of a representative") == :topic_general
+      assert PublicShell.topic_of(nil) == :topic_general
     end
   end
 

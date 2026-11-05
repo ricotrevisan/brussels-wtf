@@ -171,7 +171,7 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
         method:
           "Explanations are AI-generated from retained official source evidence; French is the editorial source for machine translations into Dutch and English. A human-reviewed label is used only when a human review actually took place. Citations retain the official location, retrieval date and checksum; original-language excerpts remain source material.",
         outcomes:
-          "An agenda establishes what was scheduled, not what was adopted. When a meeting date passes without a verified final record, its items move to ‘Awaiting documented outcome’. This changes neither their evidence nor their outcome. Dossiers connect continuing matters only when the evidence supports that link.",
+          "An agenda establishes what was scheduled, not what was adopted. When a meeting date passes without a verified final record, its items move to ‘Outcome unknown’. This changes neither their evidence nor their outcome. Dossiers connect continuing matters only when the evidence supports that link.",
         corrections:
           "Use ‘Report an error in this item’ below any published item to send a private correction with its exact context. Reports enter editorial review and never change public facts automatically. Factual corrections update all three languages together and retain dated publication history. Incorrect dossier links can also be reported from the dossier page.",
         retention:

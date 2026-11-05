@@ -229,17 +229,17 @@ defmodule BrusselsWtfWeb.PublicShell do
   @doc "A rule-based topic from fixed keywords, plus any amount quoted in the title."
   def kicker(assigns) do
     ~H"""
-    <p :if={@topic || @amount} class="kicker" data-kicker>
-      <span :if={@topic} class={[topic_icon(@topic), "size-4"]} aria-hidden="true"></span>
-      <span :if={@topic}>{copy(@locale, @topic)}</span>
-      <span :if={@topic && @amount} aria-hidden="true">·</span>
+    <p class="kicker" data-kicker>
+      <span class={[topic_icon(@topic), "size-4"]} aria-hidden="true"></span>
+      <span>{copy(@locale, @topic)}</span>
+      <span :if={@amount} aria-hidden="true">·</span>
       <span :if={@amount} data-amount>{@amount}</span>
     </p>
     """
   end
 
   # First match wins. Keywords cover the official wording in French, Dutch and English;
-  # a title that matches nothing simply has no topic.
+  # a title that matches nothing falls back to the general label.
   @topics [
     {:topic_subsidy, ~r/\b(subsid|subvention|toelage)/iu},
     {:topic_settlement, ~r/\b(settlement|transaction|dading|vaststellingsovereenkomst)/iu},
@@ -253,11 +253,11 @@ defmodule BrusselsWtfWeb.PublicShell do
   def topic_of(title) when is_binary(title) do
     case Enum.find(@topics, fn {_topic, pattern} -> Regex.match?(pattern, title) end) do
       {topic, _pattern} -> topic
-      nil -> nil
+      nil -> :topic_general
     end
   end
 
-  def topic_of(_title), do: nil
+  def topic_of(_title), do: :topic_general
 
   defp topic_icon(:topic_subsidy), do: "hero-banknotes-micro"
   defp topic_icon(:topic_settlement), do: "hero-document-check-micro"
@@ -265,6 +265,7 @@ defmodule BrusselsWtfWeb.PublicShell do
   defp topic_icon(:topic_money), do: "hero-calculator-micro"
   defp topic_icon(:topic_property), do: "hero-building-office-micro"
   defp topic_icon(:topic_staff), do: "hero-users-micro"
+  defp topic_icon(_topic), do: "hero-building-library-micro"
 
   @doc "Empty state for the follows page; CSS hides it once the list has rows."
   def feed_empty(locale) do
@@ -273,15 +274,53 @@ defmodule BrusselsWtfWeb.PublicShell do
     ~s(<p class="callout feed-empty" data-feed-empty>#{copy(locale, :feed_empty)} <a href="#{href}" class="inline-flex min-h-11 items-center font-semibold underline">#{copy(locale, :feed_cta)}</a></p>)
   end
 
-  @doc "The first amount of money quoted verbatim in a title, so rows can be scanned for it."
-  def amount_in(title) when is_binary(title) do
-    case Regex.run(~r/(?:EUR|€)\s?\d[\d .,]*\d|\d[\d .,]*\d\s?(?:EUR|€|euros?)/iu, title) do
-      [amount] -> String.trim(amount)
+  @doc "The first amount quoted in a title, written the same way for every row in a language."
+  def amount_in(title, locale \\ "en")
+
+  def amount_in(title, locale) when is_binary(title) do
+    case Regex.run(~r/(?:EUR|€)\s?(\d[\d .,]*\d)|(\d[\d .,]*\d)\s?(?:EUR|€|euros?)/iu, title) do
+      [_, digits] -> format_amount(digits, locale)
+      [_, "", digits] -> format_amount(digits, locale)
       _ -> nil
     end
   end
 
-  def amount_in(_title), do: nil
+  def amount_in(_title, _locale), do: nil
+
+  defp format_amount(raw, locale) do
+    compact = String.replace(raw, " ", "")
+
+    {whole, cents} =
+      case Regex.run(~r/^(.*)[.,](\d{2})$/, compact) do
+        [_, whole, cents] -> {whole, cents}
+        _ -> {compact, "00"}
+      end
+
+    whole = String.replace(whole, ~r/[.,]/, "")
+
+    grouped =
+      whole
+      |> String.to_charlist()
+      |> Enum.reverse()
+      |> Enum.chunk_every(3)
+      |> Enum.map(&Enum.reverse/1)
+      |> Enum.reverse()
+      |> Enum.join(separator(:group, locale))
+
+    shown = if cents == "00", do: grouped, else: grouped <> separator(:decimal, locale) <> cents
+
+    case locale do
+      "fr" -> shown <> " €"
+      "nl" -> "€ " <> shown
+      _ -> "€" <> shown
+    end
+  end
+
+  defp separator(:group, "fr"), do: " "
+  defp separator(:group, "nl"), do: "."
+  defp separator(:group, _locale), do: ","
+  defp separator(:decimal, "en"), do: "."
+  defp separator(:decimal, _locale), do: ","
 
   defp sections do
     [
@@ -321,13 +360,14 @@ defmodule BrusselsWtfWeb.PublicShell do
         coming: "Coming up",
         awaiting: "Outcome unknown",
         menu: "Menu",
+        topic_general: "Council business",
         topic_subsidy: "Subsidy",
         topic_settlement: "Settlement",
         topic_works: "Public works",
         topic_money: "Public money",
         topic_property: "Property",
         topic_staff: "Staff",
-        contested_one: "Contested",
+        contested_one: "Not unanimous",
         feed_empty:
           "You aren’t following anything yet. Open a list and choose which commune or dossier to follow.",
         feed_cta: "Browse decisions",
@@ -348,13 +388,14 @@ defmodule BrusselsWtfWeb.PublicShell do
         coming: "À venir",
         awaiting: "Résultat inconnu",
         menu: "Menu",
+        topic_general: "Affaires du conseil",
         topic_subsidy: "Subvention",
         topic_settlement: "Transaction",
         topic_works: "Travaux publics",
         topic_money: "Finances publiques",
         topic_property: "Immobilier",
         topic_staff: "Personnel",
-        contested_one: "Contesté",
+        contested_one: "Pas unanime",
         feed_empty:
           "Vous ne suivez encore rien. Ouvrez une liste et choisissez la commune ou le dossier à suivre.",
         feed_cta: "Parcourir les décisions",
@@ -375,13 +416,14 @@ defmodule BrusselsWtfWeb.PublicShell do
         coming: "Binnenkort",
         awaiting: "Uitkomst onbekend",
         menu: "Menu",
+        topic_general: "Raadszaken",
         topic_subsidy: "Subsidie",
         topic_settlement: "Dading",
         topic_works: "Openbare werken",
         topic_money: "Openbare financiën",
         topic_property: "Vastgoed",
         topic_staff: "Personeel",
-        contested_one: "Betwist",
+        contested_one: "Niet unaniem",
         feed_empty:
           "U volgt nog niets. Open een lijst en kies welke gemeente of welk dossier u wilt volgen.",
         feed_cta: "Besluiten bekijken",

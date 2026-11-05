@@ -227,7 +227,7 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
       |> LazyHTML.from_document()
 
     article = document["article#agenda-item-1"] |> LazyHTML.text()
-    assert LazyHTML.text(document["h1"]) =~ "PAGE-FR-TITLE"
+    assert LazyHTML.text(document["main"]) =~ "PAGE-FR-TITLE"
     assert article =~ "Contenu du point indisponible en français"
     refute article =~ "PAGE-FR-SUMMARY"
     refute article =~ "ITEM-EN"
@@ -417,7 +417,7 @@ defmodule BrusselsWtfWeb.PublicTimelineTest do
       document = response |> html_response(200) |> LazyHTML.from_document()
 
       assert get_resp_header(response, "content-language") == [locale]
-      assert LazyHTML.text(document["h1"]) =~ title
+      assert LazyHTML.text(document["main"]) =~ title
 
       assert LazyHTML.attribute(document[~s(link[rel="canonical"])], "href") == [
                "http://localhost:4002/meetings/ixelles/demo-ixelles?lang=#{locale}"

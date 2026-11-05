@@ -236,8 +236,27 @@ defmodule BrusselsWtfWeb.TimelinePage do
       href: "/meetings/#{meeting.commune.slug}/#{meeting.municipal_identifier}?lang=#{locale}",
       total: length(items),
       decided: decided,
-      unknown: length(items) - decided
+      unknown: length(items) - decided,
+      highlight: highlight(items, locale)
     }
+  end
+
+  # The first non-routine agenda item, shown so each meeting card says something of its own.
+  defp highlight(items, locale) do
+    items
+    |> Enum.sort_by(fn item ->
+      case Integer.parse(item.published_item_number || item.item_number || "") do
+        {value, ""} -> value
+        _ -> 1_000_000
+      end
+    end)
+    |> Enum.reject(&BrusselsWtf.Council.PublicTimeline.routine_item?/1)
+    |> Enum.find_value(fn item ->
+      case Enum.find(item.coverage_variants, &(&1.locale == locale)) do
+        nil -> nil
+        variant -> variant.title
+      end
+    end)
   end
 
   defp description_key("/"), do: :home
@@ -294,22 +313,31 @@ defmodule BrusselsWtfWeb.TimelinePage do
 
     <main id="content" class="reader-coverage text-base-content" tabindex="-1">
       <div :if={@homepage?} class="hero-band" data-tracked={@tracked_items}>
-        <div class="site-container py-5 sm:py-10">
-          <h1 id="coverage-title" class="display display-xl measure">{@title}</h1>
-          <p class="measure mt-3 text-base leading-6 sm:text-lg sm:leading-7">
-            {text(@locale, :intro)}
-            <span :if={@tracked_items > 0} class="font-semibold">
-              {tracking_line(@locale, @tracked_meetings, @tracked_items)}
-            </span>
-          </p>
-          <.commune_form
-            communes={@communes}
-            selected={@selected_communes}
-            locale={@locale}
-            path={@resource_path}
-            homepage?={true}
-            contested?={false}
-            q=""
+        <div class="site-container hero-grid py-5 sm:py-10">
+          <div>
+            <h1 id="coverage-title" class="display display-xl measure">{@title}</h1>
+            <p class="measure mt-3 text-base leading-6 sm:text-lg sm:leading-7">
+              {text(@locale, :intro)}
+              <span :if={@tracked_items > 0} class="font-semibold">
+                {tracking_line(@locale, @tracked_meetings, @tracked_items)}
+              </span>
+            </p>
+            <.commune_form
+              communes={@communes}
+              selected={@selected_communes}
+              locale={@locale}
+              path={@resource_path}
+              homepage?={true}
+              contested?={false}
+              q=""
+            />
+          </div>
+          <img
+            src={~p"/images/brand/icon-light.svg"}
+            alt=""
+            class="hero-mark"
+            width="220"
+            height="220"
           />
         </div>
       </div>
@@ -402,6 +430,9 @@ defmodule BrusselsWtfWeb.TimelinePage do
                 <time class="block text-sm" datetime={Date.to_iso8601(row.date)}>
                   {format_date(row.date, @locale)}
                 </time>
+                <span :if={row.highlight} class="card-highlight muted mt-1 text-sm leading-5">
+                  {row.highlight}
+                </span>
                 <span class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
                   <span class="muted">{item_count(row, @locale)}</span>
                   <BrusselsWtfWeb.PublicShell.status
@@ -706,9 +737,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
         </span>
       </label>
       <fieldset>
-        <legend class={["mb-2 text-sm font-semibold", @homepage? && "sr-only sm:not-sr-only"]}>
-          {text(@locale, :communes)}
-        </legend>
+        <legend class="mb-2 text-sm font-semibold">{text(@locale, :communes)}</legend>
         <div class="flex flex-wrap gap-2">
           <label :for={{slug, name} <- @communes} class="chip">
             <input type="checkbox" name="commune[]" value={slug} checked={slug in @selected} />
@@ -779,7 +808,10 @@ defmodule BrusselsWtfWeb.TimelinePage do
   defp timeline_entry(assigns) do
     assigns =
       assigns
-      |> assign(:amount, BrusselsWtfWeb.PublicShell.amount_in(assigns.entry.title))
+      |> assign(
+        :amount,
+        BrusselsWtfWeb.PublicShell.amount_in(assigns.entry.title, assigns.locale)
+      )
       |> assign(:topic, BrusselsWtfWeb.PublicShell.topic_of(assigns.entry.title))
 
     ~H"""
