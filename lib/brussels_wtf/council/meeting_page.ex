@@ -29,6 +29,9 @@ defmodule BrusselsWtf.Council.MeetingPage do
 
       argument :coverage_batch_id, :uuid
 
+      # Names this generation (the publish job) so a later job gets fresh budget keys.
+      argument :generation_ref, :string
+
       run fn input, _context ->
         with :ok <- authorize_generation(input.arguments) do
           case BrusselsWtf.Council.Publication.generate_and_publish(
@@ -36,7 +39,8 @@ defmodule BrusselsWtf.Council.MeetingPage do
                  input.arguments.attempt,
                  input.arguments.max_attempts,
                  input.arguments.generation_kind,
-                 Map.get(input.arguments, :coverage_batch_id)
+                 Map.get(input.arguments, :coverage_batch_id),
+                 generation_ref: Map.get(input.arguments, :generation_ref)
                ) do
             :ok -> {:ok, :ok}
             {:error, _reason} = error -> error

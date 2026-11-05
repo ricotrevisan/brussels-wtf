@@ -5,7 +5,13 @@ defmodule BrusselsWtf.Council.CoverageExecution do
   alias BrusselsWtf.Council.PublicationInput
   alias BrusselsWtf.Processors.Coverage
 
-  def canonical(page, input, metadata, generation_kind, retry) do
+  @doc """
+  Runs or adopts canonical French generation.
+
+  Options: `:reuse?` adopts the newest succeeded run of exactly this call instead of
+  paying for it again, and `:generation_ref` names the generation for budget keys.
+  """
+  def canonical(page, input, metadata, generation_kind, retry, opts \\ []) do
     execute(
       page,
       "fr",
@@ -16,6 +22,7 @@ defmodule BrusselsWtf.Council.CoverageExecution do
       metadata,
       generation_kind,
       retry,
+      opts,
       fn -> Coverage.generate_fr(input) end
     )
   end
@@ -27,7 +34,8 @@ defmodule BrusselsWtf.Council.CoverageExecution do
         locale,
         metadata,
         generation_kind,
-        retry
+        retry,
+        opts \\ []
       )
       when locale in ["nl", "en"] do
     input = %{
@@ -46,6 +54,7 @@ defmodule BrusselsWtf.Council.CoverageExecution do
       metadata,
       generation_kind,
       retry,
+      opts,
       fn -> Coverage.translate(canonical_output, locale) end
     )
   end
@@ -60,6 +69,67 @@ defmodule BrusselsWtf.Council.CoverageExecution do
          metadata,
          generation_kind,
          retry,
+         opts,
+         fun
+       ) do
+    case Keyword.get(opts, :reuse?, false) &&
+           reusable_run(page, operation, locale, parent_run_id, input, method, metadata) do
+      %{} = run ->
+        # Adopting an earlier succeeded run makes no provider call and reserves nothing:
+        # its cost was already charged when it ran. Lineage stays that run's own.
+        {:ok, run.output, run}
+
+      _none ->
+        execute_new(
+          page,
+          locale,
+          operation,
+          parent_run_id,
+          input,
+          method,
+          metadata,
+          generation_kind,
+          retry,
+          Keyword.get(opts, :generation_ref),
+          fun
+        )
+    end
+  end
+
+  defp reusable_run(page, operation, locale, parent_run_id, input, method, metadata) do
+    case Council.find_reusable_coverage_run(%{
+           meeting_page_id: page.id,
+           operation: operation,
+           locale: locale,
+           input_hash: PublicationInput.hash(input),
+           parent_run_id: parent_run_id,
+           processor_name: metadata.processor_name,
+           processor_version: metadata.processor_version,
+           config_hash: metadata.config_hash,
+           provider_category: metadata.provider_category,
+           method: method
+         }) do
+      {:ok, %{} = run} ->
+        if MapSet.new(run.carried_provenance || []) ==
+             MapSet.new(carried_provenance(metadata, operation)),
+           do: run
+
+      _none ->
+        nil
+    end
+  end
+
+  defp execute_new(
+         page,
+         locale,
+         operation,
+         parent_run_id,
+         input,
+         method,
+         metadata,
+         generation_kind,
+         retry,
+         generation_ref,
          fun
        ) do
     with :ok <- BrusselsWtf.Council.GenerationControl.before_call(metadata, generation_kind),
@@ -70,7 +140,8 @@ defmodule BrusselsWtf.Council.CoverageExecution do
              locale,
              input,
              metadata,
-             retry
+             retry,
+             generation_ref
            ) do
       execute_permitted(
         page,

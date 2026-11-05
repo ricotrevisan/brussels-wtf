@@ -73,6 +73,22 @@ Code.eval_file(Application.app_dir(:brussels_wtf, "priv/ops/agenda_to_page_score
 Coverage generation is selected independently of extraction and normalization. `COVERAGE_PROCESSOR=recorded` (the default) uses `RecordedCorpusCoverage` for the sealed historic and September selections. Those contracts match the complete source-backed publication input; source drift fails closed instead of receiving stale prose. `COVERAGE_PROCESSOR=openrouter` selects the network-backed provider described below. Ordinary tests use controlled HTTP responses and make no paid or nondeterministic calls. Selecting OpenRouter does not replace the recorded normalizer or make arbitrary new PDFs supported.
 
 
+### Paid retries and stranded pages
+
+[Issue 159](https://github.com/RicoTrevisan/brussels-wtf/issues/159): in `paid` mode a retry pays only for what failed.
+
+- Before reserving budget, each locale call adopts the newest succeeded run of exactly the same call if that run never reached a publication revision. The match covers page, operation, locale, input hash, parent run, processor name, version and configuration hash, method and carried provenance. An adopted run makes no provider call and reserves nothing; its cost was charged when it ran. The revision cites the adopted runs, so lineage and the gate's run-chain checks are unchanged.
+- A run that was already published is never adopted. Regenerating published input still runs anew.
+- Recorded generation and recorded factual corrections never adopt runs.
+- Each `PublishMeeting` job passes its Oban job id as `generation_ref`. Budget call keys include it, so one job attempt stays idempotent while a later job for the same input gets its own reservations. Before this, a new job found the earlier job's settled reservations and completed without generating.
+- Retries wait 1 and then 4 minutes, so a provider rate limit can clear. The `publish` queue already runs one meeting at a time; the paid processor still sends up to four batch calls per meeting.
+
+To resume a page whose job used up its attempts (for example after the provider account ran out of credit), insert one new job for that meeting once the cause is fixed. It reuses the locales that succeeded and pays for the rest. A successful publication resolves the open publication case.
+
+```bash
+docker exec "$APP" /app/bin/brussels_wtf rpc 'Oban.insert!(BrusselsWtf.Workers.PublishMeeting.new(%{"meeting_id" => "<meeting-uuid>"}))'
+```
+
 ## Runtime generation controls
 
 The application reads these variables when the release starts:

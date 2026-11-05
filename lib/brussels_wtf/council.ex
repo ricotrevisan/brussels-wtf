@@ -99,6 +99,7 @@ defmodule BrusselsWtf.Council do
     resource BrusselsWtf.Council.CoverageRun do
       define :record_coverage_run, action: :record
       define :list_coverage_runs, action: :for_page, args: [:meeting_page_id]
+      define :find_reusable_coverage_run, action: :reusable_success, not_found_error?: false
     end
 
     resource BrusselsWtf.Council.CoverageBudget do
