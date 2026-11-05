@@ -9,13 +9,25 @@ defmodule BrusselsWtf.Council.Headline do
   @max_length 100
   @outcome_words ~r/\b(approuv|adopt|vot[ée]|d[ée]cid|rejet|refus|goedgekeurd|aangenomen|besloten|beslist|verworpen|geweigerd|approved|rejected|decided|voted|passed)/iu
 
+  # "Approval of a settlement" reads as settled, so an undecided item cannot lead with procedure.
+  @procedural_start ~r/^\s*(approval|approve|adoption|adopt|approbation|approuver|goedkeuring|goedkeuren|aanneming)\b/iu
+
+  @doc "True when a translated headline is really the French one, unchanged or nearly so."
+  def untranslated?(headline, french) when is_binary(headline) and is_binary(french) do
+    String.jaro_distance(String.downcase(headline), String.downcase(french)) > 0.88
+  end
+
+  def untranslated?(_headline, _french), do: false
+
   @doc "Returns the trimmed headline, or nil when it fails a check."
   def accept(headline, source_text, decided?) when is_binary(headline) do
     trimmed = String.trim(headline)
 
     if trimmed != "" and String.length(trimmed) <= @max_length and
          numbers_from_source?(trimmed, source_text) and
-         (decided? or not Regex.match?(@outcome_words, trimmed)) do
+         (decided? or
+            not (Regex.match?(@outcome_words, trimmed) or
+                   Regex.match?(@procedural_start, trimmed))) do
       trimmed
     end
   end

@@ -457,12 +457,12 @@ defmodule BrusselsWtf.Council.Publication do
     end
   end
 
-  # A translation that returns the French headline unchanged is not a translation.
+  # A translation that returns the French headline is not a translation.
   defp translated_headline(output, item_key, locale) do
     headline = get_in(output, ["items", item_key, "variants", locale, "headline"])
     french = get_in(output, ["items", item_key, "variants", "fr", "headline"])
 
-    if locale != "fr" and headline == french, do: nil, else: headline
+    if locale != "fr" and Headline.untranslated?(headline, french), do: nil, else: headline
   end
 
   defp headline_source(item) do

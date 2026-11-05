@@ -29,9 +29,34 @@ defmodule BrusselsWtf.Council.HeadlineTest do
       refute Headline.accept(headline, @source, false)
     end
 
-    assert Headline.accept("Goedkeuring van de notulen", @source, false)
-    assert Headline.accept("Approbation du procès-verbal", @source, false)
+    for headline <- [
+          "Approval of a settlement with a company",
+          "Approbation du procès-verbal",
+          "Goedkeuring van de notulen"
+        ] do
+      refute Headline.accept(headline, @source, false)
+      assert Headline.accept(headline, @source, true)
+    end
+
+    assert Headline.accept("Settlement with a company", @source, false)
     assert Headline.accept("Subsidy approved for Pride", @source, true)
+  end
+
+  test "spots a translation that is really the French headline" do
+    french = "Rectification de la date de la décision sur le réaménagement de l'avenue"
+    assert Headline.untranslated?(french, french)
+
+    assert Headline.untranslated?(
+             "Rectification de la date de la décision sur le réaménagement de l'avenue.",
+             french
+           )
+
+    refute Headline.untranslated?(
+             "Correcting the date of the decision on the avenue works",
+             french
+           )
+
+    refute Headline.untranslated?(nil, french)
   end
 
   test "drops blank, missing and overlong headlines" do

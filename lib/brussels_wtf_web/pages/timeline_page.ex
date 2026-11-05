@@ -408,6 +408,11 @@ defmodule BrusselsWtfWeb.TimelinePage do
           </p>
         </div>
 
+        <BrusselsWtfWeb.PublicShell.ai_key
+          :if={Enum.any?(@categories, fn c -> Enum.any?(c.entries, & &1[:headline]) end)}
+          locale={@locale}
+        />
+
         <section :if={@meetings_index?} class="mt-4" data-meeting-index>
           <p :if={@meeting_rows == []} class="callout mt-3">{text(@locale, :none_selected)}</p>
           <ul class="border-t border-base-300">
@@ -533,7 +538,10 @@ defmodule BrusselsWtfWeb.TimelinePage do
               <tbody>
                 <tr :for={row <- @contested_rows} data-commune={row.commune_slug}>
                   <td class="cell-lead">
-                    <a href={row.href} class="entry-title">{row.headline || row.title}</a>
+                    <a href={row.href} class="entry-title">
+                      <BrusselsWtfWeb.PublicShell.ai_mark :if={row.headline} locale={@locale} />{row.headline ||
+                        row.title}
+                    </a>
                   </td>
                   <td data-label={text(@locale, :commune)}>{row.commune}</td>
                   <td data-label={text(@locale, :meeting_date)}>
@@ -731,7 +739,11 @@ defmodule BrusselsWtfWeb.TimelinePage do
       action={@path}
       data-reader-communes
       data-auto-submit
-      class={["mt-5 space-y-3", not @homepage? && "chips-plain"]}
+      class={[
+        "mt-5 space-y-3",
+        not @homepage? && "chips-plain",
+        length(@selected) == length(@communes) && "all-on"
+      ]}
     >
       <input type="hidden" name="lang" value={@locale} />
       <input type="hidden" name="communes_submitted" value="1" />
@@ -832,7 +844,11 @@ defmodule BrusselsWtfWeb.TimelinePage do
     ~H"""
     <article class="entry" data-commune={@entry.commune_slug} data-group={@entry.group}>
       <div class="min-w-0">
-        <BrusselsWtfWeb.PublicShell.kicker topic={@topic} amount={@amount} locale={@locale} />
+        <BrusselsWtfWeb.PublicShell.kicker
+          topic={@topic}
+          amount={if(!@entry[:headline], do: @amount)}
+          locale={@locale}
+        />
         <a href={@entry.href} class={["entry-title", @entry[:headline] && "has-headline"]}>
           <BrusselsWtfWeb.PublicShell.title_parts
             title={@entry.title}
@@ -840,7 +856,10 @@ defmodule BrusselsWtfWeb.TimelinePage do
             locale={@locale}
           />
         </a>
-        <p :if={show_summary?(@entry)} class="entry-summary measure muted mt-1 text-sm leading-5">
+        <p
+          :if={!@entry[:headline] and show_summary?(@entry)}
+          class="entry-summary measure muted mt-1 text-sm leading-5"
+        >
           {@entry.summary}
         </p>
       </div>
@@ -856,8 +875,8 @@ defmodule BrusselsWtfWeb.TimelinePage do
           abstentions={elem(@entry.votes, 2)}
           locale={@locale}
         />
-        <span :if={not @grouped} class="font-medium">{@entry.commune}</span>
-        <span class="muted">
+        <span class="muted w-full">
+          <span :if={not @grouped} class="font-medium">{@entry.commune} · </span>
           <time :if={not @grouped} datetime={Date.to_iso8601(@entry.date)}>
             {format_date(@entry.date, @locale)}
           </time>

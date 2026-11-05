@@ -208,14 +208,8 @@ defmodule BrusselsWtfWeb.PublicShell do
   """
   def title_parts(%{headline: headline} = assigns) when is_binary(headline) do
     ~H"""
-    <span class="title-lead" data-headline>
-      <span
-        class="hero-sparkles-micro ai-mark"
-        role="img"
-        aria-label={copy(@locale, :ai_headline)}
-        title={copy(@locale, :ai_headline)}
-      ></span>
-      {@headline}
+    <span class="title-lead title-hanging" data-headline>
+      <.ai_mark locale={@locale} />{@headline}
     </span>
     <span class="title-official" data-official-title>{@title}</span>
     """
@@ -227,6 +221,31 @@ defmodule BrusselsWtfWeb.PublicShell do
 
     ~H"""
     <span class="title-lead">{@lead}</span>{" "}<span :if={@rest} class="title-rest">{@rest}</span>
+    """
+  end
+
+  attr :locale, :string, required: true
+
+  def ai_mark(assigns) do
+    ~H"""
+    <span
+      class="hero-sparkles-micro ai-mark"
+      role="img"
+      aria-label={copy(@locale, :ai_headline)}
+      title={copy(@locale, :ai_headline)}
+    ></span>
+    """
+  end
+
+  attr :locale, :string, required: true
+
+  @doc "Explains the mark once, wherever AI-written headlines appear."
+  def ai_key(assigns) do
+    ~H"""
+    <p class="ai-key muted" data-ai-key>
+      <span class="hero-sparkles-micro size-4 shrink-0" aria-hidden="true"></span>
+      {copy(@locale, :ai_key)}
+    </p>
     """
   end
 
@@ -398,7 +417,8 @@ defmodule BrusselsWtfWeb.PublicShell do
         coming: "Coming up",
         awaiting: "Outcome unknown",
         menu: "Menu",
-        ai_headline: "Plain-language headline written by AI; the official title is below",
+        ai_headline: "Written by AI",
+        ai_key: "Plain-language headline written by AI. The official title is directly below it.",
         topic_general: "Council business",
         topic_subsidy: "Subsidy",
         topic_settlement: "Settlement",
@@ -428,8 +448,9 @@ defmodule BrusselsWtfWeb.PublicShell do
         coming: "À venir",
         awaiting: "Résultat inconnu",
         menu: "Menu",
-        ai_headline:
-          "Titre en langage courant rédigé par IA ; l’intitulé officiel figure dessous",
+        ai_headline: "Rédigé par IA",
+        ai_key:
+          "Titre en langage courant rédigé par IA. L’intitulé officiel figure juste en dessous.",
         topic_general: "Affaires du conseil",
         topic_subsidy: "Subvention",
         topic_settlement: "Transaction",
@@ -459,7 +480,9 @@ defmodule BrusselsWtfWeb.PublicShell do
         coming: "Binnenkort",
         awaiting: "Uitkomst onbekend",
         menu: "Menu",
-        ai_headline: "Titel in gewone taal, geschreven door AI; de officiële titel staat eronder",
+        ai_headline: "Geschreven door AI",
+        ai_key:
+          "Titel in gewone taal, geschreven door AI. De officiële titel staat er vlak onder.",
         topic_general: "Raadszaken",
         topic_subsidy: "Subsidie",
         topic_settlement: "Dading",

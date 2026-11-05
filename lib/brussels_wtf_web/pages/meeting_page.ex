@@ -136,29 +136,31 @@ defmodule BrusselsWtfWeb.MeetingPage do
             :official_document
           )}
         </a>
-        <span class="muted">
-          {text(@locale, :revision)}
-          <time datetime={DateTime.to_iso8601(@meeting_page.revision_published_at)}>
-            {format_datetime(@meeting_page.revision_published_at, @locale)}
-          </time>
-        </span>
       </div>
 
       <.meeting_stats :if={not @withdrawn and @items != []} items={@items} locale={@locale} />
 
       <details
-        :if={not @withdrawn and Enum.any?(@items, &(display_state(&1) != :decision))}
-        class="disclosure mt-2"
+        :if={not @withdrawn and @meeting_page.revision_published_at}
+        class="disclosure mt-1"
         data-outcome-note
       >
         <summary>
           <span class="hero-information-circle-micro size-4" aria-hidden="true"></span>{text(
             @locale,
-            :agenda_note_title
+            :about_meeting
           )}
           <span class="chevron hero-chevron-down-micro" aria-hidden="true"></span>
         </summary>
-        <p class="disclosure-body measure text-sm leading-6">{text(@locale, :agenda_note)}</p>
+        <div class="disclosure-body measure space-y-2 text-sm leading-6">
+          <p>
+            {text(@locale, :revision)}
+            <time datetime={DateTime.to_iso8601(@meeting_page.revision_published_at)}>
+              {format_datetime(@meeting_page.revision_published_at, @locale)}
+            </time>
+          </p>
+          <p>{text(@locale, :agenda_note)}</p>
+        </div>
       </details>
 
       <section :if={@withdrawn} class="callout callout-unknown mt-6">
@@ -257,6 +259,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
             class="topic-chip"
             data-topic-filter={topic}
           >
+            <span class={[BrusselsWtfWeb.PublicShell.topic_icon(topic), "size-4"]} aria-hidden="true"></span>
             {BrusselsWtfWeb.PublicShell.topic_label(@locale, topic)}
             <span class="muted">{count}</span>
           </button>
@@ -267,6 +270,10 @@ defmodule BrusselsWtfWeb.MeetingPage do
             {text(@locale, :clear_filter)}
           </button>
         </p>
+        <BrusselsWtfWeb.PublicShell.ai_key
+          :if={Enum.any?(@items, &has_headline?(&1, @locale))}
+          locale={@locale}
+        />
         <p
           :if={all_unknown?(@items)}
           class="mt-2 flex flex-wrap items-center gap-2 text-sm"
@@ -372,6 +379,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
           anchor: item.stable_anchor,
           number: public_item_number(item),
           title: (variant && (variant.headline || variant.title)) || item.source_wording,
+          ai_headline?: !!(variant && variant.headline),
           disposition: decision.disposition,
           for: decision.votes_for,
           against: decision.votes_against,
@@ -457,7 +465,10 @@ defmodule BrusselsWtfWeb.MeetingPage do
               <tr :for={row <- @visible} data-vote-status={row.status}>
                 <td data-label="#" class="tabular-nums">{row.number}</td>
                 <td class="cell-lead">
-                  <a href={"#" <> row.anchor} class="entry-title font-medium">{row.title}</a>
+                  <a href={"#" <> row.anchor} class="entry-title font-medium"><BrusselsWtfWeb.PublicShell.ai_mark
+                    :if={row.ai_headline?}
+                    locale={@locale}
+                  />{row.title}</a>
                 </td>
                 <td data-label={text(@locale, :decision)}>
                   {String.capitalize(BrusselsWtfWeb.DispositionLabels.label(@locale, row.disposition))}
@@ -589,15 +600,6 @@ defmodule BrusselsWtfWeb.MeetingPage do
           <span class="agenda-number">
             <span class="sr-only">{text(@locale, :item)}</span>
             {public_item_number(@item)}
-            <span
-              class={[
-                BrusselsWtfWeb.PublicShell.topic_icon(
-                  BrusselsWtfWeb.PublicShell.topic_of(@item.source_wording)
-                ),
-                "agenda-topic size-4"
-              ]}
-              aria-hidden="true"
-            ></span>
           </span>
           <span class="min-w-0">
             <h2 class={["agenda-title", Map.get(@coverage_variant, :headline) && "has-headline"]}>
@@ -795,6 +797,10 @@ defmodule BrusselsWtfWeb.MeetingPage do
     |> Enum.map(&BrusselsWtfWeb.PublicShell.topic_of(&1.source_wording))
     |> Enum.frequencies()
     |> Enum.sort_by(fn {_topic, count} -> -count end)
+  end
+
+  defp has_headline?(item, locale) do
+    Enum.any?(item.coverage_variants, &(&1.locale == locale and &1.headline))
   end
 
   defp all_unknown?(items), do: Enum.all?(items, &(display_state(&1) != :decision))
@@ -1004,7 +1010,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
       official_document: "Official document",
       agenda: "Agenda",
       all_items: "applies to every item below.",
-      agenda_note_title: "What “Outcome unknown” means",
+      about_meeting: "About this meeting",
       agenda_note:
         "An item stays Outcome unknown until an official record of its outcome is attached. Only items the council votes on are published, so numbers can skip.",
       filter_agenda: "Filter this agenda",
@@ -1077,7 +1083,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
       official_document: "Document officiel",
       agenda: "Ordre du jour",
       all_items: "vaut pour tous les points ci-dessous.",
-      agenda_note_title: "Que signifie « Résultat inconnu » ?",
+      about_meeting: "À propos de cette séance",
       agenda_note:
         "Un point reste en Résultat inconnu tant qu’aucun document officiel de son résultat n’est joint. Seuls les points soumis au vote sont publiés, la numérotation peut donc sauter.",
       filter_agenda: "Filtrer cet ordre du jour",
@@ -1149,7 +1155,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
       official_document: "Officieel document",
       agenda: "Agenda",
       all_items: "geldt voor alle punten hieronder.",
-      agenda_note_title: "Wat “Uitkomst onbekend” betekent",
+      about_meeting: "Over deze vergadering",
       agenda_note:
         "Een punt blijft op Uitkomst onbekend staan tot een officieel document van de uitkomst is toegevoegd. Alleen punten waarover de raad stemt worden gepubliceerd, dus nummers kunnen ontbreken.",
       filter_agenda: "Deze agenda filteren",
