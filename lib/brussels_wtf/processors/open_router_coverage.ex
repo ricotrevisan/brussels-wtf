@@ -88,6 +88,7 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverage do
           prompt: @prompt,
           page_prompt: @page_prompt,
           stages: Enum.map(@stages, &Map.new(&1, fn {k, v} -> {to_string(k), v} end)),
+          price_caps: price_caps?(),
           endpoint: @url,
           batch_items: @batch_items,
           batch_input_bytes: @batch_input_bytes,
@@ -143,6 +144,64 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverage do
   end
 
   def maximum_cost(_, _), do: {:error, :unsupported_operation}
+
+  @doc """
+  Reads the remaining OpenRouter credit, in whole US cents rounded down.
+
+  `key_remaining_cents` is the API key's own limit (nil when the key has none);
+  `account_remaining_cents` is the account balance shared by every key. Both
+  endpoints accept the ordinary inference key and cost nothing.
+  """
+  @spec credit_balance() ::
+          {:ok, %{key_remaining_cents: integer() | nil, account_remaining_cents: integer()}}
+          | {:error, atom()}
+  def credit_balance do
+    with {:ok, key} <- credential(),
+         {:ok, %{"data" => key_data}} when is_map(key_data) <-
+           get_json("https://openrouter.ai/api/v1/key", key),
+         {:ok, %{"data" => %{"total_credits" => total, "total_usage" => used}}}
+         when is_number(total) and is_number(used) <-
+           get_json("https://openrouter.ai/api/v1/credits", key) do
+      key_remaining =
+        case key_data["limit_remaining"] do
+          value when is_number(value) -> cents_down(value)
+          _none -> nil
+        end
+
+      {:ok,
+       %{key_remaining_cents: key_remaining, account_remaining_cents: cents_down(total - used)}}
+    else
+      {:error, :missing_api_key} -> {:error, :missing_api_key}
+      _other -> {:error, :credit_balance_unavailable}
+    end
+  end
+
+  defp get_json(url, key) do
+    [
+      url: url,
+      headers: [{"authorization", "Bearer " <> key}],
+      retry: false,
+      redirect: false,
+      receive_timeout: 10_000,
+      connect_options: [timeout: 5_000]
+    ]
+    |> Keyword.merge(Keyword.take(Keyword.get(config(), :req_options, []), [:plug]))
+    |> then(fn opts ->
+      case config()[:plug] do
+        nil -> opts
+        plug -> Keyword.put(opts, :plug, plug)
+      end
+    end)
+    |> Req.get()
+    |> case do
+      {:ok, %Req.Response{status: 200, body: body}} when is_map(body) -> {:ok, body}
+      _other -> {:error, :credit_balance_unavailable}
+    end
+  rescue
+    _ -> {:error, :credit_balance_unavailable}
+  end
+
+  defp cents_down(usd), do: floor(usd * 100)
 
   def validate_configuration! do
     case credential() do
@@ -348,14 +407,10 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverage do
         "type" => "json_schema",
         "json_schema" => %{"name" => "coverage", "strict" => true, "schema" => schema}
       },
-      # Throughput order within the hard price cap: the cheapest measured endpoint
-      # ran about 4x slower and timed out on full batches.
-      "provider" => %{
-        "max_price" => max_price(stage),
-        "sort" => "throughput",
-        "require_parameters" => true,
-        "data_collection" => "deny"
-      },
+      # Throughput order: the cheapest measured endpoint ran about 4x slower and
+      # timed out on full batches. Prices are capped per stage only while a monthly
+      # app limit is configured; otherwise the account limits are the ceiling (ADR 0007).
+      "provider" => provider_preferences(stage),
       "messages" => [
         %{"role" => "system", "content" => system},
         %{"role" => "user", "content" => data}
@@ -420,6 +475,15 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverage do
       "additionalProperties" => false
     }
   end
+
+  defp provider_preferences(stage) do
+    base = %{"sort" => "throughput", "require_parameters" => true, "data_collection" => "deny"}
+    if price_caps?(), do: Map.put(base, "max_price", max_price(stage)), else: base
+  end
+
+  # Per-stage price caps keep a hard monthly limit sound: a call can never cost more
+  # than its reservation. Without a monthly limit nothing needs that guarantee.
+  defp price_caps?, do: not is_nil(BrusselsWtf.Council.GenerationControl.monthly_limit_cents())
 
   defp max_price(stage),
     do: %{
@@ -762,6 +826,12 @@ defmodule BrusselsWtf.Processors.OpenRouterCoverage do
     case Req.post(opts) do
       {:ok, %Req.Response{status: 200, body: body}} ->
         decode(body, validate, model)
+
+      # 402: the account or key has no credit left. OpenRouter bills nothing for a
+      # refused request, so the stage costs zero rather than its upper bound.
+      {:ok, %Req.Response{status: 402, body: body}} ->
+        {:error, {:provider_http_error, %{http_status: 402, retryable: false}},
+         Map.put(error_usage(body), "cost_microusd", 0)}
 
       {:ok, %Req.Response{status: status, body: body}} ->
         {:error,

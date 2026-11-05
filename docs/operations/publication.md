@@ -96,7 +96,9 @@ The application reads these variables when the release starts:
 - `COVERAGE_GENERATION_MODE`: `disabled`, `recorded`, or `paid`. The current default is `recorded` so the hash-pinned Ixelles contract remains available. Invalid values stop startup.
 - `BACKFILL_GENERATION_ENABLED`: strict `true` or `false`, default `false`.
 - `COVERAGE_BACKFILL_MAX_BATCH_SIZE`: positive meeting count, default `10`.
-- `COVERAGE_MONTHLY_BUDGET_CENTS`: required positive integer only in `paid` mode. It is rejected in the other modes.
+- `COVERAGE_MONTHLY_BUDGET_CENTS`: optional positive integer, accepted only in `paid` mode. Unset (production since 2026-11-05) means no app-side limit and no per-stage price caps; the OpenRouter account and key limits are the ceiling ([ADR 0007](../adr/0007-uncapped-paid-coverage.md)).
+- `OPENROUTER_LOW_CREDIT_CENTS`: optional, default 500. Below it the credit check alerts Rico.
+- `DRUMMER_WEBHOOK_URL` and `DRUMMER_WEBHOOK_SECRET`: Drummer's `brussels-wtf-alerts` route on `openclaw` (Tailscale, port 8644). Without them alerts are only logged.
 
 `disabled` still permits polling, retrieval, extraction, OCR, and normalization. Coverage jobs finish without calling processor metadata or a provider, pages remain private, and no publication review case is opened merely because generation is off.
 
@@ -111,6 +113,24 @@ Workers re-read the effective policy immediately before canonical French generat
 A paid call must obtain a PostgreSQL reservation before provider use. The guarded update admits the call only when current spend plus outstanding reservations plus the conservative maximum charge for the capped request fits within the UTC calendar-month limit. Calls denied by the budget make no network request and do not flood the review inbox.
 
 After a call, the reservation stores provider, model, meeting page, publication-input hash, operation, locale, retry, usage, and final cost when available. If final cost is unknown, the conservative maximum is charged. A transient reconciliation failure leaves the reservation held, blocks publication, and queues a durable reconciliation retry on the `publish` queue. If queuing fails, the original publication job fails so Oban retries it; exhausted reconciliation retries persist `reconciliation_failed` on the reservation and poison the month. If a provider reports a charge above its declared maximum, the reservation records `reconciliation_failed`, links the coverage run and usage, and holds the rest of that month's budget so no later paid call can be admitted. A paid adapter must cap provider output and calculate the upper bound before it can be enabled. A limit already persisted for the current month cannot be changed by restarting the release with another value.
+
+With no monthly limit the same reservation and settlement run as a ledger: the estimate is reserved, nothing is refused for budget, and the call settles at its actual cost even above the estimate.
+
+## Provider credit alerts
+
+`BrusselsWtf.Workers.CheckProviderCredit` runs at minute 17 of every hour and right after a 402. It reads the key limit (`GET /api/v1/key`) and the account balance (`GET /api/v1/credits`) and uses the lower of the two. It records each reading in `provider_credit_checks` and posts to Discord #brussels-wtf through Drummer once per change:
+
+- **low:** under `OPENROUTER_LOW_CREDIT_CENTS`;
+- **exhausted:** zero or less, or any 402;
+- **back:** credit above the threshold again. It then queues one `PublishMeeting` job for each page whose open publication case has classification `provider_credit_exhausted`.
+
+A 402 opens that case on the first attempt ("Coverage provider is out of credit; publishing resumes when credit returns") and is charged zero. Run a check by hand:
+
+```bash
+docker exec "$APP" /app/bin/brussels_wtf rpc 'IO.inspect(BrusselsWtf.ProviderCredit.check("manual"))'
+```
+
+The Drummer route is a `deliver_only` Hermes webhook (`hermes webhook subscribe brussels-wtf-alerts --deliver discord --deliver-only`), so alerts cost no model tokens. Requests use the generic HMAC V2 signature.
 
 ## Historical coverage batches
 
@@ -203,7 +223,8 @@ This implementation is not evidence of a deployment or a model-quality acceptanc
 - `COVERAGE_PROCESSOR=openrouter`
 - `OPENROUTER_API_KEY`: secret value from **Dev → openrouter → brussels-wtf-prod** (not the dev field)
 - `COVERAGE_GENERATION_MODE=paid`
-- `COVERAGE_MONTHLY_BUDGET_CENTS`: the operator-approved positive USD-cent ceiling; **no production default**
+- `COVERAGE_MONTHLY_BUDGET_CENTS`: unset (no app-side limit, ADR 0007), or an operator-approved positive USD-cent ceiling
+- `DRUMMER_WEBHOOK_URL`, `DRUMMER_WEBHOOK_SECRET`: credit alerts
 - `BACKFILL_GENERATION_ENABLED=false`
 
 Inspect queued publication work before switching modes. Provider activation does not authorize replaying a historical backlog or publishing unsupported new sources. Keep the existing recorded normalizer, evidence gates and all-locale publication transaction intact. Disable generation with `COVERAGE_GENERATION_MODE=disabled` and `BACKFILL_GENERATION_ENABLED=false`, remove `COVERAGE_MONTHLY_BUDGET_CENTS` (it is valid only in paid mode), and restart. Returning to recorded mode also requires `COVERAGE_PROCESSOR=recorded` and removal of the paid-only budget setting. Prior public revisions remain preserved.

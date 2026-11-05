@@ -340,6 +340,25 @@ defmodule BrusselsWtf.Council.OpenRouterPublicationTest do
              Review.list_review_cases!(%{kind: :publication}, actor: @reviewer)
   end
 
+  test "a 402 reports once without burning retries and asks for a credit check", ctx do
+    generation(:paid)
+    stub_provider(payment_required: "fr")
+
+    assert :ok = Council.generate_meeting_coverage!(ctx.meeting.id, 1, 3)
+    assert Council.get_meeting_page!(ctx.page.id).publication_status == :draft
+
+    assert [review_case] = Review.list_review_cases!(%{kind: :publication}, actor: @reviewer)
+    assert review_case.diagnostics["classification"] == "provider_credit_exhausted"
+    assert review_case.summary =~ "out of credit"
+
+    assert_enqueued worker: BrusselsWtf.Workers.CheckProviderCredit,
+                    args: %{trigger: "payment_required"}
+
+    # Nothing was billed for the refused call.
+    assert [reservation] = Ash.read!(CoverageReservation, domain: Council)
+    assert reservation.charged_cents == 0
+  end
+
   defp generation(mode) do
     Application.put_env(:brussels_wtf, :coverage_generation, %{
       mode: mode,
@@ -427,6 +446,11 @@ defmodule BrusselsWtf.Council.OpenRouterPublicationTest do
 
         opts[:rate_limited] == locale ->
           Plug.Conn.send_resp(conn, 429, "rate limited")
+
+        opts[:payment_required] == locale ->
+          conn
+          |> Plug.Conn.put_status(402)
+          |> Req.Test.json(%{"error" => %{"code" => 402, "message" => "Insufficient credits"}})
 
         opts[:fail] == {locale, n} ->
           reply(

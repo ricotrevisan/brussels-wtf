@@ -23,6 +23,11 @@ defmodule BrusselsWtf.Council.Publication do
     unsupported_locale
   )
 
+  @credit_exhausted "provider_credit_exhausted"
+
+  @doc "The failure classification of a paid call refused for lack of provider credit."
+  def credit_exhausted_classification, do: @credit_exhausted
+
   def generate_and_publish(
         meeting_id,
         attempt \\ 1,
@@ -543,11 +548,20 @@ defmodule BrusselsWtf.Council.Publication do
          attempt,
          max_attempts
        ) do
-    if attempt >= max_attempts or failure.classification in @deterministic_failures do
-      report_processor_failure(meeting, input, metadata, failure, attempt)
-      :ok
-    else
-      {:error, :coverage_processor_failed}
+    cond do
+      # Retrying cannot help until credit returns; the credit check alerts Rico and
+      # re-queues this page once the provider accepts calls again.
+      failure.classification == @credit_exhausted ->
+        report_processor_failure(meeting, input, metadata, failure, attempt)
+        BrusselsWtf.ProviderCredit.request_check("payment_required")
+        :ok
+
+      attempt >= max_attempts or failure.classification in @deterministic_failures ->
+        report_processor_failure(meeting, input, metadata, failure, attempt)
+        :ok
+
+      true ->
+        {:error, :coverage_processor_failed}
     end
   end
 
@@ -589,10 +603,16 @@ defmodule BrusselsWtf.Council.Publication do
       processing_generation: "#{input_hash}:#{metadata.config_hash}",
       urgency: :high,
       summary:
-        if(failure.classification in @deterministic_failures,
-          do: "Coverage processor failed; a retry cannot change the result",
-          else: "Coverage processor failed after bounded retries"
-        ),
+        cond do
+          failure.classification == @credit_exhausted ->
+            "Coverage provider is out of credit; publishing resumes when credit returns"
+
+          failure.classification in @deterministic_failures ->
+            "Coverage processor failed; a retry cannot change the result"
+
+          true ->
+            "Coverage processor failed after bounded retries"
+        end,
       normalized_content: input,
       diagnostics: %{
         "classification" => failure.classification,

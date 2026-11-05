@@ -451,6 +451,11 @@ defmodule BrusselsWtf.Council.CoverageExecution do
   defp safe_detail(value) when is_atom(value), do: Atom.to_string(value)
   defp safe_detail(_value), do: "redacted"
 
+  # Out of provider credit: not a content failure and not worth a blind retry. The
+  # publication path reports it once and the credit check resumes the page.
+  defp classify_failure({:provider_http_error, %{http_status: 402}}),
+    do: "provider_credit_exhausted"
+
   defp classify_failure(reason) when is_atom(reason), do: Atom.to_string(reason)
   defp classify_failure({kind, _details}) when is_atom(kind), do: Atom.to_string(kind)
   defp classify_failure(_reason), do: "coverage_processor_failure"

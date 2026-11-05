@@ -1,9 +1,13 @@
 defmodule BrusselsWtf.Council.CoverageBudget do
   @moduledoc """
-  The persisted hard spending limit for one UTC calendar month.
+  The persisted paid-coverage ledger for one UTC calendar month.
 
-  Creating the month is idempotent only when the requested limit matches the
-  stored limit. A restart cannot reset counters or silently change the limit.
+  With a configured limit it is a hard spending limit: creating the month is
+  idempotent only when the requested limit matches the stored limit, so a restart
+  cannot reset counters or silently change it. With no limit (`nil`) the month is a
+  ledger only: every call still reserves and settles, but nothing is refused here and
+  a call settles at its actual cost even above its estimate. The provider account's
+  own limits are then the ceiling (ADR 0007).
   """
 
   use Ash.Resource,
@@ -34,8 +38,9 @@ defmodule BrusselsWtf.Council.CoverageBudget do
     uuid_v7_primary_key :id
     attribute :period_start, :date, allow_nil?: false, public?: true
 
+    # nil: no app-side limit; the month only records spend.
     attribute :hard_limit_cents, :integer,
-      allow_nil?: false,
+      allow_nil?: true,
       public?: true,
       constraints: [min: 1]
 
@@ -76,7 +81,7 @@ defmodule BrusselsWtf.Council.CoverageBudget do
           required(:estimated_cost_cents) => pos_integer()
         }
 
-  @spec reserve(reservation_attrs(), pos_integer(), DateTime.t() | Date.t()) ::
+  @spec reserve(reservation_attrs(), pos_integer() | nil, DateTime.t() | Date.t()) ::
           {:ok, BrusselsWtf.Council.CoverageReservation.t()}
           | {:error,
              :budget_exhausted
@@ -90,7 +95,7 @@ defmodule BrusselsWtf.Council.CoverageBudget do
     end
   end
 
-  @spec reserve_for_execution(reservation_attrs(), pos_integer(), DateTime.t() | Date.t()) ::
+  @spec reserve_for_execution(reservation_attrs(), pos_integer() | nil, DateTime.t() | Date.t()) ::
           {:ok, BrusselsWtf.Council.CoverageReservation.t(), :new | :existing}
           | {:error,
              :budget_exhausted
@@ -98,7 +103,9 @@ defmodule BrusselsWtf.Council.CoverageBudget do
              | :reservation_conflict
              | :budget_unavailable}
   def reserve_for_execution(attrs, monthly_limit_cents, now)
-      when is_map(attrs) and is_integer(monthly_limit_cents) and monthly_limit_cents > 0 do
+      when is_map(attrs) and
+             (is_nil(monthly_limit_cents) or
+                (is_integer(monthly_limit_cents) and monthly_limit_cents > 0)) do
     estimated_cost_cents = Map.get(attrs, :estimated_cost_cents)
 
     if is_integer(estimated_cost_cents) and estimated_cost_cents > 0 do
@@ -181,9 +188,10 @@ defmodule BrusselsWtf.Council.CoverageBudget do
 
   def reconcile(_reservation_id, _attrs), do: {:error, :budget_unavailable}
 
-  @spec ensure_month(pos_integer(), DateTime.t() | Date.t()) ::
+  @spec ensure_month(pos_integer() | nil, DateTime.t() | Date.t()) ::
           {:ok, t()} | {:error, :budget_limit_mismatch | :budget_unavailable}
-  def ensure_month(limit_cents, now) when is_integer(limit_cents) and limit_cents > 0 do
+  def ensure_month(limit_cents, now)
+      when is_nil(limit_cents) or (is_integer(limit_cents) and limit_cents > 0) do
     period_start = period_start(now)
 
     case Repo.transaction(fn -> ensure_month_in_transaction(period_start, limit_cents) end) do
@@ -198,7 +206,7 @@ defmodule BrusselsWtf.Council.CoverageBudget do
 
   def ensure_month(_limit_cents, _now), do: {:error, :budget_unavailable}
 
-  @spec ensure_month!(pos_integer(), DateTime.t() | Date.t()) :: t()
+  @spec ensure_month!(pos_integer() | nil, DateTime.t() | Date.t()) :: t()
   def ensure_month!(limit_cents, now) do
     case ensure_month(limit_cents, now) do
       {:ok, budget} -> budget
@@ -219,10 +227,22 @@ defmodule BrusselsWtf.Council.CoverageBudget do
 
     budget = Council.get_coverage_budget_by_period!(period_start)
 
-    if budget.hard_limit_cents == limit_cents do
-      budget
-    else
-      Repo.rollback(:budget_limit_mismatch)
+    cond do
+      budget.hard_limit_cents == limit_cents ->
+        budget
+
+      # The operator removed the app-side limit: this month becomes a ledger. Lifting
+      # a limit can only admit more work, never hide spend already recorded.
+      is_nil(limit_cents) ->
+        Repo.query!(
+          "UPDATE coverage_budgets SET hard_limit_cents = NULL, updated_at = timezone('utc', now()) WHERE id = $1",
+          [Ecto.UUID.dump!(budget.id)]
+        )
+
+        Council.get_coverage_budget_by_period!(period_start)
+
+      true ->
+        Repo.rollback(:budget_limit_mismatch)
     end
   end
 
@@ -259,7 +279,8 @@ defmodule BrusselsWtf.Council.CoverageBudget do
                      (is_integer(final_cost_cents) and final_cost_cents >= 0)) ->
               Repo.rollback(:invalid_final_cost)
 
-            is_integer(final_cost_cents) and final_cost_cents > reservation.reserved_cents ->
+            is_integer(final_cost_cents) and final_cost_cents > reservation.reserved_cents and
+                limited?(reservation.coverage_budget_id) ->
               poison_budget(reservation)
 
               Ash.update!(
@@ -311,7 +332,13 @@ defmodule BrusselsWtf.Council.CoverageBudget do
     if result.num_rows == 1, do: :locked, else: :missing
   end
 
+  # A ledger-only month refuses nothing, so there is no limit to freeze: the
+  # reservation's own failed status records the uncertain cost.
   defp poison_budget(reservation) do
+    if limited?(reservation.coverage_budget_id), do: poison_limited_budget(reservation)
+  end
+
+  defp poison_limited_budget(reservation) do
     result =
       Repo.query!(
         """
@@ -335,14 +362,14 @@ defmodule BrusselsWtf.Council.CoverageBudget do
         UPDATE coverage_budgets
         SET reserved_cents =
               CASE
-                WHEN poisoned_at IS NULL THEN reserved_cents - $1
+                WHEN poisoned_at IS NULL OR hard_limit_cents IS NULL THEN reserved_cents - $1
                 ELSE hard_limit_cents - (spent_cents + $2)
               END,
             spent_cents = spent_cents + $2,
             updated_at = timezone('utc', now())
         WHERE id = $3
           AND reserved_cents >= $1
-          AND spent_cents + $2 <= hard_limit_cents
+          AND (hard_limit_cents IS NULL OR spent_cents + $2 <= hard_limit_cents)
         """,
         [
           reservation.reserved_cents,
@@ -536,12 +563,21 @@ defmodule BrusselsWtf.Council.CoverageBudget do
             updated_at = timezone('utc', now())
         WHERE id = $2
           AND poisoned_at IS NULL
-          AND spent_cents + reserved_cents + $1 <= hard_limit_cents
+          AND (hard_limit_cents IS NULL OR spent_cents + reserved_cents + $1 <= hard_limit_cents)
         """,
         [estimated_cost_cents, Ecto.UUID.dump!(budget_id)]
       )
 
     if result.num_rows == 1, do: :ok, else: :exhausted
+  end
+
+  defp limited?(budget_id) do
+    %{rows: [[limit]]} =
+      Repo.query!("SELECT hard_limit_cents FROM coverage_budgets WHERE id = $1", [
+        Ecto.UUID.dump!(budget_id)
+      ])
+
+    not is_nil(limit)
   end
 
   defp period_start(%DateTime{} = now) do
