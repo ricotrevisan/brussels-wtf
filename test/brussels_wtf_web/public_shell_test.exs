@@ -60,6 +60,15 @@ defmodule BrusselsWtfWeb.PublicShellTest do
       assert PublicShell.topic_of("Subvention pour un festival") == :topic_subsidy
       assert PublicShell.topic_of("Settlement agreement with SCOLARES") == :topic_settlement
       assert PublicShell.topic_of("Designation of a representative") == :topic_general
+
+      assert PublicShell.topic_of("Marché public de fournitures – acquisition de poubelles") ==
+               :topic_contract
+
+      assert PublicShell.topic_of("Marché public de travaux n° 2026-311") == :topic_works
+
+      assert PublicShell.topic_of("Convention d'occupation dans le cadre de Tax on Web") ==
+               :topic_property
+
       assert PublicShell.topic_of(nil) == :topic_general
     end
   end

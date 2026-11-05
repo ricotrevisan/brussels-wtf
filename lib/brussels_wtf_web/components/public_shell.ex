@@ -254,11 +254,15 @@ defmodule BrusselsWtfWeb.PublicShell do
   @topics [
     {:topic_subsidy, ~r/\b(subsid|subvention|toelage)/iu},
     {:topic_settlement, ~r/\b(settlement|transaction|dading|vaststellingsovereenkomst)/iu},
+    {:topic_property,
+     ~r/convention d.occupation|occupancy agreement|gebruiksovereenkomst|\bbail\b|\blease\b|huurovereenkomst/iu},
     {:topic_works,
-     ~r/\b(travaux|works?\b|werken\b|aménagement|renovation|rénovation|renovatie)/iu},
-    {:topic_money, ~r/\b(budget|compte de l|financial year|jaarrekening|taxe|tax\b|belasting)/iu},
-    {:topic_property, ~r/\b(occupation|occupancy|bail\b|lease|huur|immeuble|acquisition)/iu},
-    {:topic_staff, ~r/\b(personnel|staff|personeel|règlement de travail|arbeidsreglement)/iu}
+     ~r/march[ée]s? (publics? )?de travaux|works contract|overheidsopdracht(en)? voor werken|r[ée]novation|renovatie/iu},
+    {:topic_contract,
+     ~r/march[ée] public\b|march[ée]s? de (services|fournitures)|public (service |supply )?contract|public procurement|overheidsopdracht/iu},
+    {:topic_money,
+     ~r/\bbudget|compte de l.exercice|financial year account|jaarrekening|\btaxes?\b|\bbelasting/iu},
+    {:topic_staff, ~r/règlement de travail|staff regulations|arbeidsreglement/iu}
   ]
 
   def topic_of(title) when is_binary(title) do
@@ -275,6 +279,7 @@ defmodule BrusselsWtfWeb.PublicShell do
   def topic_icon(:topic_subsidy), do: "hero-banknotes-micro"
   def topic_icon(:topic_settlement), do: "hero-document-check-micro"
   def topic_icon(:topic_works), do: "hero-wrench-screwdriver-micro"
+  def topic_icon(:topic_contract), do: "hero-clipboard-document-list-micro"
   def topic_icon(:topic_money), do: "hero-calculator-micro"
   def topic_icon(:topic_property), do: "hero-building-office-micro"
   def topic_icon(:topic_staff), do: "hero-users-micro"
@@ -377,6 +382,7 @@ defmodule BrusselsWtfWeb.PublicShell do
         topic_subsidy: "Subsidy",
         topic_settlement: "Settlement",
         topic_works: "Public works",
+        topic_contract: "Public contract",
         topic_money: "Public money",
         topic_property: "Property",
         topic_staff: "Staff",
@@ -405,6 +411,7 @@ defmodule BrusselsWtfWeb.PublicShell do
         topic_subsidy: "Subvention",
         topic_settlement: "Transaction",
         topic_works: "Travaux publics",
+        topic_contract: "Marché public",
         topic_money: "Finances publiques",
         topic_property: "Immobilier",
         topic_staff: "Personnel",
@@ -433,6 +440,7 @@ defmodule BrusselsWtfWeb.PublicShell do
         topic_subsidy: "Subsidie",
         topic_settlement: "Dading",
         topic_works: "Openbare werken",
+        topic_contract: "Overheidsopdracht",
         topic_money: "Openbare financiën",
         topic_property: "Vastgoed",
         topic_staff: "Personeel",

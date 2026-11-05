@@ -100,7 +100,7 @@
 /* Make LiveView wrapper divs transparent for layout */
 [data-phx-session], [data-phx-teleported-src] { display: contents }
 
-@source inline("hero-calendar-days hero-calendar-days-micro hero-clock hero-clock-micro hero-scale hero-scale-micro hero-check-circle hero-check-circle-micro hero-x-circle hero-x-circle-micro hero-pause-circle hero-pause-circle-micro hero-minus-circle hero-minus-circle-micro hero-banknotes-micro hero-document-check-micro hero-wrench-screwdriver-micro hero-calculator-micro hero-building-office-micro hero-users-micro hero-sparkles-micro hero-language-micro hero-user-micro");
+@source inline("hero-calendar-days hero-calendar-days-micro hero-clock hero-clock-micro hero-scale hero-scale-micro hero-check-circle hero-check-circle-micro hero-x-circle hero-x-circle-micro hero-pause-circle hero-pause-circle-micro hero-minus-circle hero-minus-circle-micro hero-banknotes-micro hero-document-check-micro hero-wrench-screwdriver-micro hero-clipboard-document-list-micro hero-building-library-micro hero-calculator-micro hero-building-office-micro hero-users-micro hero-sparkles-micro hero-language-micro hero-user-micro");
 
 /* Self-hosted, SIL OFL licensed. Anton echoes the condensed wordmark; Public Sans carries reading. */
 @font-face { font-family: "Anton"; src: url("/fonts/anton-latin-400-normal.woff2") format("woff2"); font-weight: 400; font-display: swap; unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }

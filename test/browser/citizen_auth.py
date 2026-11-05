@@ -9,7 +9,7 @@ with sync_playwright() as pw:
   page.add_init_script("localStorage.setItem('brussels.wtf:personal-feed:v1', JSON.stringify({follows:[{type:'commune',id:'ixelles',label:'Ixelles'},{type:'dossier',id:'not-selected',label:'Do not import'}],notifications:[]}))")
   page.goto(a.base+"/citizen/sign-in?lang=en")
   before={c["name"]:c["value"] for c in page.context.cookies()}.get("_brussels_wtf_key")
-  page.get_by_label("Email").fill("browser@example.test"); page.get_by_role("button",name="Send magic link").click()
+  page.get_by_label("Email").fill("browser@example.test"); page.get_by_role("button",name="Email me a sign-in link").click()
   assert "If the address is valid" in page.locator("body").inner_text(); assert "browser@example.test" not in page.content()
   mail=json.loads(Path(a.mail).read_text()); link=mail["token"]; token=link.split("#token=",1)[1]
   seen=[]; page.on("request", lambda request: seen.append(request.url))
