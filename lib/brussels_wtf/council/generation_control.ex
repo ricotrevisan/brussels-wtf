@@ -127,11 +127,19 @@ defmodule BrusselsWtf.Council.GenerationControl do
     end
   end
 
-  @spec reserve_call(map(), atom(), String.t(), map(), map(), pos_integer()) ::
+  @doc """
+  Reserves budget for one paid call before the provider is contacted.
+
+  The call key identifies one attempt of one generation. `generation_ref` names the
+  generation (for example the publish job), so the same job attempt stays idempotent
+  while a later job for the same input gets its own reservation instead of finding the
+  earlier job's settled one and silently skipping.
+  """
+  @spec reserve_call(map(), atom(), String.t(), map(), map(), pos_integer(), String.t() | nil) ::
           {:ok, nil | BrusselsWtf.Council.CoverageReservation.t()}
           | {:defer, atom()}
           | {:error, atom()}
-  def reserve_call(page, operation, locale, input, metadata, retry) do
+  def reserve_call(page, operation, locale, input, metadata, retry, generation_ref \\ nil) do
     config = Application.fetch_env!(:brussels_wtf, :coverage_generation)
 
     case config.mode do
@@ -147,7 +155,7 @@ defmodule BrusselsWtf.Council.GenerationControl do
           provider: metadata.provider_category,
           model: metadata.model,
           retry: retry,
-          call_key: call_key(page, operation, locale, input, metadata, retry)
+          call_key: call_key(page, operation, locale, input, metadata, retry, generation_ref)
         }
 
         case BrusselsWtf.Council.CoverageBudget.unresolved_for_call(call_attrs) do
@@ -297,8 +305,8 @@ defmodule BrusselsWtf.Council.GenerationControl do
     end
   end
 
-  defp call_key(page, operation, locale, input, metadata, retry) do
-    BrusselsWtf.Council.PublicationInput.hash(%{
+  defp call_key(page, operation, locale, input, metadata, retry, generation_ref) do
+    %{
       "meeting_page_id" => page.id,
       "operation" => to_string(operation),
       "locale" => locale,
@@ -307,7 +315,10 @@ defmodule BrusselsWtf.Council.GenerationControl do
       "processor_version" => metadata.processor_version,
       "config_hash" => metadata.config_hash,
       "retry" => retry
-    })
+    }
+    # Without a reference the key keeps its original shape.
+    |> then(&if(generation_ref, do: Map.put(&1, "generation", generation_ref), else: &1))
+    |> BrusselsWtf.Council.PublicationInput.hash()
   end
 
   defp parse_mode(value) when value in [nil, "", "recorded"], do: :recorded

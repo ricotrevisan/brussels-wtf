@@ -28,7 +28,8 @@ defmodule BrusselsWtf.Council.Publication do
         attempt \\ 1,
         max_attempts \\ 3,
         generation_kind \\ :automatic,
-        coverage_batch_id \\ nil
+        coverage_batch_id \\ nil,
+        opts \\ []
       ) do
     case BrusselsWtf.Council.GenerationControl.preflight(generation_kind) do
       :ok ->
@@ -42,7 +43,9 @@ defmodule BrusselsWtf.Council.Publication do
               attempt,
               max_attempts,
               generation_kind,
-              coverage_batch_id
+              coverage_batch_id,
+              generation_ref: Keyword.get(opts, :generation_ref),
+              reuse?: reuse_runs?()
             )
 
           {:defer, _reason} ->
@@ -178,27 +181,54 @@ defmodule BrusselsWtf.Council.Publication do
     end
   end
 
+  @doc """
+  Whether a generation may adopt earlier succeeded runs of exactly the same call.
+
+  Only paid generation does: a repeated paid call costs money and asks for the same
+  output, so a retry after a rate limit pays only for the locale that failed.
+  Recorded and correction generation always run, so their provenance stays exact.
+  """
+  def reuse_runs?, do: BrusselsWtf.Council.GenerationControl.mode() == :paid
+
   defp execute_generation(
          meeting_id,
          metadata,
          attempt,
          max_attempts,
          generation_kind,
-         coverage_batch_id
+         coverage_batch_id,
+         execution_opts
        ) do
     {meeting, input} =
       meeting_id |> load_meeting() |> PublicationScope.for_batch!(coverage_batch_id)
 
-    result = generate_revision(meeting, input, metadata, generation_kind, attempt, nil)
+    result =
+      generate_revision(meeting, input, metadata, generation_kind, attempt, nil, execution_opts)
+
     handle_result(result, meeting, input, metadata, attempt, max_attempts)
   end
 
-  defp generate_revision(meeting, input, metadata, generation_kind, attempt, correction) do
+  defp generate_revision(
+         meeting,
+         input,
+         metadata,
+         generation_kind,
+         attempt,
+         correction,
+         execution_opts \\ []
+       ) do
     page = meeting.meeting_page
 
     with :ok <- PublicationInput.validate(input),
          {:ok, canonical, canonical_run} <-
-           CoverageExecution.canonical(page, input, metadata, generation_kind, attempt),
+           CoverageExecution.canonical(
+             page,
+             input,
+             metadata,
+             generation_kind,
+             attempt,
+             execution_opts
+           ),
          :ok <- GenerationContract.validate_bundle(input, canonical, "fr"),
          {:ok, nl, nl_run} <-
            CoverageExecution.translation(
@@ -208,7 +238,8 @@ defmodule BrusselsWtf.Council.Publication do
              "nl",
              metadata,
              generation_kind,
-             attempt
+             attempt,
+             execution_opts
            ),
          :ok <- GenerationContract.validate_bundle(input, nl, "nl"),
          {:ok, en, en_run} <-
@@ -219,7 +250,8 @@ defmodule BrusselsWtf.Council.Publication do
              "en",
              metadata,
              generation_kind,
-             attempt
+             attempt,
+             execution_opts
            ),
          :ok <- GenerationContract.validate_bundle(input, en, "en") do
       output = GenerationContract.combine(canonical, nl, en)
