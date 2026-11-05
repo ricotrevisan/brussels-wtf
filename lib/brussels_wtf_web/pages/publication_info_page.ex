@@ -31,7 +31,7 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
     <main id="content" class="site-container info-page py-6 sm:py-8" tabindex="-1">
       <h1 class="display display-lg">{@page_title}</h1>
       <%= if @coverage? do %>
-        <p class="measure mt-4 leading-7">{text(@locale, :scope)}</p>
+        <p class="measure mt-4 leading-6">{text(@locale, :scope)}</p>
         <p class="mt-3">
           {text(@locale, :window)}: {BrusselsWtfWeb.PublicDate.long(@status.first, @locale)} – {BrusselsWtfWeb.PublicDate.long(
             @status.last,
@@ -103,7 +103,7 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
       <% else %>
         <p
           :for={key <- [:purpose, :method, :outcomes, :corrections, :retention, :readership]}
-          class="measure mt-5 leading-7"
+          class="measure mt-5 leading-6"
         >
           {text(@locale, key)}
         </p>

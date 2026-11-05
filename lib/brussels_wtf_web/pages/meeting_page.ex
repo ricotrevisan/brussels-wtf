@@ -157,7 +157,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
 
       <section :if={@withdrawn} class="callout callout-unknown mt-6">
         <h2 class="display display-md">{text(@locale, :withdrawn_heading)}</h2>
-        <p class="mt-2 leading-7">{@withdrawal_reason || text(@locale, :withdrawn_explanation)}</p>
+        <p class="mt-2 leading-6">{@withdrawal_reason || text(@locale, :withdrawn_explanation)}</p>
         <p :if={@meeting_page.withdrawn_at} class="muted mt-2 text-sm">
           {text(@locale, :withdrawn_on)}
           <time datetime={DateTime.to_iso8601(@meeting_page.withdrawn_at)}>
@@ -449,7 +449,9 @@ defmodule BrusselsWtfWeb.MeetingPage do
                 >
                   {count_cell(row.abstentions)}
                 </td>
-                <td class="cell-bar w-28"><.vote_bar row={row} locale={@locale} /></td>
+                <td class="cell-bar w-28">
+                  <.vote_bar :if={row.status != :unanimous} row={row} locale={@locale} />
+                </td>
               </tr>
             </tbody>
           </table>
@@ -563,7 +565,9 @@ defmodule BrusselsWtfWeb.MeetingPage do
             <h2 class="agenda-title">
               <BrusselsWtfWeb.PublicShell.title_parts title={@coverage_variant.title} />
             </h2>
-            <span :if={not @uniform} class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+          </span>
+          <span :if={not @uniform} class="agenda-meta">
+            <span class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
               <BrusselsWtfWeb.PublicShell.status
                 kind={row_status(@item, @display_state)}
                 label={row_label(@item, @display_state, @locale)}
@@ -583,7 +587,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
               </span>
             </span>
           </span>
-          <span class="chevron hero-chevron-down-micro" aria-hidden="true"></span>
+          <span class="chevron agenda-chevron hero-chevron-down-micro" aria-hidden="true"></span>
         </summary>
 
         <div class="agenda-body">
@@ -951,9 +955,9 @@ defmodule BrusselsWtfWeb.MeetingPage do
       official_document: "Official document",
       agenda: "Agenda",
       all_items: "applies to every item below.",
-      agenda_note_title: "Why some outcomes are unknown",
+      agenda_note_title: "What “Outcome unknown” means",
       agenda_note:
-        "Some items have no documented outcome yet: we show an outcome only once an official record is attached. Only items the council votes on are published, so numbers can skip.",
+        "An item stays Outcome unknown until an official record of its outcome is attached. Only items the council votes on are published, so numbers can skip.",
       filter_agenda: "Filter this agenda",
       of_items: "%{shown} of %{total} items",
       clear_filter: "Clear filter",
@@ -965,11 +969,11 @@ defmodule BrusselsWtfWeb.MeetingPage do
       stat_awaiting: "Outcome unknown",
       stat_contested: "Not unanimous",
       vote_tally: "Vote tally",
-      tally_stats: "Decisions: %{total} · unanimous: %{unanimous} · contested: %{contested}",
+      tally_stats: "Decisions: %{total} · unanimous: %{unanimous} · not unanimous: %{contested}",
       tally_not_recorded: " · no recorded tally: %{count}",
-      show_contested: "Show contested votes only",
+      show_contested: "Show votes that were not unanimous",
       show_all_votes: "Show all decisions",
-      no_contested_votes: "No contested vote is recorded for this meeting.",
+      no_contested_votes: "Every recorded vote at this meeting was unanimous.",
       votes_for: "For",
       votes_against: "Against",
       votes_abstentions: "Abstained",
@@ -1024,9 +1028,9 @@ defmodule BrusselsWtfWeb.MeetingPage do
       official_document: "Document officiel",
       agenda: "Ordre du jour",
       all_items: "vaut pour tous les points ci-dessous.",
-      agenda_note_title: "Pourquoi certains résultats sont inconnus",
+      agenda_note_title: "Que signifie « Résultat inconnu » ?",
       agenda_note:
-        "Certains points n’ont pas encore de résultat documenté : nous n’indiquons un résultat qu’une fois un document officiel joint. Seuls les points soumis au vote sont publiés, la numérotation peut donc sauter.",
+        "Un point reste en Résultat inconnu tant qu’aucun document officiel de son résultat n’est joint. Seuls les points soumis au vote sont publiés, la numérotation peut donc sauter.",
       filter_agenda: "Filtrer cet ordre du jour",
       of_items: "%{shown} points sur %{total}",
       clear_filter: "Effacer le filtre",
@@ -1038,11 +1042,11 @@ defmodule BrusselsWtfWeb.MeetingPage do
       stat_awaiting: "Résultat inconnu",
       stat_contested: "Pas unanimes",
       vote_tally: "Résultats des votes",
-      tally_stats: "Décisions : %{total} · unanimes : %{unanimous} · contestées : %{contested}",
+      tally_stats: "Décisions : %{total} · unanimes : %{unanimous} · non unanimes : %{contested}",
       tally_not_recorded: " · sans décompte documenté : %{count}",
-      show_contested: "Afficher uniquement les votes contestés",
+      show_contested: "Afficher les votes non unanimes",
       show_all_votes: "Afficher toutes les décisions",
-      no_contested_votes: "Aucun vote contesté n’est documenté pour cette réunion.",
+      no_contested_votes: "Tous les votes documentés de cette réunion sont unanimes.",
       votes_for: "Pour",
       votes_against: "Contre",
       votes_abstentions: "Abstention",
@@ -1096,9 +1100,9 @@ defmodule BrusselsWtfWeb.MeetingPage do
       official_document: "Officieel document",
       agenda: "Agenda",
       all_items: "geldt voor alle punten hieronder.",
-      agenda_note_title: "Waarom sommige uitkomsten onbekend zijn",
+      agenda_note_title: "Wat “Uitkomst onbekend” betekent",
       agenda_note:
-        "Sommige punten hebben nog geen gedocumenteerde uitkomst: we tonen pas een uitkomst zodra een officieel document is toegevoegd. Alleen punten waarover de raad stemt worden gepubliceerd, dus nummers kunnen ontbreken.",
+        "Een punt blijft op Uitkomst onbekend staan tot een officieel document van de uitkomst is toegevoegd. Alleen punten waarover de raad stemt worden gepubliceerd, dus nummers kunnen ontbreken.",
       filter_agenda: "Deze agenda filteren",
       of_items: "%{shown} van %{total} punten",
       clear_filter: "Filter wissen",
@@ -1110,11 +1114,11 @@ defmodule BrusselsWtfWeb.MeetingPage do
       stat_awaiting: "Uitkomst onbekend",
       stat_contested: "Niet unaniem",
       vote_tally: "Stemmingsresultaten",
-      tally_stats: "Besluiten: %{total} · unaniem: %{unanimous} · betwist: %{contested}",
+      tally_stats: "Besluiten: %{total} · unaniem: %{unanimous} · niet unaniem: %{contested}",
       tally_not_recorded: " · zonder gedocumenteerde stemming: %{count}",
-      show_contested: "Alleen betwiste stemmingen tonen",
+      show_contested: "Niet-unanieme stemmingen tonen",
       show_all_votes: "Alle besluiten tonen",
-      no_contested_votes: "Voor deze vergadering is geen betwiste stemming gedocumenteerd.",
+      no_contested_votes: "Alle gedocumenteerde stemmingen van deze vergadering waren unaniem.",
       votes_for: "Voor",
       votes_against: "Tegen",
       votes_abstentions: "Onthouding",

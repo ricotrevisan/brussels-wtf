@@ -31,7 +31,9 @@ defmodule BrusselsWtfWeb.PublicShellTest do
 
   describe "amount_in/1" do
     test "writes the first amount one way per language" do
-      assert PublicShell.amount_in("Subsidy amounting to EUR 20,000.00 and more", "en") == "€20,000"
+      assert PublicShell.amount_in("Subsidy amounting to EUR 20,000.00 and more", "en") ==
+               "€20,000"
+
       assert PublicShell.amount_in("Settlement for 43,300.56 EUR incl. VAT", "en") == "€43,300.56"
       assert PublicShell.amount_in("Subvention de 20 000 € pour un festival", "fr") == "20 000 €"
       assert PublicShell.amount_in("Transaction de 43.300,56 EUR TVAC", "fr") == "43 300,56 €"

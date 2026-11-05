@@ -34,9 +34,9 @@ defmodule BrusselsWtfWeb.MeetingVoteTallyTest do
       set_votes!("demo-brussels", %{votes_for: 23, votes_against: 1, abstentions: 10})
 
     for {locale, heading, stats} <- [
-          {"en", "Vote tally", "Decisions: 1 · unanimous: 0 · contested: 1"},
-          {"fr", "Résultats des votes", "Décisions : 1 · unanimes : 0 · contestées : 1"},
-          {"nl", "Stemmingsresultaten", "Besluiten: 1 · unaniem: 0 · betwist: 1"}
+          {"en", "Vote tally", "Decisions: 1 · unanimous: 0 · not unanimous: 1"},
+          {"fr", "Résultats des votes", "Décisions : 1 · unanimes : 0 · non unanimes : 1"},
+          {"nl", "Stemmingsresultaten", "Besluiten: 1 · unaniem: 0 · niet unaniem: 1"}
         ] do
       html =
         conn

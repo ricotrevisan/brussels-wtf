@@ -20,9 +20,9 @@ defmodule BrusselsWtfWeb.ContestedVotesPageTest do
     ])
 
     for {locale, heading, commune, disposition, date} <- [
-          {"en", "Contested votes", "Forest", "Approved", "4 May 2026"},
-          {"fr", "Votes contestés", "Forest", "Approuvée", "4 mai 2026"},
-          {"nl", "Betwiste stemmingen", "Vorst", "Goedgekeurd", "4 mei 2026"}
+          {"en", "Not unanimous", "Forest", "Approved", "4 May 2026"},
+          {"fr", "Non unanimes", "Forest", "Approuvée", "4 mai 2026"},
+          {"nl", "Niet unaniem", "Vorst", "Goedgekeurd", "4 mei 2026"}
         ] do
       document = conn |> recycle() |> get("#{@path}?lang=#{locale}") |> document()
 

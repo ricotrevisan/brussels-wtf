@@ -316,7 +316,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
         <div class="site-container hero-grid py-5 sm:py-10">
           <div>
             <h1 id="coverage-title" class="display display-xl measure">{@title}</h1>
-            <p class="measure mt-3 text-base leading-6 sm:text-lg sm:leading-7">
+            <p class="measure mt-3 text-base leading-6 sm:text-lg sm:leading-6">
               {text(@locale, :intro)}
               <span :if={@tracked_items > 0} class="font-semibold">
                 {tracking_line(@locale, @tracked_meetings, @tracked_items)}
@@ -643,7 +643,12 @@ defmodule BrusselsWtfWeb.TimelinePage do
                 href={category.href}
                 class="inline-flex min-h-11 items-center text-sm"
                 aria-label={text(@locale, :view_all) <> ": " <> text(@locale, category.label)}
-              >{text(@locale, :view_all)}</a>
+              >
+                {text(@locale, :view_all)}<span
+                  class="hero-arrow-right-micro ml-1 size-4"
+                  aria-hidden="true"
+                ></span>
+              </a>
             </div>
           <% else %>
             <div
@@ -739,6 +744,12 @@ defmodule BrusselsWtfWeb.TimelinePage do
       <fieldset>
         <legend class="mb-2 text-sm font-semibold">{text(@locale, :communes)}</legend>
         <div class="flex flex-wrap gap-2">
+          <a
+            :if={length(@selected) < length(@communes)}
+            href={selection_path(@path, @locale, Enum.map(@communes, &elem(&1, 0)))}
+            class="chip link-quiet"
+            data-all-communes
+          >{text(@locale, :all_communes_chip)}</a>
           <label :for={{slug, name} <- @communes} class="chip">
             <input type="checkbox" name="commune[]" value={slug} checked={slug in @selected} />
             <span class="chip-mark chip-mark-off hero-plus-micro" aria-hidden="true"></span>
@@ -816,14 +827,16 @@ defmodule BrusselsWtfWeb.TimelinePage do
 
     ~H"""
     <article class="entry" data-commune={@entry.commune_slug} data-group={@entry.group}>
-      <BrusselsWtfWeb.PublicShell.kicker topic={@topic} amount={@amount} locale={@locale} />
-      <a href={@entry.href} class="entry-title">
-        <BrusselsWtfWeb.PublicShell.title_parts title={@entry.title} />
-      </a>
-      <p :if={show_summary?(@entry)} class="entry-summary measure muted mt-1 text-sm leading-5">
-        {@entry.summary}
-      </p>
-      <p class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+      <div class="min-w-0">
+        <BrusselsWtfWeb.PublicShell.kicker topic={@topic} amount={@amount} locale={@locale} />
+        <a href={@entry.href} class="entry-title">
+          <BrusselsWtfWeb.PublicShell.title_parts title={@entry.title} />
+        </a>
+        <p :if={show_summary?(@entry)} class="entry-summary measure muted mt-1 text-sm leading-5">
+          {@entry.summary}
+        </p>
+      </div>
+      <p class="entry-meta flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
         <BrusselsWtfWeb.PublicShell.status
           kind={status_kind(@entry)}
           label={status_label(@entry, @locale)}
@@ -1039,7 +1052,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       explore: "Explore coverage",
       none_mandates: "No verified public mandates in this selection.",
       intro:
-        "Agendas, votes and decisions from four Brussels councils, each linked to its official document.",
+        "Follow public spending, local works and votes in four Brussels councils, each item linked to its official document.",
       communes: "Communes",
       follow: "Follow",
       apply: "Update",
@@ -1063,15 +1076,16 @@ defmodule BrusselsWtfWeb.TimelinePage do
       mandates_pages: "Mandate pages",
       previous_page: "Previous page",
       next_page: "Next page",
-      contested_votes: "Contested votes",
+      contested_votes: "Not unanimous",
       contested_intro: "Decisions with at least one vote against or one abstention.",
-      none_contested: "No contested vote is recorded in this selection.",
-      contested_pages: "Contested vote pages",
+      none_contested: "No split vote is recorded in this selection.",
+      contested_pages: "Vote result pages",
       commune: "Commune",
       meeting_date: "Meeting date",
       votes_for: "For",
       votes_against: "Against",
       votes_abstentions: "Abstained",
+      all_communes_chip: "All communes",
       latest_meetings: "Latest meetings",
       decided_count: "%{count} decisions",
       tracking: "Tracking %{meetings} meetings and %{items} agenda items so far.",
@@ -1086,7 +1100,8 @@ defmodule BrusselsWtfWeb.TimelinePage do
       lead_coming: "Proposals on upcoming agendas. Nothing here has been decided yet.",
       lead_awaiting:
         "The meeting has passed, but no official record of the outcome is attached yet.",
-      lead_decided: "Outcomes documented in official council records.",
+      lead_decided:
+        "Newest meeting first. Items naming an amount or with a split vote lead; recurring formalities come last.",
       source: "Source"
     }
   end
@@ -1112,7 +1127,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       explore: "Explorer l’actualité",
       none_mandates: "Aucun mandat public vérifié dans cette sélection.",
       intro:
-        "Ordres du jour, votes et décisions de quatre conseils bruxellois, chacun relié à son document officiel.",
+        "Suivez les dépenses publiques, les travaux et les votes de quatre conseils bruxellois, chaque point relié à son document officiel.",
       communes: "Communes",
       follow: "Suivre",
       apply: "Mettre à jour",
@@ -1136,15 +1151,16 @@ defmodule BrusselsWtfWeb.TimelinePage do
       mandates_pages: "Pages de mandats",
       previous_page: "Page précédente",
       next_page: "Page suivante",
-      contested_votes: "Votes contestés",
+      contested_votes: "Non unanimes",
       contested_intro: "Décisions ayant recueilli au moins un vote contre ou une abstention.",
-      none_contested: "Aucun vote contesté n’est documenté dans cette sélection.",
-      contested_pages: "Pages de votes contestés",
+      none_contested: "Aucun vote partagé n’est documenté dans cette sélection.",
+      contested_pages: "Pages de résultats de vote",
       commune: "Commune",
       meeting_date: "Date de la séance",
       votes_for: "Pour",
       votes_against: "Contre",
       votes_abstentions: "Abstention",
+      all_communes_chip: "Toutes les communes",
       latest_meetings: "Dernières séances",
       decided_count: "%{count} décisions",
       tracking: "%{meetings} séances et %{items} points suivis à ce jour.",
@@ -1160,7 +1176,8 @@ defmodule BrusselsWtfWeb.TimelinePage do
         "Propositions inscrites aux prochains ordres du jour. Rien n’est encore décidé.",
       lead_awaiting:
         "La séance a eu lieu, mais aucun document officiel du résultat n’est encore joint.",
-      lead_decided: "Résultats documentés dans les documents officiels du conseil.",
+      lead_decided:
+        "La séance la plus récente d’abord. Les points avec un montant ou un vote partagé passent devant ; les formalités récurrentes en dernier.",
       source: "Source"
     }
   end
@@ -1185,7 +1202,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       explore: "Berichtgeving verkennen",
       none_mandates: "Geen geverifieerde openbare mandaten in deze selectie.",
       intro:
-        "Agenda’s, stemmingen en besluiten van vier Brusselse gemeenteraden, telkens met het officiële document.",
+        "Volg openbare uitgaven, werken en stemmingen in vier Brusselse gemeenteraden, elk punt met het officiële document.",
       communes: "Gemeenten",
       follow: "Volgen",
       apply: "Bijwerken",
@@ -1209,15 +1226,16 @@ defmodule BrusselsWtfWeb.TimelinePage do
       mandates_pages: "Mandatenpagina's",
       previous_page: "Vorige pagina",
       next_page: "Volgende pagina",
-      contested_votes: "Betwiste stemmingen",
+      contested_votes: "Niet unaniem",
       contested_intro: "Besluiten met minstens één tegenstem of onthouding.",
-      none_contested: "In deze selectie is geen betwiste stemming gedocumenteerd.",
-      contested_pages: "Pagina's met betwiste stemmingen",
+      none_contested: "In deze selectie is geen verdeelde stemming gedocumenteerd.",
+      contested_pages: "Pagina's met stemresultaten",
       commune: "Gemeente",
       meeting_date: "Datum van de zitting",
       votes_for: "Voor",
       votes_against: "Tegen",
       votes_abstentions: "Onthouding",
+      all_communes_chip: "Alle gemeenten",
       latest_meetings: "Laatste vergaderingen",
       decided_count: "%{count} besluiten",
       tracking: "Tot nu toe %{meetings} vergaderingen en %{items} agendapunten gevolgd.",
@@ -1232,7 +1250,8 @@ defmodule BrusselsWtfWeb.TimelinePage do
       lead_coming: "Voorstellen op komende agenda’s. Hier is nog niets beslist.",
       lead_awaiting:
         "De vergadering heeft plaatsgevonden, maar er is nog geen officieel verslag van de uitkomst.",
-      lead_decided: "Uitkomsten gedocumenteerd in officiële raadsdocumenten.",
+      lead_decided:
+        "Nieuwste vergadering eerst. Punten met een bedrag of verdeelde stemming staan vooraan; terugkerende formaliteiten als laatste.",
       source: "Bron"
     }
   end

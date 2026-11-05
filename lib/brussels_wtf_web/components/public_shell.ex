@@ -371,7 +371,7 @@ defmodule BrusselsWtfWeb.PublicShell do
         feed_empty:
           "You aren’t following anything yet. Open a list and choose which commune or dossier to follow.",
         feed_cta: "Browse decisions",
-        contested: "Contested votes",
+        contested: "Not unanimous",
         mandates: "Public mandates",
         meetings: "Meetings",
         follows: "Personal feed",
@@ -399,7 +399,7 @@ defmodule BrusselsWtfWeb.PublicShell do
         feed_empty:
           "Vous ne suivez encore rien. Ouvrez une liste et choisissez la commune ou le dossier à suivre.",
         feed_cta: "Parcourir les décisions",
-        contested: "Votes contestés",
+        contested: "Non unanimes",
         mandates: "Mandats publics",
         meetings: "Séances",
         follows: "Fil personnel",
@@ -427,7 +427,7 @@ defmodule BrusselsWtfWeb.PublicShell do
         feed_empty:
           "U volgt nog niets. Open een lijst en kies welke gemeente of welk dossier u wilt volgen.",
         feed_cta: "Besluiten bekijken",
-        contested: "Betwiste stemmingen",
+        contested: "Niet unaniem",
         mandates: "Openbare mandaten",
         meetings: "Vergaderingen",
         follows: "Persoonlijke feed",

@@ -12,6 +12,13 @@ export function enhanceFilters(window, document, onBusy) {
     } catch (_) { /* The filter works without restored position. */ }
     form.addEventListener("change", event => {
       if (event.target.matches?.('input[type="checkbox"]')) {
+        // From "everything on", one click means "just this commune", not "all but this one".
+        const boxes = [...form.querySelectorAll('input[type="checkbox"]')]
+        const others = boxes.filter(box => box !== event.target)
+        if (!event.target.checked && others.every(box => box.checked)) {
+          others.forEach(box => { box.checked = false })
+          event.target.checked = true
+        }
         try {
           window.sessionStorage.setItem(key, JSON.stringify({path: window.location.pathname, y: window.scrollY, value: event.target.value}))
         } catch (_) { /* Storage may be disabled. */ }

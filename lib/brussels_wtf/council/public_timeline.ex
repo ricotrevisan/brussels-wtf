@@ -69,12 +69,14 @@ defmodule BrusselsWtf.Council.PublicTimeline do
     |> Enum.sort_by(& &1.page.council_meeting.scheduled_on, {:desc, Date})
   end
 
-  # Approving the previous minutes is routine at every meeting, so it does not lead a preview.
+  # A stated, content-neutral rule: within a meeting, items naming an amount or with a split
+  # vote lead, and recurring formalities come last. The readers' page says so.
   defp routine_last(queue) do
     Enum.sort_by(
       queue,
       fn entry ->
-        {Date.to_gregorian_days(entry.page.council_meeting.scheduled_on) * -1, routine?(entry)}
+        {Date.to_gregorian_days(entry.page.council_meeting.scheduled_on) * -1,
+         preview_rank(entry)}
       end
     )
   end
@@ -88,11 +90,25 @@ defmodule BrusselsWtf.Council.PublicTimeline do
     end
   end
 
-  defp routine?(%{item: item}), do: routine_item?(item)
+  defp preview_rank(%{item: item, variant: variant}) do
+    decision = loaded_or_nil(item.published_decision)
+    split? = decision && ((decision.votes_against || 0) > 0 or (decision.abstentions || 0) > 0)
+    money? = Regex.match?(~r/EUR|€/u, (variant && variant.title) || item.source_wording || "")
 
-  @doc "Approving the previous minutes recurs at every meeting."
-  def routine_item?(item),
-    do: Regex.match?(~r/proc[eè]s-verbal|notulen/iu, item.source_wording || "")
+    cond do
+      routine_item?(item) -> 2
+      split? || money? -> 0
+      true -> 1
+    end
+  end
+
+  @doc "Formalities that recur at most meetings: minutes, credentials and absences."
+  def routine_item?(item) do
+    Regex.match?(
+      ~r/proc[eè]s-verbal|notulen|v[ée]rification des pouvoirs|prestation de serment|geloofsbrieven|eedaflegging|emp[êe]chement|verhindering/iu,
+      item.source_wording || ""
+    )
+  end
 
   defp round_robin([], taken), do: Enum.reverse(taken)
 
