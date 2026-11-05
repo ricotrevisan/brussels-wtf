@@ -45,6 +45,41 @@ defmodule BrusselsWtf.Council.CoverageRun do
       filter expr(meeting_page_id == ^arg(:meeting_page_id))
       prepare build(sort: [inserted_at: :asc, locale: :asc])
     end
+
+    # The newest succeeded run of exactly this call that never reached a publication
+    # revision: same page, operation, locale, input, parent run, processor identity and
+    # method. It is what a retry after a failed locale would pay for again. A run that
+    # was published is not adopted, so regenerating published input still runs anew
+    # instead of writing a duplicate revision.
+    read :reusable_success do
+      get? true
+      argument :meeting_page_id, :uuid, allow_nil?: false
+      argument :operation, :atom, allow_nil?: false
+      argument :locale, :string, allow_nil?: false
+      argument :input_hash, :string, allow_nil?: false
+      argument :parent_run_id, :uuid
+      argument :processor_name, :string, allow_nil?: false
+      argument :processor_version, :string, allow_nil?: false
+      argument :config_hash, :string, allow_nil?: false
+      argument :provider_category, :string, allow_nil?: false
+      argument :method, :atom, allow_nil?: false
+
+      filter expr(
+               status == :succeeded and meeting_page_id == ^arg(:meeting_page_id) and
+                 operation == ^arg(:operation) and locale == ^arg(:locale) and
+                 input_hash == ^arg(:input_hash) and
+                 processor_name == ^arg(:processor_name) and
+                 processor_version == ^arg(:processor_version) and
+                 config_hash == ^arg(:config_hash) and
+                 provider_category == ^arg(:provider_category) and method == ^arg(:method) and
+                 ((is_nil(^arg(:parent_run_id)) and is_nil(parent_run_id)) or
+                    parent_run_id == ^arg(:parent_run_id)) and
+                 not exists(canonical_revisions, true) and not exists(nl_revisions, true) and
+                 not exists(en_revisions, true)
+             )
+
+      prepare build(sort: [inserted_at: :desc, id: :desc], limit: 1)
+    end
   end
 
   attributes do
@@ -104,5 +139,14 @@ defmodule BrusselsWtf.Council.CoverageRun do
 
     belongs_to :parent_run, __MODULE__, public?: true
     has_many :translations, __MODULE__, destination_attribute: :parent_run_id
+
+    has_many :canonical_revisions, BrusselsWtf.Council.PublicationRevision,
+      destination_attribute: :canonical_run_id
+
+    has_many :nl_revisions, BrusselsWtf.Council.PublicationRevision,
+      destination_attribute: :nl_run_id
+
+    has_many :en_revisions, BrusselsWtf.Council.PublicationRevision,
+      destination_attribute: :en_run_id
   end
 end

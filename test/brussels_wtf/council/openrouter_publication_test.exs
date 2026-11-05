@@ -264,6 +264,82 @@ defmodule BrusselsWtf.Council.OpenRouterPublicationTest do
     assert Council.get_meeting_page!(ctx.page.id).publication_status == :draft
   end
 
+  test "a retry after a translation rate limit reuses paid runs and publishes atomically", ctx do
+    generation(:paid)
+    stub_provider(rate_limited: "en")
+
+    assert {:error, _} =
+             Council.generate_meeting_coverage(ctx.meeting.id, 1, 3, %{generation_ref: "job:1"})
+
+    assert Council.get_meeting_page!(ctx.page.id).publication_status == :draft
+    first = collect_calls() |> Enum.map(&elem(&1, 0)) |> Enum.frequencies()
+    assert first["fr"] == 1 and first["nl"] == 1 and first["en"] >= 1
+
+    stub_provider()
+
+    assert :ok =
+             Council.generate_meeting_coverage!(ctx.meeting.id, 2, 3, %{generation_ref: "job:1"})
+
+    # Only the locale that failed is paid for again.
+    assert collect_calls() |> Enum.map(&elem(&1, 0)) == ["en"]
+
+    page = Council.get_meeting_page!(ctx.page.id) |> Ash.load!([:current_revision])
+    assert page.publication_status == :published
+    assert %{ready?: true} = Council.publication_readiness!(page.id)
+
+    runs = Council.list_coverage_runs!(page.id)
+    assert [fr] = Enum.filter(runs, &(&1.locale == "fr"))
+    assert [nl] = Enum.filter(runs, &(&1.locale == "nl"))
+
+    assert [failed_en, en] =
+             runs |> Enum.filter(&(&1.locale == "en")) |> Enum.sort_by(& &1.status)
+
+    assert {failed_en.status, en.status} == {:failed, :succeeded}
+    assert en.parent_run_id == fr.id
+
+    assert {page.current_revision.canonical_run_id, page.current_revision.nl_run_id,
+            page.current_revision.en_run_id} == {fr.id, nl.id, en.id}
+
+    # Every real call still has exactly one settled reservation and charge.
+    reservations = Ash.read!(CoverageReservation, domain: Council)
+    assert length(reservations) == 4
+    assert Enum.all?(reservations, &(&1.status == :settled))
+    assert {:ok, budget} = CoverageBudget.ensure_month(1000, BrusselsWtf.Clock.utc_now())
+    assert budget.spent_cents == Enum.sum(Enum.map(reservations, & &1.final_cost_cents))
+    assert budget.reserved_cents == 0
+  end
+
+  test "a fresh publish job resumes a page whose earlier job used up its attempts", ctx do
+    generation(:paid)
+    stub_provider(unavailable: "en")
+
+    assert :ok =
+             Council.generate_meeting_coverage!(ctx.meeting.id, 3, 3, %{generation_ref: "job:1"})
+
+    assert [open_case] = Review.list_review_cases!(%{kind: :publication}, actor: @reviewer)
+    assert open_case.status == :open
+    collect_calls()
+
+    stub_provider()
+
+    # The same job attempt stays idempotent: no new call, no new reservation.
+    assert :ok =
+             Council.generate_meeting_coverage!(ctx.meeting.id, 3, 3, %{generation_ref: "job:1"})
+
+    assert collect_calls() == []
+    assert Council.get_meeting_page!(ctx.page.id).publication_status == :draft
+
+    # A new job is a new generation: it reuses FR and NL and pays only for EN.
+    assert :ok =
+             Council.generate_meeting_coverage!(ctx.meeting.id, 1, 3, %{generation_ref: "job:2"})
+
+    assert collect_calls() |> Enum.map(&elem(&1, 0)) == ["en"]
+    assert Council.get_meeting_page!(ctx.page.id).publication_status == :published
+
+    assert [%{status: :resolved}] =
+             Review.list_review_cases!(%{kind: :publication}, actor: @reviewer)
+  end
+
   defp generation(mode) do
     Application.put_env(:brussels_wtf, :coverage_generation, %{
       mode: mode,
@@ -348,6 +424,9 @@ defmodule BrusselsWtf.Council.OpenRouterPublicationTest do
       cond do
         opts[:unavailable] == locale ->
           Plug.Conn.send_resp(conn, 503, "unavailable")
+
+        opts[:rate_limited] == locale ->
+          Plug.Conn.send_resp(conn, 429, "rate limited")
 
         opts[:fail] == {locale, n} ->
           reply(

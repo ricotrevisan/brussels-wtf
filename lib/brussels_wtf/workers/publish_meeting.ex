@@ -20,10 +20,17 @@ defmodule BrusselsWtf.Workers.PublishMeeting do
         _other -> :automatic
       end
 
+    params = %{generation_ref: generation_ref(job)}
+
     result =
       case generation_kind do
         :automatic ->
-          BrusselsWtf.Council.generate_meeting_coverage(meeting_id, attempt, max_attempts)
+          BrusselsWtf.Council.generate_meeting_coverage(
+            meeting_id,
+            attempt,
+            max_attempts,
+            params
+          )
 
         :backfill ->
           batch_id = job.args["coverage_batch_id"]
@@ -34,7 +41,8 @@ defmodule BrusselsWtf.Workers.PublishMeeting do
               attempt,
               max_attempts,
               :backfill,
-              batch_id
+              batch_id,
+              params
             )
           else
             {:ok, :ok}
@@ -46,4 +54,13 @@ defmodule BrusselsWtf.Workers.PublishMeeting do
       {:error, _reason} -> {:error, :coverage_generation_failed}
     end
   end
+
+  # A retry usually follows a provider rate limit. Succeeded locales are reused, so
+  # waiting costs nothing; one and then four minutes lets the limit clear.
+  @impl true
+  def backoff(%Oban.Job{attempt: attempt}), do: attempt * attempt * 60
+
+  @doc "Names one job's paid generation, so a later job gets its own budget keys."
+  def generation_ref(%Oban.Job{id: nil}), do: nil
+  def generation_ref(%Oban.Job{id: id}), do: "oban:#{id}"
 end

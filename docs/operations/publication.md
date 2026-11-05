@@ -73,6 +73,22 @@ Code.eval_file(Application.app_dir(:brussels_wtf, "priv/ops/agenda_to_page_score
 Coverage generation is selected independently of extraction and normalization. `COVERAGE_PROCESSOR=recorded` (the default) uses `RecordedCorpusCoverage` for the sealed historic and September selections. Those contracts match the complete source-backed publication input; source drift fails closed instead of receiving stale prose. `COVERAGE_PROCESSOR=openrouter` selects the network-backed provider described below. Ordinary tests use controlled HTTP responses and make no paid or nondeterministic calls. Selecting OpenRouter does not replace the recorded normalizer or make arbitrary new PDFs supported.
 
 
+### Paid retries and stranded pages
+
+[Issue 159](https://github.com/RicoTrevisan/brussels-wtf/issues/159): in `paid` mode a retry pays only for what failed.
+
+- Before reserving budget, each locale call adopts the newest succeeded run of exactly the same call if that run never reached a publication revision. The match covers page, operation, locale, input hash, parent run, processor name, version and configuration hash, method and carried provenance. An adopted run makes no provider call and reserves nothing; its cost was charged when it ran. The revision cites the adopted runs, so lineage and the gate's run-chain checks are unchanged.
+- A run that was already published is never adopted. Regenerating published input still runs anew.
+- Recorded generation and recorded factual corrections never adopt runs.
+- Each `PublishMeeting` job passes its Oban job id as `generation_ref`. Budget call keys include it, so one job attempt stays idempotent while a later job for the same input gets its own reservations. Before this, a new job found the earlier job's settled reservations and completed without generating.
+- Retries wait 1 and then 4 minutes, so a provider rate limit can clear. The `publish` queue already runs one meeting at a time; the paid processor still sends up to four batch calls per meeting.
+
+To resume a page whose job used up its attempts (for example after the provider account ran out of credit), insert one new job for that meeting once the cause is fixed. It reuses the locales that succeeded and pays for the rest. A successful publication resolves the open publication case.
+
+```bash
+docker exec "$APP" /app/bin/brussels_wtf rpc 'Oban.insert!(BrusselsWtf.Workers.PublishMeeting.new(%{"meeting_id" => "<meeting-uuid>"}))'
+```
+
 ## Runtime generation controls
 
 The application reads these variables when the release starts:
@@ -143,7 +159,7 @@ The limits come from measurement on the real Ixelles 266 (33 items, 43.5 KB, 14,
 
 Every request sends `reasoning.enabled=false`, `temperature: 0`, `provider.require_parameters`, `provider.data_collection: "deny"`, `provider.sort: "throughput"` and a strict `json_schema` response format. The schema pins the exact keys, item keys, variant fields and allowed claim references for that batch. On 2026-10-18 the plain `json_object` format let the model add a `"type"` key, which the exact-key contract rejected. The lowest-price primary endpoint generated about 26 tokens/s against about 113 tokens/s on Decart, and full batches timed out at 90 seconds. Throughput ordering stays inside the hard price caps.
 
-A retryable provider or transport failure (HTTP 408, 429, 5xx, wall timeout, or a structured routing 404 with a recognized no-compatible-endpoints message) advances that batch to the next stage. Arbitrary 404s, authentication or payment failures, and successful but invalid content do not advance. Req does not retry or follow redirects. Each request caps encoded input at 64 KiB, the request at 128 KiB, the response at 256 KiB, and output at 16,384 tokens (2,048 for the page call). The connect timeout is 10 seconds. Keepalive bytes cannot prolong the deadline; a cancelled request keeps its cost uncertain.
+A retryable provider or transport failure (HTTP 408, 429, 5xx, wall timeout, or a structured routing 404 with a recognized no-compatible-endpoints message, including "No endpoints found that satisfy the max price for this request" when a stage's listed price rises above its cap) advances that batch to the next stage. Arbitrary 404s, authentication or payment failures, and successful but invalid content do not advance. Req does not retry or follow redirects. Each request caps encoded input at 64 KiB, the request at 128 KiB, the response at 256 KiB, and output at 16,384 tokens (2,048 for the page call). The connect timeout is 10 seconds. Keepalive bytes cannot prolong the deadline; a cancelled request keeps its cost uncertain.
 
 ### Cost
 
