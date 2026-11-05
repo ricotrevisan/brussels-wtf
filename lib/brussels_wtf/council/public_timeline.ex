@@ -96,9 +96,10 @@ defmodule BrusselsWtf.Council.PublicTimeline do
     money? = Regex.match?(~r/EUR|€/u, (variant && variant.title) || item.source_wording || "")
 
     cond do
-      routine_item?(item) -> 2
-      split? || money? -> 0
-      true -> 1
+      routine_item?(item) -> 3
+      split? -> 0
+      money? -> 1
+      true -> 2
     end
   end
 

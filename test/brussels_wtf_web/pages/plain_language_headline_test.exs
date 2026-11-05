@@ -27,7 +27,8 @@ defmodule BrusselsWtfWeb.PlainLanguageHeadlineTest do
 
     assert LazyHTML.text(row["[data-headline]"]) =~ "Plain words for this item"
     assert LazyHTML.text(row["[data-official-title]"]) =~ "Ixelles demonstration meeting"
-    assert [_label] = LazyHTML.attribute(row["[data-headline] [role=img]"], "aria-label")
+    assert LazyHTML.text(row["[data-headline] .sr-only"]) =~ "Written by AI"
+    assert LazyHTML.text(document["[data-ai-key]"]) =~ "Headlines by AI"
   end
 
   test "without a headline the official title stands alone", %{conn: conn} do

@@ -351,7 +351,9 @@ defmodule BrusselsWtfWeb.TimelinePage do
               {format_date(@latest_meeting.date, @locale)}
             </time>
             <span class="mt-2 block text-sm">
-              {item_count(@latest_meeting, @locale)} · {decided_count(@latest_meeting, @locale)}
+              {item_count(@latest_meeting, @locale)} · {if @latest_meeting.decided == 0,
+                do: text(@locale, :outcome_unknown),
+                else: decided_count(@latest_meeting, @locale)}
             </span>
           </a>
         </div>

@@ -116,9 +116,6 @@ defmodule BrusselsWtfWeb.MeetingPage do
             {text(@locale, :unavailable_title)}
         <% end %>
       </h1>
-      <p :if={not @withdrawn and @locale_available} class="muted mt-1 hidden text-sm sm:block">
-        {@variant.title}
-      </p>
       <p :if={not @withdrawn and not @locale_available} class="callout callout-unknown measure mt-5">
         {text(@locale, :unavailable_explanation)}
       </p>
@@ -153,6 +150,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
           <span class="chevron hero-chevron-down-micro" aria-hidden="true"></span>
         </summary>
         <div class="disclosure-body measure space-y-2 text-sm leading-6">
+          <p :if={@locale_available}>{@variant.title}</p>
           <p>
             {text(@locale, :revision)}
             <time datetime={DateTime.to_iso8601(@meeting_page.revision_published_at)}>
@@ -160,6 +158,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
             </time>
           </p>
           <p>{text(@locale, :agenda_note)}</p>
+          <p data-numbering-note>{text(@locale, :numbering_note)}</p>
         </div>
       </details>
 
@@ -256,10 +255,6 @@ defmodule BrusselsWtfWeb.MeetingPage do
           :if={Enum.any?(@items, &has_headline?(&1, @locale))}
           locale={@locale}
         />
-        <p class="ai-key muted" data-numbering-note>
-          <span class="hero-hashtag-micro size-4 shrink-0" aria-hidden="true"></span>
-          <span>{text(@locale, :numbering_note)}</span>
-        </p>
         <div class="topic-filters mt-2 hidden flex-wrap gap-1.5" data-topic-filters>
           <button
             :for={{topic, count} <- agenda_topics(@items)}
@@ -1018,7 +1013,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
       all_items: "applies to every item below.",
       about_meeting: "About this meeting",
       agenda_note:
-        "An item stays Outcome unknown until an official record of its outcome is attached. Only items the council votes on are published, so numbers can skip.",
+        "An item stays Outcome unknown until an official record of its outcome is attached.",
       numbering_note: "Only items the council votes on are listed, so numbers can skip.",
       filter_agenda: "Filter this agenda",
       of_items: "%{shown} of %{total} items",
@@ -1092,7 +1087,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
       all_items: "vaut pour tous les points ci-dessous.",
       about_meeting: "À propos de cette séance",
       agenda_note:
-        "Un point reste en Résultat inconnu tant qu’aucun document officiel de son résultat n’est joint. Seuls les points soumis au vote sont publiés, la numérotation peut donc sauter.",
+        "Un point reste en Résultat inconnu tant qu’aucun document officiel de son résultat n’est joint.",
       numbering_note:
         "Seuls les points soumis au vote sont listés : la numérotation peut sauter.",
       filter_agenda: "Filtrer cet ordre du jour",
@@ -1104,7 +1099,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
       stat_items: "Points",
       stat_decided: "Décisions",
       stat_awaiting: "Résultat inconnu",
-      stat_contested: "Pas unanimes",
+      stat_contested: "Non unanimes",
       vote_tally: "Résultats des votes",
       tally_stats: "Décisions : %{total} · unanimes : %{unanimous} · non unanimes : %{contested}",
       tally_not_recorded: " · sans décompte documenté : %{count}",
@@ -1166,7 +1161,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
       all_items: "geldt voor alle punten hieronder.",
       about_meeting: "Over deze vergadering",
       agenda_note:
-        "Een punt blijft op Uitkomst onbekend staan tot een officieel document van de uitkomst is toegevoegd. Alleen punten waarover de raad stemt worden gepubliceerd, dus nummers kunnen ontbreken.",
+        "Een punt blijft op Uitkomst onbekend staan tot een officieel document van de uitkomst is toegevoegd.",
       numbering_note:
         "Alleen punten waarover de raad stemt staan hier, dus nummers kunnen ontbreken.",
       filter_agenda: "Deze agenda filteren",

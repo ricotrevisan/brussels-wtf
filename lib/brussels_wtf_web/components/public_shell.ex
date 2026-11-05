@@ -424,7 +424,7 @@ defmodule BrusselsWtfWeb.PublicShell do
         menu: "Menu",
         ai_headline: "Written by AI",
         ai_key:
-          "Headlines are written by AI and checked against the source. The official title is below each one.",
+          "Headlines by AI, checked against the source. The council’s wording, translated where needed, is below each one.",
         topic_general: "Council business",
         topic_subsidy: "Subsidy",
         topic_settlement: "Settlement",
@@ -456,7 +456,7 @@ defmodule BrusselsWtfWeb.PublicShell do
         menu: "Menu",
         ai_headline: "Rédigé par IA",
         ai_key:
-          "Les titres sont rédigés par IA et vérifiés par rapport à la source. L’intitulé officiel figure sous chacun.",
+          "Titres rédigés par IA, vérifiés sur la source. Le libellé du conseil figure sous chacun.",
         topic_general: "Affaires du conseil",
         topic_subsidy: "Subvention",
         topic_settlement: "Transaction",
@@ -488,7 +488,7 @@ defmodule BrusselsWtfWeb.PublicShell do
         menu: "Menu",
         ai_headline: "Geschreven door AI",
         ai_key:
-          "Titels zijn door AI geschreven en getoetst aan de bron. De officiële titel staat onder elke titel.",
+          "Titels door AI, getoetst aan de bron. De tekst van de raad staat eronder (vertaald waar nodig).",
         topic_general: "Raadszaken",
         topic_subsidy: "Subsidie",
         topic_settlement: "Dading",

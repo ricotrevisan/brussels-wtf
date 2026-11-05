@@ -193,7 +193,7 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
         purpose:
           "brussels.wtf helps readers follow council activity in Ixelles, Uccle, Forest and the City of Brussels. Rico Trevisan is responsible for this independent publication. It is not an official municipal service.",
         method:
-          "Explanations are AI-generated from retained official source evidence; French is the editorial source for machine translations into Dutch and English. A human-reviewed label is used only when a human review actually took place. Citations retain the official location, retrieval date and checksum; original-language excerpts remain source material.",
+          "Explanations are AI-generated from retained official source evidence; French is the editorial source for machine translations into Dutch and English. A human-reviewed label is used only when a human review actually took place. Citations retain the official location, retrieval date and file fingerprint; original-language excerpts remain source material.",
         outcomes:
           "An agenda establishes what was scheduled, not what was adopted. When a meeting date passes without a verified final record, its items move to ‘Outcome unknown’. This changes neither their evidence nor their outcome. Dossiers connect continuing matters only when the evidence supports that link.",
         corrections:
@@ -290,7 +290,7 @@ defmodule BrusselsWtfWeb.PublicationInfoPage do
         purpose:
           "brussels.wtf helpt lezers de raden van Elsene, Ukkel, Vorst en de Stad Brussel te volgen. Rico Trevisan is verantwoordelijk voor deze onafhankelijke publicatie. Dit is geen officiële gemeentedienst.",
         method:
-          "De uitleg wordt met AI gegenereerd op basis van bewaard officieel bronbewijs; Frans is de redactionele bron voor machinevertalingen naar Nederlands en Engels. Het label voor menselijke controle wordt alleen gebruikt als die daadwerkelijk plaatsvond. Citaten behouden de officiële vindplaats, ophaaldatum en checksum; bronfragmenten blijven in hun oorspronkelijke taal.",
+          "De uitleg wordt met AI gegenereerd op basis van bewaard officieel bronbewijs; Frans is de redactionele bron voor machinevertalingen naar Nederlands en Engels. Het label voor menselijke controle wordt alleen gebruikt als die daadwerkelijk plaatsvond. Citaten behouden de officiële vindplaats, ophaaldatum en bestandsvingerafdruk; bronfragmenten blijven in hun oorspronkelijke taal.",
         outcomes:
           "Een agenda legt vast wat gepland was, niet wat aangenomen werd. Na de vergaderdatum gaan punten zonder geverifieerd eindverslag naar ‘In afwachting van gedocumenteerde uitkomst’. Dat verandert hun bewijs of uitkomst niet. Dossiers verbinden doorlopende zaken alleen wanneer het bewijs dat ondersteunt.",
         corrections:
