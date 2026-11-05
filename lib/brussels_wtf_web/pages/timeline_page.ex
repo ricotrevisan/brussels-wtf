@@ -201,7 +201,7 @@ defmodule BrusselsWtfWeb.TimelinePage do
       by_id = Map.new(rows, &{&1.id, &1})
 
       [by_id["coming-up"], by_id["previously"], contested_section, by_id["awaiting-outcome"]]
-      |> then(fn [coming | rest] -> [coming | Enum.sort_by(rest, &(&1.entries == []))] end)
+      |> Enum.sort_by(&(&1.entries == []))
     else
       rows
     end

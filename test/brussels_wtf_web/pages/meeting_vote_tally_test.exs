@@ -66,6 +66,26 @@ defmodule BrusselsWtfWeb.MeetingVoteTallyTest do
     end
   end
 
+  test "the tally view can show every vote and offers the link only when rows are hidden", %{
+    conn: conn
+  } do
+    set_votes!("demo-brussels", %{votes_for: 23, votes_against: 1, abstentions: 10})
+
+    default =
+      conn |> get("/meetings/city-of-brussels/demo-brussels?lang=en") |> html_response(200)
+
+    # With nothing hidden, no "show all" link is needed.
+    refute default =~ "votes=all"
+    assert [_row] = Enum.to_list(rows(default))
+
+    everything =
+      conn
+      |> get("/meetings/city-of-brussels/demo-brussels?lang=en&votes=all")
+      |> html_response(200)
+
+    assert [_row] = Enum.to_list(rows(everything))
+  end
+
   test "a decision without a recorded tally renders no tally table", %{conn: conn} do
     html = conn |> get("/meetings/city-of-brussels/demo-brussels?lang=en") |> html_response(200)
     assert Enum.to_list(LazyHTML.from_document(html)["#vote-tally"]) == []

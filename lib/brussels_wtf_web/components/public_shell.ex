@@ -215,6 +215,7 @@ defmodule BrusselsWtfWeb.PublicShell do
            ~r/^(.{25,}?(?<!\bMs|\bMr|\bMme|\bDr|\bno|\bnr|\bart|\bincl|\bexcl|\bavec|\bvs)(?<=[\p{Ll}\d)»"”]))\.\s+(\p{Lu}.*)$/su,
            title
          ) do
+      [_, lead, _rest] when byte_size(lead) > 110 -> split_at_clause(title)
       [_, lead, rest] -> {lead <> ".", rest}
       _ -> split_at_clause(title)
     end
@@ -271,13 +272,13 @@ defmodule BrusselsWtfWeb.PublicShell do
 
   def topic_label(locale, topic), do: copy(locale, topic)
 
-  defp topic_icon(:topic_subsidy), do: "hero-banknotes-micro"
-  defp topic_icon(:topic_settlement), do: "hero-document-check-micro"
-  defp topic_icon(:topic_works), do: "hero-wrench-screwdriver-micro"
-  defp topic_icon(:topic_money), do: "hero-calculator-micro"
-  defp topic_icon(:topic_property), do: "hero-building-office-micro"
-  defp topic_icon(:topic_staff), do: "hero-users-micro"
-  defp topic_icon(_topic), do: "hero-building-library-micro"
+  def topic_icon(:topic_subsidy), do: "hero-banknotes-micro"
+  def topic_icon(:topic_settlement), do: "hero-document-check-micro"
+  def topic_icon(:topic_works), do: "hero-wrench-screwdriver-micro"
+  def topic_icon(:topic_money), do: "hero-calculator-micro"
+  def topic_icon(:topic_property), do: "hero-building-office-micro"
+  def topic_icon(:topic_staff), do: "hero-users-micro"
+  def topic_icon(_topic), do: "hero-building-library-micro"
 
   @doc "Empty state for the follows page; CSS hides it once the list has rows."
   def feed_empty(locale) do

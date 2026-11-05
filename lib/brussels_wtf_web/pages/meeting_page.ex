@@ -14,7 +14,13 @@ defmodule BrusselsWtfWeb.MeetingPage do
         locale_available = not is_nil(variant)
         withdrawn = page.publication_status == :draft and not is_nil(page.withdrawn_at)
         resource_path = BrusselsWtfWeb.PublicUrl.meeting_path(commune, municipal_id)
-        contested_only = params["votes"] == "contested"
+
+        tally_view =
+          case params["votes"] do
+            "all" -> :all
+            "contested" -> :contested
+            _ -> :default
+          end
 
         assign(conn,
           page_title:
@@ -45,7 +51,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
             ),
           revision_history: page.publication_revisions,
           locale: locale,
-          contested_only: contested_only,
+          tally_view: tally_view,
           commune_name: commune_name(locale, commune, page.council_meeting.commune.name),
           items:
             if(locale_available and not withdrawn,
@@ -220,7 +226,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
         items={@items}
         locale={@locale}
         resource_path={@resource_path}
-        contested_only={@contested_only}
+        view={@tally_view}
       />
       <section :if={not @withdrawn and @items != []} class="mt-7" aria-labelledby="agenda-heading">
         <div class="agenda-head flex flex-wrap items-end justify-between gap-x-4 gap-y-2 border-b-2 border-base-content pb-2">
@@ -352,7 +358,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
   attr :items, :list, required: true
   attr :locale, :string, required: true
   attr :resource_path, :string, required: true
-  attr :contested_only, :boolean, default: false
+  attr :view, :atom, default: :default
 
   defp vote_tally(assigns) do
     rows =
@@ -382,7 +388,16 @@ defmodule BrusselsWtfWeb.MeetingPage do
     }
 
     visible =
-      if assigns.contested_only, do: Enum.filter(rows, &(&1.status == :contested)), else: rows
+      cond do
+        assigns.view == :all ->
+          rows
+
+        assigns.view == :contested or stats.contested > 0 ->
+          Enum.filter(rows, &(&1.status == :contested))
+
+        true ->
+          rows
+      end
 
     assigns = assign(assigns, rows: rows, visible: visible, stats: stats)
 
@@ -394,7 +409,7 @@ defmodule BrusselsWtfWeb.MeetingPage do
       class="mt-5 scroll-mt-4"
       tabindex="-1"
     >
-      <details class="disclosure border-y border-base-300" open={@contested_only}>
+      <details class="disclosure border-y border-base-300" open={@view != :default}>
         <summary class="w-full justify-between py-1">
           <span>
             <span
@@ -415,13 +430,13 @@ defmodule BrusselsWtfWeb.MeetingPage do
           <p class="flex flex-wrap items-center justify-between gap-x-4 text-sm">
             <BrusselsWtfWeb.PublicShell.vote_legend locale={@locale} />
             <a
-              :if={not @contested_only and @stats.contested > 0}
+              :if={@view == :all and @stats.contested > 0}
               href={@resource_path <> "?lang=" <> @locale <> "&votes=contested#vote-tally"}
               class="inline-flex min-h-11 items-center font-medium"
             >{text(@locale, :show_contested)}</a>
             <a
-              :if={@contested_only}
-              href={@resource_path <> "?lang=" <> @locale <> "#vote-tally"}
+              :if={@view != :all and length(@visible) < length(@rows)}
+              href={@resource_path <> "?lang=" <> @locale <> "&votes=all#vote-tally"}
               class="inline-flex min-h-11 items-center font-medium"
             >{text(@locale, :show_all_votes)}</a>
           </p>
@@ -574,6 +589,15 @@ defmodule BrusselsWtfWeb.MeetingPage do
           <span class="agenda-number">
             <span class="sr-only">{text(@locale, :item)}</span>
             {public_item_number(@item)}
+            <span
+              class={[
+                BrusselsWtfWeb.PublicShell.topic_icon(
+                  BrusselsWtfWeb.PublicShell.topic_of(@item.source_wording)
+                ),
+                "agenda-topic size-4"
+              ]}
+              aria-hidden="true"
+            ></span>
           </span>
           <span class="min-w-0">
             <h2 class="agenda-title">
