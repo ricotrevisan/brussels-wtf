@@ -7,10 +7,12 @@ defmodule BrusselsWtf.Council.Headline do
   """
 
   @max_length 100
-  @outcome_words ~r/\b(approuv|adopt|vot[ée]|d[ée]cid|rejet|refus|goedgekeurd|aangenomen|besloten|beslist|verworpen|geweigerd|approved|rejected|decided|voted|passed)/iu
+  @outcome_words ~r/\b(approuv|adopt|vot[ée]|d[ée]cid|rejet|refus|goedgekeurd|aangenomen|besloten|beslist|verworpen|geweigerd|approved|rejected|decided|voted|passed|joins|rejoint|adh[èe]re|treedt toe|appointed|nomm[ée]|benoemd|aangesteld|accepted|accept[ée]|aanvaard)/iu
 
   # "Approval of a settlement" reads as settled, so an undecided item cannot lead with procedure.
-  @procedural_start ~r/^\s*(approval|approve|adoption|adopt|approbation|approuver|goedkeuring|goedkeuren|aanneming)\b/iu
+  @procedural_start ~r/^\s*(adoption|adopt|appointment|designation|acknowledg\w+|granting|grant of|ratification|nomination|d[ée]signation|prise d.acte|octroi|ratification|aanneming|benoeming|aanstelling|aanduiding|kennisneming|toekenning|bekrachtiging)\b/iu
+  @approval_words ~r/\b(approval|approve|approbation|approuver|goedkeuring|goedkeuren)\b/iu
+  @person_installed ~r/\b(installation|installatie)\b.*\b(mr|ms|mrs|m\.|mme|mevr|dhr)\b/iu
 
   @doc "True when a translated headline is really the French one, unchanged or nearly so."
   def untranslated?(headline, french) when is_binary(headline) and is_binary(french) do
@@ -27,7 +29,9 @@ defmodule BrusselsWtf.Council.Headline do
          numbers_from_source?(trimmed, source_text) and
          (decided? or
             not (Regex.match?(@outcome_words, trimmed) or
-                   Regex.match?(@procedural_start, trimmed))) do
+                   Regex.match?(@procedural_start, trimmed) or
+                   Regex.match?(@approval_words, trimmed) or
+                   Regex.match?(@person_installed, trimmed))) do
       trimmed
     end
   end

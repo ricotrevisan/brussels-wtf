@@ -59,6 +59,26 @@ defmodule BrusselsWtf.Council.HeadlineTest do
     refute Headline.untranslated?(nil, french)
   end
 
+  test "an undecided item cannot read as already done" do
+    for headline <- [
+          "Soil study framework contract: Ixelles joins",
+          "Appointment of Mr. Diego NARANJO to asbl X",
+          "Acknowledgement of a resignation",
+          "Désignation d'un représentant",
+          "Benoeming van een vertegenwoordiger",
+          "Sidewalk renovation: conditions approval",
+          "Installation of Ms. Vinciane Pirottin as councilor",
+          "Granting of eco-cheques to nursery staff",
+          "Ratification of a protocol"
+        ] do
+      refute Headline.accept(headline, @source, false), headline
+      assert Headline.accept(headline, @source, true), headline
+    end
+
+    assert Headline.accept("Representative to asbl X: Mr Y proposed", @source, false)
+    assert Headline.accept("Soil study framework contract", @source, false)
+  end
+
   test "drops blank, missing and overlong headlines" do
     refute Headline.accept("   ", @source, false)
     refute Headline.accept(nil, @source, false)
