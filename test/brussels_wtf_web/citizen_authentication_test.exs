@@ -16,6 +16,20 @@ defmodule BrusselsWtfWeb.CitizenAuthenticationTest do
     %{now: now}
   end
 
+  test "following while signed out leads to sign in in the reader's language", %{conn: conn} do
+    for locale <- ~w(fr nl en) do
+      followed =
+        conn
+        |> recycle()
+        |> post("/citizen/feed/follows?lang=#{locale}", %{
+          "target_type" => "commune",
+          "target_identifier" => "ixelles"
+        })
+
+      assert redirected_to(followed) == "/citizen/sign-in?lang=#{locale}"
+    end
+  end
+
   test "request is enumeration resistant and link is single use", %{conn: conn} do
     body =
       conn
