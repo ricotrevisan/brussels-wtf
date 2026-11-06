@@ -10,8 +10,10 @@ defmodule BrusselsWtfWeb.PendingFollow do
   @ttl_seconds 30 * 60
   @types ~w(dossier person legal_entity commune)
 
+  # Real identifiers are short; the cap keeps the cookie under its 4 KB limit.
   def put(conn, type, identifier)
-      when type in @types and is_binary(identifier) and identifier != "" do
+      when type in @types and is_binary(identifier) and identifier != "" and
+             byte_size(identifier) <= 256 do
     put_session(conn, @key, %{"type" => type, "identifier" => identifier, "at" => now()})
   end
 

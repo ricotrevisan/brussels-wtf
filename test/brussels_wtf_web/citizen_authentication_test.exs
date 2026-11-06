@@ -94,6 +94,46 @@ defmodule BrusselsWtfWeb.CitizenAuthenticationTest do
     assert BrusselsWtf.Follow.citizen_follows(citizen) == []
   end
 
+  test "a pending follow that is no longer eligible falls back to registration", %{conn: conn} do
+    followed =
+      post(conn, "/citizen/feed/follows?lang=en", %{
+        "target_type" => "commune",
+        "target_identifier" => "ixelles"
+      })
+
+    sign_in_page = followed |> recycle() |> get("/citizen/sign-in?lang=en") |> html_response(200)
+    assert sign_in_page =~ "data-pending-follow"
+
+    Accounts.request_link("ineligible-follow@example.test")
+    assert_receive {:magic_link, _, link, _}
+
+    signed_in =
+      followed
+      |> recycle()
+      |> put_req_header("x-citizen-magic-link", token_from_link(link))
+      |> post("/citizen/magic-link/consume", %{})
+
+    assert redirected_to(signed_in) == "/citizen/registration?lang=en"
+  end
+
+  test "an invalid or oversized target is never stored as a pending follow", %{conn: conn} do
+    for {type, identifier} <- [
+          {"not-a-target", "ixelles"},
+          {"commune", String.duplicate("x", 257)}
+        ] do
+      followed =
+        conn
+        |> recycle()
+        |> post("/citizen/feed/follows", %{
+          "target_type" => type,
+          "target_identifier" => identifier
+        })
+
+      assert redirected_to(followed) == "/citizen/sign-in?lang=en"
+      refute get_session(followed, :pending_follow)
+    end
+  end
+
   test "unfollow and mark read while signed out lead to sign in", %{conn: conn} do
     id = Ash.UUID.generate()
 
