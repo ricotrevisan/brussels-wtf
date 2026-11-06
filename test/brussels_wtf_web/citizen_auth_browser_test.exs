@@ -78,8 +78,9 @@ defmodule BrusselsWtfWeb.CitizenAuthBrowserTest do
       mail,
       "--expired",
       expired_file,
-      "--secret",
-      management_secret
+      # One "=" token: a base64url secret can start with "-", which argparse
+      # would otherwise read as a flag.
+      "--secret=#{management_secret}"
     ]
 
     opts =

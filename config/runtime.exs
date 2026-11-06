@@ -185,6 +185,38 @@ if config_env() == :prod do
       raise "incomplete source archive configuration; missing #{Enum.join(missing_archive_environment, ", ")}"
   end
 
+  # Citizen account mail (magic links, inactivity warnings) goes through the
+  # Cloudflare Email Service. Partial configuration fails the boot; none at all
+  # makes every send fail visibly instead of being dropped.
+  mail_environment = %{
+    account_id: "CLOUDFLARE_EMAIL_ACCOUNT_ID",
+    api_token: "CLOUDFLARE_EMAIL_API_TOKEN"
+  }
+
+  mail_config = Map.new(mail_environment, fn {key, name} -> {key, System.get_env(name)} end)
+
+  missing_mail_environment =
+    mail_environment
+    |> Enum.filter(fn {key, _name} -> mail_config[key] in [nil, ""] end)
+    |> Enum.map(fn {_key, name} -> name end)
+
+  cond do
+    missing_mail_environment == [] ->
+      config :brussels_wtf, :citizen_mailer, BrusselsWtf.Accounts.Mail.Cloudflare
+
+      config :brussels_wtf, BrusselsWtf.Accounts.Mail.Cloudflare,
+        account_id: mail_config.account_id,
+        api_token: mail_config.api_token,
+        from_address: System.get_env("CITIZEN_MAIL_FROM", "noreply@news.brussels.wtf"),
+        from_name: "brussels.wtf"
+
+    length(missing_mail_environment) == map_size(mail_environment) ->
+      config :brussels_wtf, :citizen_mailer, BrusselsWtf.Accounts.Mail.Unconfigured
+
+    true ->
+      raise "incomplete citizen mail configuration; missing #{Enum.join(missing_mail_environment, ", ")}"
+  end
+
   database_url =
     System.get_env("DATABASE_URL") ||
       raise """
