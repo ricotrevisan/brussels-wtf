@@ -10,7 +10,8 @@ defmodule BrusselsWtf.Accounts.Mail.CloudflareTest do
     Application.put_env(:brussels_wtf, Cloudflare,
       account_id: "acct123",
       api_token: "token-abc",
-      from: "brussels.wtf <noreply@news.brussels.wtf>",
+      from_address: "noreply@news.brussels.wtf",
+      from_name: "brussels.wtf",
       req_options: [plug: {Req.Test, Cloudflare}]
     )
 
@@ -39,7 +40,7 @@ defmodule BrusselsWtf.Accounts.Mail.CloudflareTest do
     assert conn.method == "POST"
     assert conn.request_path == "/client/v4/accounts/acct123/email/sending/send"
     assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer token-abc"]
-    assert body["from"] == "brussels.wtf <noreply@news.brussels.wtf>"
+    assert body["from"] == %{"address" => "noreply@news.brussels.wtf", "name" => "brussels.wtf"}
     assert body["to"] == ["reader@example.test"]
     assert body["subject"] == "Uw aanmeldlink voor brussels.wtf"
     assert body["text"] =~ BrusselsWtfWeb.Endpoint.url() <> link
@@ -82,18 +83,38 @@ defmodule BrusselsWtf.Accounts.Mail.CloudflareTest do
       |> Plug.Conn.put_status(403)
       |> Req.Test.json(%{
         "success" => false,
-        "errors" => [%{"code" => 10000, "message" => "Authentication error"}]
+        "errors" => [%{"code" => 10000, "message" => "bad reader@example.test"}]
       })
     end)
 
     log =
       capture_log(fn ->
-        assert {:error, {:http, 403, [%{"code" => 10000}]}} =
+        assert {:error, {:http, 403, [10000]}} =
                  Cloudflare.deliver_magic_link("reader@example.test", "/x", "en")
       end)
 
     assert log =~ "citizen_mail_delivery_failed"
     refute log =~ "reader@example.test"
+  end
+
+  test "a 2xx reply without success is a failure" do
+    Req.Test.stub(Cloudflare, fn conn ->
+      Req.Test.json(conn, %{"success" => false, "errors" => [%{"code" => 1}]})
+    end)
+
+    capture_log(fn ->
+      assert {:error, {:http, 200, [1]}} =
+               Cloudflare.deliver_magic_link("reader@example.test", "/x", "en")
+    end)
+  end
+
+  test "a transport error is a failure" do
+    Req.Test.stub(Cloudflare, &Req.Test.transport_error(&1, :econnrefused))
+
+    capture_log(fn ->
+      assert {:error, {:transport, _}} =
+               Cloudflare.deliver_magic_link("reader@example.test", "/x", "en")
+    end)
   end
 
   test "the unconfigured adapter fails every send" do

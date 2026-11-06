@@ -207,7 +207,8 @@ if config_env() == :prod do
       config :brussels_wtf, BrusselsWtf.Accounts.Mail.Cloudflare,
         account_id: mail_config.account_id,
         api_token: mail_config.api_token,
-        from: System.get_env("CITIZEN_MAIL_FROM", "brussels.wtf <noreply@news.brussels.wtf>")
+        from_address: System.get_env("CITIZEN_MAIL_FROM", "noreply@news.brussels.wtf"),
+        from_name: "brussels.wtf"
 
     length(missing_mail_environment) == map_size(mail_environment) ->
       config :brussels_wtf, :citizen_mailer, BrusselsWtf.Accounts.Mail.Unconfigured

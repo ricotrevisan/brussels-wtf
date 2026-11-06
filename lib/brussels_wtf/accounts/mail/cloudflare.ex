@@ -55,7 +55,12 @@ defmodule BrusselsWtf.Accounts.Mail.Cloudflare do
       )
       |> Req.merge(Keyword.get(config, :req_options, []))
 
-    body = %{from: config[:from], to: [to], subject: subject, text: text}
+    body = %{
+      from: %{address: config[:from_address], name: config[:from_name]},
+      to: [to],
+      subject: subject,
+      text: text
+    }
 
     case Req.post(request, json: body) do
       {:ok, %Req.Response{status: status, body: %{"success" => true, "result" => result}}}
@@ -75,8 +80,9 @@ defmodule BrusselsWtf.Accounts.Mail.Cloudflare do
     end
   end
 
+  # Only codes: Cloudflare's messages can quote the recipient address.
   defp errors(%{"errors" => errors}) when is_list(errors),
-    do: Enum.map(errors, &Map.take(&1, ["code", "message"]))
+    do: Enum.map(errors, &Map.get(&1, "code"))
 
   defp errors(_), do: :unexpected_body
 
