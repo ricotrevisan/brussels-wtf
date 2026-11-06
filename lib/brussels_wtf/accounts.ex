@@ -431,7 +431,7 @@ defmodule BrusselsWtf.Accounts do
 
   defp inactivity_warning_copy(locale, days, deletion_at) do
     date = Calendar.strftime(deletion_at, "%Y-%m-%d")
-    path = "/citizen/account/retention"
+    path = BrusselsWtfWeb.Endpoint.url() <> "/citizen/account/retention"
 
     case locale do
       "fr" ->
