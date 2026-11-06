@@ -30,6 +30,94 @@ defmodule BrusselsWtfWeb.CitizenAuthenticationTest do
     end
   end
 
+  test "a follow clicked while signed out completes after sign in", %{conn: conn} do
+    create_ixelles!()
+
+    followed =
+      post(conn, "/citizen/feed/follows?lang=nl", %{
+        "target_type" => "commune",
+        "target_identifier" => "ixelles"
+      })
+
+    assert redirected_to(followed) == "/citizen/sign-in?lang=nl"
+
+    sign_in_page = followed |> recycle() |> get("/citizen/sign-in?lang=nl") |> html_response(200)
+    assert sign_in_page =~ "data-pending-follow"
+    assert sign_in_page =~ "Meld u aan om het volgen af te ronden"
+
+    Accounts.request_link("pending-follow@example.test", "nl")
+    assert_receive {:magic_link, _, link, _}
+
+    signed_in =
+      followed
+      |> recycle()
+      |> put_req_header("x-citizen-magic-link", token_from_link(link))
+      |> post("/citizen/magic-link/consume?lang=nl", %{})
+
+    assert redirected_to(signed_in) == "/feed?lang=nl"
+    refute get_session(signed_in, :pending_follow)
+
+    {:ok, citizen} = Accounts.authenticate_session(get_session(signed_in, :citizen_session_id))
+
+    assert Enum.map(
+             BrusselsWtf.Follow.citizen_follows(citizen),
+             &{&1.target_type, &1.target_identifier}
+           ) ==
+             [{:commune, "ixelles"}]
+  end
+
+  test "a pending follow older than 30 minutes is dropped at sign in", %{conn: conn, now: now} do
+    create_ixelles!()
+
+    followed =
+      post(conn, "/citizen/feed/follows?lang=en", %{
+        "target_type" => "commune",
+        "target_identifier" => "ixelles"
+      })
+
+    Controlled.set(DateTime.add(now, 31, :minute))
+
+    sign_in_page = followed |> recycle() |> get("/citizen/sign-in?lang=en") |> html_response(200)
+    refute sign_in_page =~ "data-pending-follow"
+
+    Accounts.request_link("stale-follow@example.test")
+    assert_receive {:magic_link, _, link, _}
+
+    signed_in =
+      followed
+      |> recycle()
+      |> put_req_header("x-citizen-magic-link", token_from_link(link))
+      |> post("/citizen/magic-link/consume", %{})
+
+    assert redirected_to(signed_in) == "/citizen/registration?lang=en"
+    {:ok, citizen} = Accounts.authenticate_session(get_session(signed_in, :citizen_session_id))
+    assert BrusselsWtf.Follow.citizen_follows(citizen) == []
+  end
+
+  test "unfollow and mark read while signed out lead to sign in", %{conn: conn} do
+    id = Ash.UUID.generate()
+
+    for path <- ["/citizen/feed/follows/#{id}/remove?lang=fr", "/citizen/feed/#{id}/read?lang=fr"] do
+      assert conn |> recycle() |> post(path, %{}) |> redirected_to() == "/citizen/sign-in?lang=fr"
+    end
+  end
+
+  test "signed in, an unknown id is unchanged: unfollow is a no-op, mark read is 404", %{
+    conn: conn
+  } do
+    session = signed_in_session("unknown-ids@example.test")
+    id = Ash.UUID.generate()
+
+    signed_in = fn ->
+      conn |> recycle() |> init_test_session(%{citizen_session_id: session.id})
+    end
+
+    assert signed_in.() |> post("/citizen/feed/follows/#{id}/remove") |> redirected_to() ==
+             "/feed?lang=en"
+
+    assert signed_in.() |> post("/citizen/feed/#{id}/read") |> Map.fetch!(:status) == 404
+  end
+
   test "following with an expired session leads to sign in", %{conn: conn, now: now} do
     session = signed_in_session("follow-expired@example.test")
     Controlled.set(DateTime.add(now, 30, :day))
@@ -489,6 +577,16 @@ defmodule BrusselsWtfWeb.CitizenAuthenticationTest do
 
     {rows.("citizen_sessions"), rows.("citizen_outstanding_magic_links"),
      rows.("citizen_authentication_tokens")}
+  end
+
+  defp create_ixelles! do
+    configured = BrusselsWtf.Communes.configuration!("ixelles")
+
+    BrusselsWtf.Ingestion.create_commune!(%{
+      slug: "ixelles",
+      name: configured.name,
+      index_url: configured.index_url
+    })
   end
 
   defp signed_in_session(email) do

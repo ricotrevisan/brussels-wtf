@@ -14,27 +14,39 @@ defmodule BrusselsWtfWeb.CitizenSessionController do
       email: "Adresse e-mail",
       send: "Envoyer le lien de connexion",
       confirm: "Confirmation de la connexion…",
-      invalid: "Ce lien est invalide ou expiré."
+      invalid: "Ce lien est invalide ou expiré.",
+      pending_follow:
+        "Connectez-vous pour terminer votre suivi. Nous l’ajouterons à votre fil après la connexion depuis ce navigateur."
     },
     "nl" => %{
       title: "Burgeraccount",
       email: "E-mailadres",
       send: "Aanmeldlink versturen",
       confirm: "Aanmelding bevestigen…",
-      invalid: "Deze link is ongeldig of verlopen."
+      invalid: "Deze link is ongeldig of verlopen.",
+      pending_follow:
+        "Meld u aan om het volgen af te ronden. We voegen het toe aan uw feed zodra u zich in deze browser aanmeldt."
     },
     "en" => %{
       title: "Citizen account",
       email: "Email",
       send: "Email me a sign-in link",
       confirm: "Confirming sign in…",
-      invalid: "This link is invalid or expired."
+      invalid: "This link is invalid or expired.",
+      pending_follow:
+        "Sign in to finish following. We will add it to your feed once you sign in from this browser."
     }
   }
 
   def new(conn, _) do
     copy = copy(conn)
-    html(conn, page(conn, copy.title, form(copy)))
+
+    note =
+      if BrusselsWtfWeb.PendingFollow.pending?(conn),
+        do: ~s(<p data-pending-follow>#{copy.pending_follow}</p>),
+        else: ""
+
+    html(conn, page(conn, copy.title, note <> form(copy)))
   end
 
   def create(conn, %{"email" => email}) do
@@ -81,11 +93,13 @@ defmodule BrusselsWtfWeb.CitizenSessionController do
     token = conn |> get_req_header("x-citizen-magic-link") |> List.first()
 
     case Accounts.consume(token) do
-      {:ok, _citizen, session} ->
+      {:ok, citizen, session} ->
+        {conn, pending} = BrusselsWtfWeb.PendingFollow.take(conn)
+
         conn
         |> configure_session(renew: true)
         |> put_session(:citizen_session_id, session.id)
-        |> redirect(to: "/citizen/registration?lang=#{locale(conn)}")
+        |> redirect(to: after_sign_in(citizen, pending, locale(conn)))
 
       _ ->
         conn
@@ -276,6 +290,17 @@ defmodule BrusselsWtfWeb.CitizenSessionController do
   end
 
   defp parse_target(_), do: []
+
+  # Complete the follow the reader clicked while signed out; if the target is
+  # no longer eligible, fall back to the ordinary registration page.
+  defp after_sign_in(citizen, {type, identifier}, locale) do
+    case BrusselsWtf.Follow.import_citizen_follows(citizen, [{type, identifier}]) do
+      {:ok, [_ | _]} -> "/feed?lang=#{locale}"
+      _ -> "/citizen/registration?lang=#{locale}"
+    end
+  end
+
+  defp after_sign_in(_citizen, nil, locale), do: "/citizen/registration?lang=#{locale}"
 
   defp locale(conn), do: conn.assigns[:locale] || "en"
   defp copy(conn), do: Map.fetch!(@copy, locale(conn))

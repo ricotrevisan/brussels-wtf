@@ -134,8 +134,13 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
          {:ok, [_ | _]} <- Follow.import_citizen_follows(citizen, [{type, identifier}]) do
       redirect(conn, to: "/feed?lang=#{conn.assigns.locale}")
     else
-      {:error, :expired} -> redirect(conn, to: "/citizen/sign-in?lang=#{conn.assigns.locale}")
-      _ -> send_resp(conn, 422, "")
+      {:error, :expired} ->
+        conn
+        |> BrusselsWtfWeb.PendingFollow.put(type, identifier)
+        |> sign_in()
+
+      _ ->
+        send_resp(conn, 422, "")
     end
   end
 
@@ -145,6 +150,7 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
          :ok <- Follow.unfollow(citizen, id) do
       conn |> private_headers() |> redirect(to: "/feed?lang=#{conn.assigns.locale}")
     else
+      {:error, :expired} -> sign_in(conn)
       _ -> conn |> private_headers() |> send_resp(404, "")
     end
   end
@@ -155,9 +161,13 @@ defmodule BrusselsWtfWeb.FollowCollectionController do
          {:ok, _} <- Follow.mark_read(citizen, id) do
       redirect(conn, to: "/feed?lang=#{conn.assigns.locale}")
     else
+      {:error, :expired} -> sign_in(conn)
       _ -> send_resp(conn, 404, "")
     end
   end
+
+  # Signed-out or expired sessions get the sign-in page, never a blank error.
+  defp sign_in(conn), do: redirect(conn, to: "/citizen/sign-in?lang=#{conn.assigns.locale}")
 
   def registered_manage(conn, %{"id" => id}) do
     with {:ok, citizen} <-
