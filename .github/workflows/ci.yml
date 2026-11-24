@@ -5,9 +5,17 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
 
     services:
       postgres:
@@ -32,7 +40,7 @@ jobs:
       PGPASSWORD: brussels
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: erlef/setup-beam@v1
         with:
@@ -44,13 +52,14 @@ jobs:
           version: "0.8.15"
           enable-cache: true
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
-          restore-keys: ${{ runner.os }}-mix-
+          key: ${{ runner.os }}-${{ runner.arch }}-otp28-elixir1.19.5-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-otp28-elixir1.19.5-mix-
 
       - name: Install PDF citation verifier
         run: sudo apt-get update && sudo apt-get install -y poppler-utils
@@ -64,6 +73,11 @@ jobs:
           sudo mount -t tmpfs -o "size=512m,mode=0700,uid=$(id -u),gid=$(id -g),nosuid,nodev,noexec" tmpfs "$workspace"
           printf 'OCR_TEST_WORKSPACE=%s\n' "$workspace" >> "$GITHUB_ENV"
       - run: mix test
+      - name: Cache Playwright Chromium
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ hashFiles('test/browser/uv.lock') }}
       - name: Install Playwright Chromium
         run: uv sync --project test/browser --frozen && uv run --project test/browser --frozen playwright install --with-deps chromium
       - name: Run browser tests
